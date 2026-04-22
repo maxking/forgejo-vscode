@@ -2,7 +2,7 @@
   "name": "forgejo-vscode",
   "displayName": "Forgejo Integration",
   "description": "Browse Pull Requests, Issues, and Actions from Forgejo, Gitea, and Codeberg directly in VS Code",
-  "version": "0.3.15",
+  "version": "0.3.17",
   "publisher": "maxking",
   "engines": {
     "vscode": "^1.85.0"
