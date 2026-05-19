@@ -764,7 +764,12 @@ export async function activate(context: vscode.ExtensionContext) {
   // Add releases tree view to subscriptions
   context.subscriptions.push(releaseTreeView);
 
-  const gitExtension = vscode.extensions.getExtension<import('./types/git').GitExtension>('vscode.git')?.exports;
+  let gitExtension: import('./types/git').GitExtension | undefined;
+  try {
+    gitExtension = vscode.extensions.getExtension<import('./types/git').GitExtension>('vscode.git')?.exports;
+  } catch {
+    logInfo('Git extension not available, clone feature disabled');
+  }
 
   async function registerGitProviders() {
     if (!gitExtension?.enabled) return;
