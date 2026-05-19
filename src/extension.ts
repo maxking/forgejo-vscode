@@ -30,6 +30,7 @@ import { getForgejoConfig } from './utils/config';
 import { initializeSecretStorage } from './utils/secretStorage';
 import { migrateTokensToSecretStorage } from './utils/migration';
 import { ForgejoRemoteSourceProvider } from './providers/forgejoRemoteSourceProvider';
+import { ForgejoAuthenticationProvider } from './auth/forgejoAuthenticationProvider';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -817,6 +818,15 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     context.subscriptions.push(listener);
   }
+
+  context.subscriptions.push(
+    vscode.authentication.registerAuthenticationProvider(
+      'forgejo',
+      'Forgejo',
+      new ForgejoAuthenticationProvider(),
+      { supportsMultipleAccounts: true }
+    )
+  );
 
   // Add logger to subscriptions for proper cleanup
   context.subscriptions.push(logger);
