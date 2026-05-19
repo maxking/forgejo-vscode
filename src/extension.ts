@@ -29,6 +29,7 @@ import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
 import { initializeSecretStorage } from './utils/secretStorage';
 import { migrateTokensToSecretStorage } from './utils/migration';
+import { ForgejoRemoteSourceProvider } from './providers/forgejoRemoteSourceProvider';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -762,6 +763,49 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Add releases tree view to subscriptions
   context.subscriptions.push(releaseTreeView);
+
+  const gitExtension = vscode.extensions.getExtension<import('./types/git').GitExtension>('vscode.git')?.exports;
+
+  async function registerGitProviders() {
+    if (!gitExtension?.enabled) return;
+    const git = gitExtension.getAPI(1);
+
+    let providerDisposables: vscode.Disposable[] = [];
+
+    async function refreshRemoteSourceProviders() {
+      for (const d of providerDisposables) d.dispose();
+      providerDisposables = [];
+      const instances = await getAllInstances();
+      for (const instance of instances) {
+        providerDisposables.push(git.registerRemoteSourceProvider(new ForgejoRemoteSourceProvider(instance)));
+      }
+      logInfo(`Remote source providers registered for ${instances.length} instance(s)`);
+    }
+
+    await refreshRemoteSourceProviders();
+
+    const configListener = vscode.workspace.onDidChangeConfiguration(async e => {
+      if (e.affectsConfiguration('forgejo.instances')) {
+        await refreshRemoteSourceProviders();
+      }
+    });
+
+    context.subscriptions.push(configListener, {
+      dispose: () => { for (const d of providerDisposables) d.dispose(); }
+    });
+  }
+
+  if (gitExtension?.enabled) {
+    await registerGitProviders();
+  } else if (gitExtension) {
+    const listener = gitExtension.onDidChangeEnablement(async enabled => {
+      if (enabled) {
+        await registerGitProviders();
+        listener.dispose();
+      }
+    });
+    context.subscriptions.push(listener);
+  }
 
   // Add logger to subscriptions for proper cleanup
   context.subscriptions.push(logger);
