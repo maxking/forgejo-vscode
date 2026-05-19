@@ -35,12 +35,21 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "icons": {
+      "forgejo-logo": {
+        "description": "Forgejo Logo",
+        "default": {
+          "fontPath": "./assets/font/forgejo-icons.woff2",
+          "fontCharacter": "\\E900"
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
           "id": "forgejoExplorer",
           "title": "Forgejo",
-          "icon": "$(git-pull-request)"
+          "icon": "$(forgejo-logo)"
         }
       ]
     },
