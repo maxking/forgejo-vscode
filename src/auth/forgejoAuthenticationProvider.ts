@@ -34,12 +34,13 @@ export class ForgejoAuthenticationProvider implements vscode.AuthenticationProvi
 	}
 
 	private async _diffAndFire(): Promise<void> {
+		const oldSessions = this._knownSessions;
 		const newSessions = await this.getSessions();
-		const oldById = new Map(this._knownSessions.map(s => [s.id, s]));
+		const oldById = new Map(oldSessions.map(s => [s.id, s]));
 		const newById = new Map(newSessions.map(s => [s.id, s]));
 
 		const added = newSessions.filter(s => !oldById.has(s.id));
-		const removed = this._knownSessions.filter(s => !newById.has(s.id));
+		const removed = oldSessions.filter(s => !newById.has(s.id));
 		const changed = newSessions.filter(s => {
 			const old = oldById.get(s.id);
 			return old && (old.accessToken !== s.accessToken || old.account.label !== s.account.label);
