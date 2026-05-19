@@ -8,6 +8,7 @@ import {
 	testInstanceConnection
 } from '../utils/instanceHelpers';
 import { logInfo, logWarn, logError } from '../utils/logger';
+import { ForgejoClient } from '../api/forgejoClient';
 import { executeCommand } from './registry';
 
 /**
@@ -131,6 +132,19 @@ export async function startOnboarding(): Promise<boolean> {
 		logInfo('Connection test successful');
 	}
 
+	// Fetch username if connection succeeded
+	let username: string | undefined;
+	if (testResult) {
+		try {
+			const client = new ForgejoClient(normalizedUrl, token.trim());
+			const user = await client.rawRequest<{ login: string }>('GET', '/user');
+			username = user.login;
+			logInfo('Fetched username:', username);
+		} catch {
+			logWarn('Could not fetch username, continuing without it');
+		}
+	}
+
 	// Step 5: Ask for friendly name
 	const defaultName = getDefaultInstanceName(normalizedUrl);
 	logInfo('Prompting for instance name, suggesting:', defaultName);
@@ -159,6 +173,7 @@ export async function startOnboarding(): Promise<boolean> {
 		name: name.trim(),
 		instanceUrl: normalizedUrl,
 		token: token.trim(),
+		username,
 		lastConnectionTest: tempInstance.lastConnectionTest
 	};
 

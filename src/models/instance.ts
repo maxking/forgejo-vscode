@@ -10,6 +10,8 @@ export interface ForgejoInstance {
 	instanceUrl: string;
 	/** Personal access token for authentication (hydrated from SecretStorage at runtime) */
 	token?: string;
+	/** Forgejo username of the authenticated account */
+	username?: string;
 	/** Whether this is the default instance */
 	isDefault?: boolean;
 	/** Last connection test result */

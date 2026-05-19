@@ -9,7 +9,7 @@ function toSession(instance: ForgejoInstance): vscode.AuthenticationSession {
 		scopes: ['api'],
 		account: {
 			id: instance.id,
-			label: `${instance.name} (${instance.instanceUrl})`,
+			label: `${instance.username ?? instance.name} - ${instance.instanceUrl}`,
 		},
 	};
 }
