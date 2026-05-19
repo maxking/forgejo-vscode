@@ -97,6 +97,11 @@
     },
     "commands": [
       {
+        "command": "forgejo.publishToForgejo",
+        "title": "Forgejo: Publish to Forgejo",
+        "icon": "$(cloud-upload)"
+      },
+      {
         "command": "forgejo.addInstance",
         "title": "Forgejo: Add Instance",
         "icon": "$(add)"
@@ -370,6 +375,16 @@
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "scm",
+        "contents": "You can push the current folder to a new Forgejo repository.\n[$(forgejo-logo) Publish to Forgejo](command:forgejo.publishToForgejo)",
+        "when": "config.git.enabled && git.state == initialized && workbenchState == folder"
+      },
+      {
+        "view": "scm",
+        "contents": "You can push any of the current folders to a new Forgejo repository.\n[$(cloud-upload) Publish to Forgejo](command:forgejo.publishToForgejo)",
+        "when": "config.git.enabled && git.state == initialized && workbenchState == workspace"
+      },
       {
         "view": "forgejoPullRequests",
         "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",

@@ -31,6 +31,7 @@ import { initializeSecretStorage } from './utils/secretStorage';
 import { migrateTokensToSecretStorage } from './utils/migration';
 import { ForgejoRemoteSourceProvider } from './providers/forgejoRemoteSourceProvider';
 import { ForgejoAuthenticationProvider } from './auth/forgejoAuthenticationProvider';
+import { createRemoteSourcePublisher, publishRepositoryFromWorkspace } from './commands/publishToForgejo';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -775,8 +776,31 @@ export async function activate(context: vscode.ExtensionContext) {
     const ext = vscode.extensions.getExtension<import('./types/git').GitExtension>('vscode.git');
     gitExtension = await ext?.activate();
   } catch {
-    logInfo('Git extension not available, clone feature disabled');
+    logInfo('Git extension not available, clone/publish features disabled');
   }
+
+  context.subscriptions.push(
+    registerCommand('forgejo.publishToForgejo', async () => {
+      const git = gitExtension?.enabled ? gitExtension.getAPI(1) : undefined;
+      const folders = vscode.workspace.workspaceFolders;
+      if (!folders || folders.length === 0 || !git) {
+        void vscode.window.showErrorMessage('No workspace folder open.');
+        return;
+      }
+      let workspaceUri: vscode.Uri;
+      if (folders.length === 1) {
+        workspaceUri = folders[0].uri;
+      } else {
+        const picked = await vscode.window.showQuickPick(
+          folders.map(f => ({ label: f.name, description: f.uri.fsPath, uri: f.uri })),
+          { placeHolder: 'Select a workspace folder to publish' }
+        );
+        if (!picked) return;
+        workspaceUri = picked.uri;
+      }
+      await publishRepositoryFromWorkspace(git, workspaceUri);
+    })
+  );
 
   async function registerGitProviders() {
     if (!gitExtension?.enabled) return;
@@ -807,12 +831,23 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  if (gitExtension?.enabled) {
+  function registerPublisher() {
+    if (!gitExtension?.enabled) return;
+    const git = gitExtension.getAPI(1);
+    context.subscriptions.push(git.registerRemoteSourcePublisher(createRemoteSourcePublisher()));
+  }
+
+  async function registerGitIntegrations() {
     await registerGitProviders();
+    registerPublisher();
+  }
+
+  if (gitExtension?.enabled) {
+    await registerGitIntegrations();
   } else if (gitExtension) {
     const listener = gitExtension.onDidChangeEnablement(async enabled => {
       if (enabled) {
-        await registerGitProviders();
+        await registerGitIntegrations();
         listener.dispose();
       }
     });
