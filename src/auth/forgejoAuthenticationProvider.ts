@@ -62,7 +62,10 @@ export class ForgejoAuthenticationProvider implements vscode.AuthenticationProvi
 		const instances = await getAllInstances();
 		const newest = instances.at(-1);
 		if (!newest?.token) throw new Error('No Forgejo instance was added.');
-		return toSession(newest);
+		const session = toSession(newest);
+		this._knownSessions = [...this._knownSessions, session];
+		this._emitter.fire({ added: [session], removed: [], changed: [] });
+		return session;
 	}
 
 	async removeSession(sessionId: string): Promise<void> {
