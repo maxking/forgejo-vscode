@@ -773,7 +773,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let gitExtension: import('./types/git').GitExtension | undefined;
   try {
-    const ext = vscode.extensions.getExtension<import('./types/git').GitExtension>('vscode.git');
+    const ext = vscode.extensions.getExtension('vscode.git');
     gitExtension = await ext?.activate();
   } catch {
     logInfo('Git extension not available, clone/publish features disabled');
