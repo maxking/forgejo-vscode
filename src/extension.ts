@@ -51,6 +51,9 @@ export async function activate(context: vscode.ExtensionContext) {
   const actionsTreeProvider = new ActionsTreeProvider();
   const releaseTreeProvider = new ReleaseTreeProvider();
 
+  // Late-bound so addInstance/manageInstances can trigger a re-registration
+  let refreshRemoteSourceProviders: () => Promise<void> = async () => {};
+
   // Helper to update the context key for viewsWelcome
   async function updateNoInstanceContext() {
     const instances = await getAllInstances();
@@ -127,6 +130,7 @@ export async function activate(context: vscode.ExtensionContext) {
         issueTreeProvider.refresh();
         actionsTreeProvider.refresh();
         releaseTreeProvider.refresh();
+        await refreshRemoteSourceProviders();
       }
     })
   );
@@ -139,6 +143,7 @@ export async function activate(context: vscode.ExtensionContext) {
       issueTreeProvider.refresh();
       actionsTreeProvider.refresh();
       releaseTreeProvider.refresh();
+      await refreshRemoteSourceProviders();
     })
   );
 
@@ -778,7 +783,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     let providerDisposables: vscode.Disposable[] = [];
 
-    async function refreshRemoteSourceProviders() {
+    refreshRemoteSourceProviders = async () => {
       for (const d of providerDisposables) d.dispose();
       providerDisposables = [];
       const instances = await getAllInstances();
@@ -786,7 +791,7 @@ export async function activate(context: vscode.ExtensionContext) {
         providerDisposables.push(git.registerRemoteSourceProvider(new ForgejoRemoteSourceProvider(instance)));
       }
       logInfo(`Remote source providers registered for ${instances.length} instance(s)`);
-    }
+    };
 
     await refreshRemoteSourceProviders();
 

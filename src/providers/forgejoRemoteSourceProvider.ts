@@ -22,7 +22,7 @@ export class ForgejoRemoteSourceProvider implements RemoteSourceProvider {
 		}
 
 		const repos = query && query.length >= 2
-			? await this.#client.listUserRepos(query, 50)
+			? await this.#client.listUserRepos(query, 30)
 			: await this.#client.listUserRepos();
 		return repos.map(repo => ({
 			name: `$(repo) ${repo.full_name}`,
