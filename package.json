@@ -99,7 +99,7 @@
       {
         "command": "forgejo.publishToForgejo",
         "title": "Forgejo: Publish to Forgejo",
-        "icon": "$(cloud-upload)"
+        "icon": "$(forgejo-logo)"
       },
       {
         "command": "forgejo.addInstance",
@@ -382,7 +382,7 @@
       },
       {
         "view": "scm",
-        "contents": "You can push any of the current folders to a new Forgejo repository.\n[$(cloud-upload) Publish to Forgejo](command:forgejo.publishToForgejo)",
+        "contents": "You can push any of the current folders to a new Forgejo repository.\n[$(forgejo-logo) Publish to Forgejo](command:forgejo.publishToForgejo)",
         "when": "config.git.enabled && git.state == initialized && workbenchState == workspace"
       },
       {
