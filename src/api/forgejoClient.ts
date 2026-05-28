@@ -12,6 +12,7 @@ import {
   type IssueListItem,
   type ActionTasksResponse,
   type WorkflowRun,
+  type RepositoryInfo,
 } from 'forgejo-ts';
 import { vscodeLogger } from '../utils/forgejoLoggerAdapter';
 
@@ -21,6 +22,27 @@ export class ForgejoClient extends BaseClient {
     private readonly vscodeToken = ''
   ) {
     super({ instanceUrl: vscodeInstanceUrl, token: vscodeToken, logger: vscodeLogger });
+  }
+
+  async listUserRepos(query?: string, limit = 10): Promise<RepositoryInfo[]> {
+    try {
+      let url: string;
+      if (query) {
+        const params = new URLSearchParams({ q: query, limit: String(limit) });
+        url = `${this.vscodeInstanceUrl}/api/v1/repos/search?${params.toString()}`;
+      } else {
+        const params = new URLSearchParams({ sort: 'newest', limit: String(limit) });
+        url = `${this.vscodeInstanceUrl}/api/v1/user/repos?${params.toString()}`;
+      }
+      const response = await fetch(url, {
+        headers: { Authorization: `token ${this.vscodeToken}` },
+      });
+      if (!response.ok) return [];
+      const data = await response.json() as { data?: RepositoryInfo[] } | RepositoryInfo[];
+      return Array.isArray(data) ? data : (data.data ?? []);
+    } catch {
+      return [];
+    }
   }
 
   // Legacy method aliases for backward compatibility
