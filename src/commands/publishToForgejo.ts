@@ -88,9 +88,11 @@ async function doPublish(
 		return;
 	}
 
+	const remoteName = repository.state.remotes.length > 0 ? 'forgejo' : 'origin';
+
 	try {
-		await repository.addRemote('origin', remoteRepo.clone_url);
-		logInfo(`Remote 'origin' set to ${remoteRepo.clone_url}`);
+		await repository.addRemote(remoteName, remoteRepo.clone_url);
+		logInfo(`Remote '${remoteName}' set to ${remoteRepo.clone_url}`);
 	} catch (err) {
 		logError('Failed to add remote', err);
 		void vscode.window.showErrorMessage(
@@ -114,7 +116,7 @@ async function doPublish(
 
 	const branch = repository.state.HEAD?.name ?? 'main';
 	try {
-		await repository.push('origin', branch, true);
+		await repository.push(remoteName, branch, true);
 		logInfo('Push successful');
 	} catch (err) {
 		logError('Failed to push to remote', err);
