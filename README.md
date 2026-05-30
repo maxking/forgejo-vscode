@@ -24,6 +24,10 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ## News
 
+### 0.3.18
+
+- **Forgejo activity bar icon ([#15](https://codeberg.org/maxking/forgejo-vscode/pulls/15)):** the Activity Bar now uses the Forgejo logo instead of the generic pull request icon. Thanks to [@maxking](https://codeberg.org/maxking).
+
 ### 0.3.17
 
 - **Faster PR loading for large repositories ([#20](https://codeberg.org/maxking/forgejo-vscode/issues/20)):** the Pull Requests view now fetches open PRs first and lazy-loads merged/closed PRs only when those groups are expanded, avoiding long startup fetches on repositories with thousands of historical PRs.

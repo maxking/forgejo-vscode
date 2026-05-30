@@ -2,7 +2,7 @@
   "name": "forgejo-vscode",
   "displayName": "Forgejo Integration",
   "description": "Browse Pull Requests, Issues, and Actions from Forgejo, Gitea, and Codeberg directly in VS Code",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "publisher": "maxking",
   "engines": {
     "vscode": "^1.85.0"
@@ -35,12 +35,21 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "icons": {
+      "forgejo-logo": {
+        "description": "Forgejo Logo",
+        "default": {
+          "fontPath": "./assets/font/forgejo-icons.woff2",
+          "fontCharacter": "\\E900"
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
           "id": "forgejoExplorer",
           "title": "Forgejo",
-          "icon": "$(git-pull-request)"
+          "icon": "./assets/icons/forgejo-logo.svg"
         }
       ]
     },
