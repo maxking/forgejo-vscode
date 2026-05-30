@@ -45,6 +45,10 @@ describe('PRTreeProvider', () => {
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
     mockGetForgejoConfig.mockResolvedValue(mockConfig);
 
+    (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+      get: jest.fn((_key: string, defaultValue: unknown) => defaultValue)
+    });
+
     // Mock ForgejoClient constructor
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);
 
@@ -334,6 +338,25 @@ describe('PRTreeProvider', () => {
     beforeEach(() => {
       jest.clearAllMocks();
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    });
+
+    test('should fetch open PRs by default', async () => {
+      mockClient.getPullRequests.mockResolvedValue([mockPR]);
+
+      await provider.getChildren();
+
+      expect(mockClient.getPullRequests).toHaveBeenCalledWith('test-owner', 'test-repo', 'open');
+    });
+
+    test('should respect configured PR state filter', async () => {
+      (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+        get: jest.fn(() => 'all')
+      });
+      mockClient.getPullRequests.mockResolvedValue([mockPR]);
+
+      await provider.getChildren();
+
+      expect(mockClient.getPullRequests).toHaveBeenCalledWith('test-owner', 'test-repo', 'all');
     });
 
     test('should group open PRs into "Open" group', async () => {

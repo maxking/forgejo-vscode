@@ -34,7 +34,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ## Features
 
 ### Pull Requests
-- Browse PRs grouped by state (Open, Draft, Merged, Closed)
+- Browse PRs grouped by state (Open and Draft by default; Merged/Closed available via `forgejo.pullRequestState: all`)
 - View file changes directly in VS Code's diff editor
 - Add inline review comments on PR diffs
 - Create new pull requests from within VS Code
@@ -172,6 +172,7 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 |---------|---------|-------------|
 | `forgejo.autoDetectFromRemote` | `true` | Auto-detect instance from git remote |
 | `forgejo.preferredRemote` | `""` | Preferred git remote name (default: auto-detect, falls back to origin) |
+| `forgejo.pullRequestState` | `"open"` | PR state to fetch (`open`, `closed`, or `all`). Use `all` to include merged/closed PRs, but it can be slow on large repos. |
 | `forgejo.debug` | `false` | Enable debug logging |
 | `forgejo.showFileStatusNotifications` | `true` | Show notifications for added/deleted files |
 

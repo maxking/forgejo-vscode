@@ -434,6 +434,12 @@
           "type": "string",
           "default": "",
           "description": "Preferred git remote name to use for Forgejo detection (default: auto-detect, falls back to origin)"
+        },
+        "forgejo.pullRequestState": {
+          "type": "string",
+          "enum": ["open", "closed", "all"],
+          "default": "open",
+          "description": "Pull request state to fetch in the Pull Requests view. Use 'all' to include closed and merged PRs, which can be slow for repositories with many PRs."
         }
       }
     }

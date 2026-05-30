@@ -141,6 +141,21 @@ export class PROverviewItem extends vscode.TreeItem {
 }
 
 type PRTreeElement = PRTreeItem | PRGroupItem | PRMessageItem | PRFileItem | PRLoadingItem | PROverviewItem;
+type PullRequestStateFilter = 'open' | 'closed' | 'all';
+
+const DEFAULT_PR_STATE_FILTER: PullRequestStateFilter = 'open';
+
+function getPullRequestStateFilter(): PullRequestStateFilter {
+  const configuredState = vscode.workspace
+    .getConfiguration('forgejo')
+    .get<string>('pullRequestState');
+
+  if (configuredState === 'open' || configuredState === 'closed' || configuredState === 'all') {
+    return configuredState;
+  }
+
+  return DEFAULT_PR_STATE_FILTER;
+}
 
 export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<PRTreeElement | undefined | null | void> = new vscode.EventEmitter<PRTreeElement | undefined | null | void>();
@@ -306,7 +321,8 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      this.pullRequests = await client.getPullRequests(config.owner, config.repo, 'all');
+      const state = getPullRequestStateFilter();
+      this.pullRequests = await client.getPullRequests(config.owner, config.repo, state);
       this.error = null;
       console.log(`[Forgejo] Fetched ${this.pullRequests.length} pull requests`);
     } catch (error) {
