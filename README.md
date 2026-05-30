@@ -24,9 +24,12 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ## News
 
-### 0.3.17
+### 0.3.18
 
 - **Forgejo activity bar icon ([#15](https://codeberg.org/maxking/forgejo-vscode/pulls/15)):** the Activity Bar now uses the Forgejo logo instead of the generic pull request icon. Thanks to [@maxking](https://codeberg.org/maxking).
+
+### 0.3.17
+
 - **Safer git remote detection ([#130](https://codeberg.org/maxking/forgejo-vscode/pulls/130)):** the extension now separates repository identity from instance resolution. HTTP(S) remotes still support zero-config detection, while SSH remotes no longer guess a Forgejo web/API URL from the git transport. If you're using SSH remotes with a self-hosted instance, configure the Forgejo instance explicitly for the most reliable matching.
 - **More secure token storage ([#129](https://codeberg.org/maxking/forgejo-vscode/pulls/129)):** personal access tokens are now stored in VS Code SecretStorage instead of settings.json.
 - **Better remote parsing for dotted repository names ([#124](https://codeberg.org/maxking/forgejo-vscode/pulls/124)):** repositories with dots in their names are now detected correctly from git remotes.
