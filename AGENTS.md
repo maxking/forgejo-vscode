@@ -1,5 +1,19 @@
 # Agent Instructions
 
+## Keep These Instructions Current
+
+When a review or bug reveals a recurring repo-specific issue, update `AGENTS.md` in the same change with a short, durable rule. Keep additions focused on patterns that are likely to stay true for this codebase.
+
+## Repo-Specific Coding Guidance
+
+- Prefer `ForgejoClient`/`forgejo-ts` methods, especially `rawRequest()`, over ad-hoc `fetch` calls so timeout, logging, auth headers, and proxy behavior stay consistent.
+- Do not perform speculative network requests during extension activation or provider construction; defer network work until the user invokes the feature.
+- When passing remote URLs to the Git extension, filter out missing or empty URL strings.
+- VS Code authentication providers must have both manifest contribution and runtime registration, and provider disposables should be pushed to `context.subscriptions`.
+- Authentication sessions should respect requested scopes when VS Code calls `getSessions(scopes)` or `createSession(scopes)`.
+- Configuration-change listeners can race with explicit create/remove flows; avoid double-firing auth/session events after awaited config updates.
+- Add focused unit tests for provider/session lifecycle behavior and race fixes.
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
