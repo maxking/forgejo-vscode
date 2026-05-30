@@ -76,4 +76,35 @@ describe('ForgejoAuthenticationProvider', () => {
 		await expect(provider.createSession(['read:user'])).rejects.toThrow('No Forgejo instance was added.');
 		provider.dispose();
 	});
+
+	it('removeSession does not fire twice if configuration listener already removed the session', async () => {
+		let configListener: ((event: { affectsConfiguration: (section: string) => boolean }) => void | Promise<void>) | undefined;
+		(vscode.workspace.onDidChangeConfiguration as jest.Mock).mockImplementation(listener => {
+			configListener = listener;
+			return { dispose: jest.fn() };
+		});
+		mockGetAllInstances
+			.mockResolvedValueOnce([
+				{ id: 'old', name: 'Old', instanceUrl: 'https://old.example', token: 'old-token' },
+			])
+			.mockResolvedValueOnce([]);
+		mockRemoveInstance.mockImplementation(async () => {
+			await configListener?.({ affectsConfiguration: section => section === 'forgejo.instances' });
+		});
+
+		const provider = new ForgejoAuthenticationProvider();
+		await provider.getSessions();
+		const listener = jest.fn();
+		provider.onDidChangeSessions(listener);
+
+		await provider.removeSession('old');
+
+		expect(listener).toHaveBeenCalledTimes(1);
+		expect(listener).toHaveBeenCalledWith({
+			added: [],
+			removed: [expect.objectContaining({ id: 'old' })],
+			changed: [],
+		});
+		provider.dispose();
+	});
 });

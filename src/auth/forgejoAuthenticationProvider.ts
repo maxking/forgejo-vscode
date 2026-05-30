@@ -90,7 +90,7 @@ export class ForgejoAuthenticationProvider implements vscode.AuthenticationProvi
 	async removeSession(sessionId: string): Promise<void> {
 		const session = this._knownSessions.find(s => s.id === sessionId);
 		await removeInstance(sessionId);
-		if (session) {
+		if (session && this._knownSessions.some(s => s.id === sessionId)) {
 			this._knownSessions = this._knownSessions.filter(s => s.id !== sessionId);
 			this._emitter.fire({ added: [], removed: [session], changed: [] });
 		}
