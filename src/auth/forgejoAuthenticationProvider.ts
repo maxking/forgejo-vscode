@@ -2,11 +2,17 @@ import * as vscode from 'vscode';
 import { getAllInstances, removeInstance } from '../utils/instanceHelpers';
 import { ForgejoInstance } from '../models/instance';
 
-function toSession(instance: ForgejoInstance): vscode.AuthenticationSession {
+const DEFAULT_SCOPES = ['api'];
+
+function normalizeScopes(scopes?: readonly string[]): string[] {
+	return scopes && scopes.length > 0 ? [...scopes] : DEFAULT_SCOPES;
+}
+
+function toSession(instance: ForgejoInstance, scopes?: readonly string[]): vscode.AuthenticationSession {
 	return {
 		id: instance.id,
 		accessToken: instance.token ?? '',
-		scopes: ['api'],
+		scopes: normalizeScopes(scopes),
 		account: {
 			id: instance.id,
 			label: `${instance.username ?? instance.name} - ${instance.instanceUrl}`,
@@ -51,14 +57,15 @@ export class ForgejoAuthenticationProvider implements vscode.AuthenticationProvi
 		}
 	}
 
-	async getSessions(): Promise<vscode.AuthenticationSession[]> {
+	async getSessions(scopes?: readonly string[]): Promise<vscode.AuthenticationSession[]> {
 		const instances = await getAllInstances();
-		const sessions = instances.filter(i => i.token).map(toSession);
-		this._knownSessions = sessions;
-		return sessions;
+		const sessionInstances = instances.filter(i => i.token);
+		const defaultSessions = sessionInstances.map(i => toSession(i));
+		this._knownSessions = defaultSessions;
+		return sessionInstances.map(i => toSession(i, scopes));
 	}
 
-	async createSession(): Promise<vscode.AuthenticationSession> {
+	async createSession(scopes: readonly string[] = DEFAULT_SCOPES): Promise<vscode.AuthenticationSession> {
 		const oldSessions = await this.getSessions();
 		const oldIds = new Set(oldSessions.map(s => s.id));
 
@@ -67,10 +74,11 @@ export class ForgejoAuthenticationProvider implements vscode.AuthenticationProvi
 		// The configuration-change listener may already have refreshed and fired.
 		const knownBeforeRefresh = this._knownSessions;
 		const newSessions = await this.getSessions();
-		const session = newSessions.find(s => !oldIds.has(s.id));
+		const defaultSession = newSessions.find(s => !oldIds.has(s.id));
 
-		if (!session) throw new Error('No Forgejo instance was added.');
+		if (!defaultSession) throw new Error('No Forgejo instance was added.');
 
+		const session = { ...defaultSession, scopes: normalizeScopes(scopes) };
 		const alreadyKnown = knownBeforeRefresh.some(s => s.id === session.id);
 		if (!alreadyKnown) {
 			this._emitter.fire({ added: [session], removed: [], changed: [] });

@@ -819,11 +819,13 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(listener);
   }
 
+  const authenticationProvider = new ForgejoAuthenticationProvider();
   context.subscriptions.push(
+    authenticationProvider,
     vscode.authentication.registerAuthenticationProvider(
       'forgejo',
       'Forgejo',
-      new ForgejoAuthenticationProvider(),
+      authenticationProvider,
       { supportsMultipleAccounts: true }
     )
   );

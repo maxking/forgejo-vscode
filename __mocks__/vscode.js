@@ -203,6 +203,7 @@ const workspace = {
     inspect: jest.fn()
   })),
   workspaceFolders: undefined,
+  onDidChangeConfiguration: jest.fn(() => ({ dispose: jest.fn() })),
   onDidOpenTextDocument: jest.fn(() => ({ dispose: jest.fn() })),
   onDidCloseTextDocument: jest.fn(() => ({ dispose: jest.fn() }))
 };
