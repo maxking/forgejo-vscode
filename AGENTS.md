@@ -18,6 +18,8 @@ When a review or bug reveals a recurring repo-specific issue, update `AGENTS.md`
 
 Before pushing, ask the user for confirmation unless they have explicitly requested a push/merge in the current task.
 
+Before merging any PR, ask the user for confirmation even if the PR appears ready.
+
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
 
 **MANDATORY WORKFLOW:**
