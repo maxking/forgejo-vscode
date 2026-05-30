@@ -44,6 +44,12 @@
         }
       }
     },
+    "authentication": [
+      {
+        "id": "forgejo",
+        "label": "Forgejo"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

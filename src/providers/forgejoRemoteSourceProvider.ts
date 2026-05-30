@@ -11,8 +11,6 @@ export class ForgejoRemoteSourceProvider implements RemoteSourceProvider {
 	constructor(instance: ForgejoInstance) {
 		this.name = `Forgejo (${instance.name})`;
 		this.#client = new ForgejoClient(instance.instanceUrl, instance.token ?? '');
-		// Pre-warm TLS connection so the first clone dialog open is instant
-		void this.#client.listUserRepos(undefined, 1);
 	}
 
 	async getRemoteSources(query?: string): Promise<RemoteSource[]> {
@@ -26,7 +24,7 @@ export class ForgejoRemoteSourceProvider implements RemoteSourceProvider {
 		return repos.map(repo => ({
 			name: `$(repo) ${repo.full_name}`,
 			description: repo.description || undefined,
-			url: [repo.ssh_url, repo.clone_url],
+			url: [repo.ssh_url, repo.clone_url].filter((url): url is string => typeof url === 'string' && url.length > 0),
 		}));
 	}
 }

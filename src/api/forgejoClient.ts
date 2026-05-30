@@ -26,20 +26,14 @@ export class ForgejoClient extends BaseClient {
 
   async listUserRepos(query?: string, limit = 10): Promise<RepositoryInfo[]> {
     try {
-      let url: string;
       if (query) {
         const params = new URLSearchParams({ q: query, limit: String(limit) });
-        url = `${this.vscodeInstanceUrl}/api/v1/repos/search?${params.toString()}`;
-      } else {
-        const params = new URLSearchParams({ sort: 'newest', limit: String(limit) });
-        url = `${this.vscodeInstanceUrl}/api/v1/user/repos?${params.toString()}`;
+        const data = await this.rawRequest<{ data?: RepositoryInfo[] }>('GET', `/repos/search?${params.toString()}`);
+        return data.data ?? [];
       }
-      const response = await fetch(url, {
-        headers: { Authorization: `token ${this.vscodeToken}` },
-      });
-      if (!response.ok) return [];
-      const data = await response.json() as { data?: RepositoryInfo[] } | RepositoryInfo[];
-      return Array.isArray(data) ? data : (data.data ?? []);
+
+      const params = new URLSearchParams({ sort: 'newest', limit: String(limit) });
+      return await this.rawRequest<RepositoryInfo[]>('GET', `/user/repos?${params.toString()}`);
     } catch {
       return [];
     }

@@ -26,6 +26,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ### 0.3.18
 
+- **Forgejo authentication provider ([#16](https://codeberg.org/maxking/forgejo-vscode/pulls/16)):** configured Forgejo instances are now exposed through VS Code's Authentication API for better account/session integration. Thanks to [@maxking](https://codeberg.org/maxking).
 - **Clone from Forgejo ([#18](https://codeberg.org/maxking/forgejo-vscode/pulls/18)):** Forgejo repositories now appear in VS Code's built-in Git clone flow via a remote source provider, with bounded repository lookups across configured instances. Thanks to [@excubitor](https://codeberg.org/excubitor).
 - **Faster PR loading for large repositories ([#20](https://codeberg.org/maxking/forgejo-vscode/issues/20)):** the Pull Requests view now fetches open PRs first and lazy-loads merged/closed PRs only when those groups are expanded, avoiding long startup fetches on repositories with thousands of historical PRs.
 - **Forgejo activity bar icon ([#15](https://codeberg.org/maxking/forgejo-vscode/pulls/15)):** the Activity Bar now uses the Forgejo logo instead of the generic pull request icon. Thanks to [@maxking](https://codeberg.org/maxking).
