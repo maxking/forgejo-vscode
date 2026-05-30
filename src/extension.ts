@@ -52,7 +52,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const releaseTreeProvider = new ReleaseTreeProvider();
 
   // Late-bound so addInstance/manageInstances can trigger a re-registration
-  let refreshRemoteSourceProviders: () => Promise<void> = async () => {};
+  let refreshRemoteSourceProviders: () => Promise<void> = () => Promise.resolve();
 
   // Helper to update the context key for viewsWelcome
   async function updateNoInstanceContext() {
@@ -771,7 +771,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let gitExtension: import('./types/git').GitExtension | undefined;
   try {
-    const ext = vscode.extensions.getExtension('vscode.git');
+    const ext = vscode.extensions.getExtension<import('./types/git').GitExtension>('vscode.git');
     gitExtension = await ext?.activate();
   } catch {
     logInfo('Git extension not available, clone feature disabled');
