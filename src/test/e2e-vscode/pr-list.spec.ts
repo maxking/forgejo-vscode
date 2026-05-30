@@ -97,3 +97,122 @@ test.describe('Pull Request List', () => {
     console.log('PR groups found:', foundGroups);
   });
 });
+
+test.describe('Pull Request lazy loading', () => {
+  test.use({ baseDir: PROJECT_ROOT });
+  test.setTimeout(60_000);
+
+  test.afterEach(async ({ evaluateInVSCode }) => {
+    await evaluateInVSCode(() => {
+      const globals = globalThis as typeof globalThis & { __forgejoOriginalFetch?: typeof fetch };
+      if (globals.__forgejoOriginalFetch) {
+        globalThis.fetch = globals.__forgejoOriginalFetch;
+        delete globals.__forgejoOriginalFetch;
+      }
+    });
+  });
+
+  test('fetches open PRs initially and closed PRs only when Merged/Closed is expanded', async ({ harness, evaluateInVSCode, workbox }) => {
+    await harness.waitForExtensionActivation();
+
+    await evaluateInVSCode(async (vscode) => {
+      const config = vscode.workspace.getConfiguration('forgejo');
+      await config.update('instances', [{
+        id: 'test-forgejo-mocked',
+        name: 'Forgejo Mocked',
+        instanceUrl: 'https://codeberg.org',
+        token: '',
+        isDefault: true,
+      }], vscode.ConfigurationTarget.Global);
+    });
+
+    await evaluateInVSCode(() => {
+      type FetchGlobals = typeof globalThis & {
+        __forgejoOriginalFetch?: typeof fetch;
+        __forgejoFetchCalls?: string[];
+      };
+      const globals = globalThis as FetchGlobals;
+      globals.__forgejoOriginalFetch ??= globalThis.fetch;
+      globals.__forgejoFetchCalls = [];
+
+      globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        globals.__forgejoFetchCalls?.push(url);
+
+        if (url.includes('/api/v1/repos/maxking/forgejo-vscode/pulls')) {
+          const parsed = new URL(url);
+          const state = parsed.searchParams.get('state');
+          if (state === 'open') {
+            return new Response(JSON.stringify([{
+              number: 101,
+              title: 'Open PR from mock',
+              state: 'open',
+              user: { login: 'alice' },
+              html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/101',
+              created_at: '2026-01-01T00:00:00Z',
+              merged: false,
+              draft: false,
+              comments: 0,
+            }]), { status: 200, headers: { 'content-type': 'application/json' } });
+          }
+          if (state === 'closed') {
+            return new Response(JSON.stringify([{
+              number: 201,
+              title: 'Merged PR from mock',
+              state: 'closed',
+              user: { login: 'bob' },
+              html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/201',
+              created_at: '2026-01-02T00:00:00Z',
+              merged: true,
+              draft: false,
+              comments: 0,
+            }, {
+              number: 202,
+              title: 'Closed PR from mock',
+              state: 'closed',
+              user: { login: 'carol' },
+              html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/202',
+              created_at: '2026-01-03T00:00:00Z',
+              merged: false,
+              draft: false,
+              comments: 0,
+            }]), { status: 200, headers: { 'content-type': 'application/json' } });
+          }
+        }
+
+        return new Response(JSON.stringify({ message: `Unexpected URL: ${url}` }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        });
+      };
+    });
+
+    await harness.openForgejoSidebar();
+    await evaluateInVSCode(async (vscode) => {
+      await vscode.commands.executeCommand('forgejoPullRequests.focus');
+      await vscode.commands.executeCommand('forgejo.refreshPullRequests');
+    });
+
+    await expect(workbox.locator('.monaco-list-row', { hasText: /^Open/ }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(workbox.locator('.monaco-list-row', { hasText: /^Merged/ }).first()).toBeVisible();
+    await expect(workbox.locator('.monaco-list-row', { hasText: /^Closed/ }).first()).toBeVisible();
+
+    let calls = await evaluateInVSCode(() => {
+      const globals = globalThis as typeof globalThis & { __forgejoFetchCalls?: string[] };
+      return globals.__forgejoFetchCalls ?? [];
+    });
+    const prListCallsBeforeExpand = calls.filter(url => url.includes('/pulls'));
+    expect(prListCallsBeforeExpand.some(url => url.includes('state=open'))).toBe(true);
+    expect(prListCallsBeforeExpand.some(url => url.includes('state=closed'))).toBe(false);
+
+    await workbox.locator('.monaco-list-row', { hasText: /^Closed/ }).first().click();
+    await expect(workbox.locator('.monaco-list-row', { hasText: /#202: Closed PR from mock/ }).first()).toBeVisible({ timeout: 30_000 });
+
+    calls = await evaluateInVSCode(() => {
+      const globals = globalThis as typeof globalThis & { __forgejoFetchCalls?: string[] };
+      return globals.__forgejoFetchCalls ?? [];
+    });
+    const prListCallsAfterExpand = calls.filter(url => url.includes('/pulls'));
+    expect(prListCallsAfterExpand.some(url => url.includes('state=closed'))).toBe(true);
+  });
+});
