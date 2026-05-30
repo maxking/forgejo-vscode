@@ -28,6 +28,41 @@ describe('ForgejoClient', () => {
     mockFetch.mockClear();
   });
 
+  describe('getPullRequestCount', () => {
+    test('should read pull request count from x-total-count header', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: jest.fn(() => '123') },
+        json: async () => []
+      } as unknown as Response);
+
+      const count = await client.getPullRequestCount('owner', 'repo', 'closed');
+
+      expect(count).toBe(123);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/pulls?state=closed&page=1&limit=1',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Accept: 'application/json',
+            Authorization: 'token test-token'
+          })
+        })
+      );
+    });
+
+    test('should return null when count header is missing', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: jest.fn(() => null) },
+        json: async () => []
+      } as unknown as Response);
+
+      await expect(client.getPullRequestCount('owner', 'repo', 'closed')).resolves.toBeNull();
+    });
+  });
+
   describe('getPullRequestFiles', () => {
     test('should fetch pull request files successfully', async () => {
       mockFetch.mockResolvedValueOnce({

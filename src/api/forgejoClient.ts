@@ -16,14 +16,38 @@ import {
 import { vscodeLogger } from '../utils/forgejoLoggerAdapter';
 
 export class ForgejoClient extends BaseClient {
-  constructor(instanceUrl: string, token = '') {
-    super({ instanceUrl, token, logger: vscodeLogger });
+  constructor(
+    private readonly vscodeInstanceUrl: string,
+    private readonly vscodeToken = ''
+  ) {
+    super({ instanceUrl: vscodeInstanceUrl, token: vscodeToken, logger: vscodeLogger });
   }
 
   // Legacy method aliases for backward compatibility
 
   async getPullRequests(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<PullRequestListItem[]> {
     return this.listPullRequests(owner, repo, state);
+  }
+
+  async getPullRequestCount(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<number | null> {
+    const response = await fetch(`${this.vscodeInstanceUrl}/api/v1/repos/${owner}/${repo}/pulls?state=${state}&page=1&limit=1`, {
+      headers: {
+        Accept: 'application/json',
+        ...(this.vscodeToken ? { Authorization: `token ${this.vscodeToken}` } : {})
+      }
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const totalCount = response.headers.get('x-total-count');
+    if (!totalCount) {
+      return null;
+    }
+
+    const parsedCount = Number.parseInt(totalCount, 10);
+    return Number.isNaN(parsedCount) ? null : parsedCount;
   }
 
   async getPullRequestDetails(owner: string, repo: string, number: number): Promise<PullRequest> {
