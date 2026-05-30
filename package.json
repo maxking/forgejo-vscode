@@ -49,7 +49,7 @@
         {
           "id": "forgejoExplorer",
           "title": "Forgejo",
-          "icon": "$(forgejo-logo)"
+          "icon": "./assets/icons/forgejo-logo.svg"
         }
       ]
     },
