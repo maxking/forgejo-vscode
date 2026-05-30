@@ -16,6 +16,8 @@ When a review or bug reveals a recurring repo-specific issue, update `AGENTS.md`
 
 ## Landing the Plane (Session Completion)
 
+Before pushing, ask the user for confirmation unless they have explicitly requested a push/merge in the current task.
+
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
 
 **MANDATORY WORKFLOW:**
