@@ -59,13 +59,23 @@ export class ForgejoAuthenticationProvider implements vscode.AuthenticationProvi
 	}
 
 	async createSession(): Promise<vscode.AuthenticationSession> {
+		const oldSessions = await this.getSessions();
+		const oldIds = new Set(oldSessions.map(s => s.id));
+
 		await vscode.commands.executeCommand('forgejo.addInstance');
-		const instances = await getAllInstances();
-		const newest = instances.at(-1);
-		if (!newest?.token) throw new Error('No Forgejo instance was added.');
-		const session = toSession(newest);
-		this._knownSessions = [...this._knownSessions, session];
-		this._emitter.fire({ added: [session], removed: [], changed: [] });
+
+		// The configuration-change listener may already have refreshed and fired.
+		const knownBeforeRefresh = this._knownSessions;
+		const newSessions = await this.getSessions();
+		const session = newSessions.find(s => !oldIds.has(s.id));
+
+		if (!session) throw new Error('No Forgejo instance was added.');
+
+		const alreadyKnown = knownBeforeRefresh.some(s => s.id === session.id);
+		if (!alreadyKnown) {
+			this._emitter.fire({ added: [session], removed: [], changed: [] });
+		}
+
 		return session;
 	}
 
