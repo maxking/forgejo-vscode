@@ -75,21 +75,19 @@ test.describe('Pull Request List', () => {
     return labels;
   }
 
-  test('should display pull request groups with counts', async ({ harness, workbox }) => {
-    // Poll until PR group rows appear
-    // Group labels include the count suffix, e.g. "Open4" or "Merged 26"
-    const prGroupPattern = /^(Open|Merged|Closed|Draft)\s*\d+$/;
+  test('should display pull request groups and lazy historical placeholders', async ({ harness, workbox }) => {
+    // Poll until any PR group row appears. Open/Draft groups include counts;
+    // Merged/Closed may initially be lazy placeholders without counts.
+    const prGroupPattern = /^(Open|Merged|Closed|Draft)\s*\d*$/;
     const labels = await waitForTreeRowsMatching(workbox, prGroupPattern);
 
     await harness.captureScreenshot('pr-list');
     console.log('PR tree items:', labels);
 
-    // The tree should show at least one PR state group (Open, Merged, Closed, Draft)
     const foundGroups = labels.filter(label => prGroupPattern.test(label));
     expect(foundGroups.length).toBeGreaterThan(0);
 
-    // Each group should report at least 1 PR
-    for (const group of foundGroups) {
+    for (const group of foundGroups.filter(group => /\d+$/.test(group))) {
       const count = parseInt(group.replace(/^(Open|Merged|Closed|Draft)\s*/, ''), 10);
       expect(count).toBeGreaterThan(0);
     }
@@ -135,52 +133,59 @@ test.describe('Pull Request lazy loading', () => {
       globals.__forgejoOriginalFetch ??= globalThis.fetch;
       globals.__forgejoFetchCalls = [];
 
-      globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-        globals.__forgejoFetchCalls?.push(url);
 
-        if (url.includes('/api/v1/repos/maxking/forgejo-vscode/pulls')) {
-          const parsed = new URL(url);
-          const state = parsed.searchParams.get('state');
-          if (state === 'open') {
-            return new Response(JSON.stringify([{
-              number: 101,
-              title: 'Open PR from mock',
-              state: 'open',
-              user: { login: 'alice' },
-              html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/101',
-              created_at: '2026-01-01T00:00:00Z',
-              merged: false,
-              draft: false,
-              comments: 0,
-            }]), { status: 200, headers: { 'content-type': 'application/json' } });
-          }
-          if (state === 'closed') {
-            return new Response(JSON.stringify([{
-              number: 201,
-              title: 'Merged PR from mock',
-              state: 'closed',
-              user: { login: 'bob' },
-              html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/201',
-              created_at: '2026-01-02T00:00:00Z',
-              merged: true,
-              draft: false,
-              comments: 0,
-            }, {
-              number: 202,
-              title: 'Closed PR from mock',
-              state: 'closed',
-              user: { login: 'carol' },
-              html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/202',
-              created_at: '2026-01-03T00:00:00Z',
-              merged: false,
-              draft: false,
-              comments: 0,
-            }]), { status: 200, headers: { 'content-type': 'application/json' } });
-          }
+        if (!url.includes('/api/v1/repos/maxking/forgejo-vscode/pulls')) {
+          return globals.__forgejoOriginalFetch!(input, init);
         }
 
-        return new Response(JSON.stringify({ message: `Unexpected URL: ${url}` }), {
+        globals.__forgejoFetchCalls?.push(url);
+        const parsed = new URL(url);
+        const state = parsed.searchParams.get('state');
+        const limit = parsed.searchParams.get('limit');
+
+        if (state === 'open') {
+          return new Response(JSON.stringify([{
+            number: 101,
+            title: 'Open PR from mock',
+            state: 'open',
+            user: { login: 'alice' },
+            html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/101',
+            created_at: '2026-01-01T00:00:00Z',
+            merged: false,
+            draft: false,
+            comments: 0,
+          }]), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '1' } });
+        }
+        if (state === 'closed' && limit === '1') {
+          return new Response(JSON.stringify([{}]), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '2' } });
+        }
+        if (state === 'closed') {
+          return new Response(JSON.stringify([{
+            number: 201,
+            title: 'Merged PR from mock',
+            state: 'closed',
+            user: { login: 'bob' },
+            html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/201',
+            created_at: '2026-01-02T00:00:00Z',
+            merged: true,
+            draft: false,
+            comments: 0,
+          }, {
+            number: 202,
+            title: 'Closed PR from mock',
+            state: 'closed',
+            user: { login: 'carol' },
+            html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/202',
+            created_at: '2026-01-03T00:00:00Z',
+            merged: false,
+            draft: false,
+            comments: 0,
+          }]), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '2' } });
+        }
+
+        return new Response(JSON.stringify({ message: `Unexpected PR URL: ${url}` }), {
           status: 404,
           headers: { 'content-type': 'application/json' },
         });
@@ -203,7 +208,8 @@ test.describe('Pull Request lazy loading', () => {
     });
     const prListCallsBeforeExpand = calls.filter(url => url.includes('/pulls'));
     expect(prListCallsBeforeExpand.some(url => url.includes('state=open'))).toBe(true);
-    expect(prListCallsBeforeExpand.some(url => url.includes('state=closed'))).toBe(false);
+    expect(prListCallsBeforeExpand.some(url => url.includes('state=closed') && url.includes('limit=1'))).toBe(true);
+    expect(prListCallsBeforeExpand.some(url => url.includes('state=closed') && !url.includes('limit=1'))).toBe(false);
 
     await workbox.locator('.monaco-list-row', { hasText: /^Closed/ }).first().click();
     await expect(workbox.locator('.monaco-list-row', { hasText: /#202: Closed PR from mock/ }).first()).toBeVisible({ timeout: 30_000 });
@@ -213,6 +219,6 @@ test.describe('Pull Request lazy loading', () => {
       return globals.__forgejoFetchCalls ?? [];
     });
     const prListCallsAfterExpand = calls.filter(url => url.includes('/pulls'));
-    expect(prListCallsAfterExpand.some(url => url.includes('state=closed'))).toBe(true);
+    expect(prListCallsAfterExpand.some(url => url.includes('state=closed') && !url.includes('limit=1'))).toBe(true);
   });
 });

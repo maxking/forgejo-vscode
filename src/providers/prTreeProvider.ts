@@ -50,7 +50,7 @@ class PRGroupItem extends vscode.TreeItem {
       ? vscode.TreeItemCollapsibleState.Collapsed
       : vscode.TreeItemCollapsibleState.Expanded;
     super(label, collapsibleState);
-    this.description = pullRequests ? `${pullRequests.length}` : 'Load on expand';
+    this.description = pullRequests ? `${pullRequests.length}` : undefined;
     this.contextValue = 'prGroup';
   }
 }
@@ -151,6 +151,8 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
   private pullRequests: PullRequestListItem[] = [];
   private closedPullRequests: PullRequestListItem[] | null = null;
+  private closedPullRequestsPromise: Promise<PullRequestListItem[]> | null = null;
+  private closedPullRequestCount: number | null = null;
   private error: string | null = null;
 
   constructor() {
@@ -159,6 +161,8 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
   refresh(): void {
     this.closedPullRequests = null;
+    this.closedPullRequestsPromise = null;
+    this.closedPullRequestCount = null;
     this._onDidChangeTreeData.fire();
   }
 
@@ -192,8 +196,15 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
           groups.push(new PRGroupItem('Draft', 'draft', draftPRs));
         }
 
-        groups.push(new PRGroupItem('Merged', 'merged', null));
-        groups.push(new PRGroupItem('Closed', 'closed', null));
+        const closedPullRequestCount = await this.fetchClosedPullRequestCount();
+        if (closedPullRequestCount === null || closedPullRequestCount > 0) {
+          groups.push(new PRGroupItem('Merged', 'merged', null));
+          groups.push(new PRGroupItem('Closed', 'closed', null));
+        }
+
+        if (groups.length === 0) {
+          return [new PRMessageItem('No pull requests found', false)];
+        }
 
         return groups;
       } catch (error) {
@@ -209,6 +220,8 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
       try {
         const pullRequests = await this.getPullRequestsForGroup(element);
+        element.description = `${pullRequests.length}`;
+        this._onDidChangeTreeData.fire(element);
         if (pullRequests.length === 0) {
           return [new PRMessageItem(`No ${element.label.toLowerCase()} pull requests found`, false)];
         }
@@ -345,7 +358,20 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     if (this.closedPullRequests) {
       return this.closedPullRequests;
     }
+    if (this.closedPullRequestsPromise) {
+      return this.closedPullRequestsPromise;
+    }
 
+    this.closedPullRequestsPromise = this.fetchClosedPullRequestsUncached();
+    try {
+      this.closedPullRequests = await this.closedPullRequestsPromise;
+      return this.closedPullRequests;
+    } finally {
+      this.closedPullRequestsPromise = null;
+    }
+  }
+
+  private async fetchClosedPullRequestsUncached(): Promise<PullRequestListItem[]> {
     console.log('[Forgejo] Fetching closed pull requests...');
     const config = await getForgejoConfig();
 
@@ -355,12 +381,32 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      this.closedPullRequests = await client.getPullRequests(config.owner, config.repo, 'closed');
-      console.log(`[Forgejo] Fetched ${this.closedPullRequests.length} closed pull requests`);
-      return this.closedPullRequests;
+      const closedPullRequests = await client.getPullRequests(config.owner, config.repo, 'closed');
+      console.log(`[Forgejo] Fetched ${closedPullRequests.length} closed pull requests`);
+      return closedPullRequests;
     } catch (error) {
       console.error('[Forgejo] Error fetching closed PRs:', error);
       throw error;
+    }
+  }
+
+  private async fetchClosedPullRequestCount(): Promise<number | null> {
+    if (this.closedPullRequestCount !== null) {
+      return this.closedPullRequestCount;
+    }
+
+    const config = await getForgejoConfig();
+    if (!config) {
+      return null;
+    }
+
+    try {
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      this.closedPullRequestCount = await client.getPullRequestCount(config.owner, config.repo, 'closed');
+      return this.closedPullRequestCount;
+    } catch (error) {
+      console.warn('[Forgejo] Could not fetch closed PR count:', error);
+      return null;
     }
   }
 }

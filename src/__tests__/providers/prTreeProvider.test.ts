@@ -38,6 +38,7 @@ describe('PRTreeProvider', () => {
     // Create mock client
     mockClient = {
       getPullRequests: jest.fn(),
+      getPullRequestCount: jest.fn(),
       getPullRequestFiles: jest.fn(),
       getPullRequestRefs: jest.fn()
     } as any;
@@ -54,6 +55,7 @@ describe('PRTreeProvider', () => {
 
     // Create provider (it calls refresh in constructor, so mock needs to be set up first)
     mockClient.getPullRequests.mockResolvedValue([mockPR]);
+    mockClient.getPullRequestCount.mockResolvedValue(null);
     provider = new PRTreeProvider();
 
     jest.clearAllMocks();
@@ -372,6 +374,7 @@ describe('PRTreeProvider', () => {
 
     test('should include lazy Merged and Closed groups without fetching closed PRs initially', async () => {
       mockClient.getPullRequests.mockResolvedValue([mockPR]);
+      mockClient.getPullRequestCount.mockResolvedValue(2);
 
       const children = await provider.getChildren();
 
@@ -403,12 +406,24 @@ describe('PRTreeProvider', () => {
       expect((children[0] as any).isError).toBe(true);
     });
 
-    test('should show lazy historical groups when no open pull requests exist', async () => {
+    test('should show lazy historical groups when closed count is unavailable and no open pull requests exist', async () => {
       mockClient.getPullRequests.mockResolvedValue([]);
+      mockClient.getPullRequestCount.mockResolvedValue(null);
 
       const children = await provider.getChildren();
 
       expect(children.map(child => (child as any).label)).toEqual(['Merged', 'Closed']);
+    });
+
+    test('should not show lazy historical groups when closed count is zero and no open pull requests exist', async () => {
+      mockClient.getPullRequests.mockResolvedValue([]);
+      mockClient.getPullRequestCount.mockResolvedValue(0);
+
+      const children = await provider.getChildren();
+
+      expect(children.length).toBe(1);
+      expect((children[0] as any).message).toBe('No pull requests found');
+      expect((children[0] as any).isError).toBe(false);
     });
 
     test('should return error message on fetch failure', async () => {
@@ -482,6 +497,28 @@ describe('PRTreeProvider', () => {
       expect(mockClient.getPullRequests).toHaveBeenCalledTimes(2);
       expect(closedItems.length).toBe(1);
       expect((closedItems[0] as PRTreeItem).pr.number).toBe(3);
+      expect((closedGroup as any).description).toBe('1');
+    });
+
+    test('should reuse in-flight closed PR request during simultaneous expansion', async () => {
+      const mergedPR: PullRequestListItem = { ...mockPR, number: 2, state: 'closed', merged: true, draft: false };
+      const closedPR: PullRequestListItem = { ...mockPR, number: 3, state: 'closed', merged: false, draft: false };
+      mockClient.getPullRequests
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([mergedPR, closedPR]);
+
+      const groups = await provider.getChildren();
+      const mergedGroup = groups.find(group => (group as any).label === 'Merged');
+      const closedGroup = groups.find(group => (group as any).label === 'Closed');
+
+      const [mergedItems, closedItems] = await Promise.all([
+        provider.getChildren(mergedGroup),
+        provider.getChildren(closedGroup)
+      ]);
+
+      expect(mockClient.getPullRequests).toHaveBeenCalledTimes(2);
+      expect(mergedItems.length).toBe(1);
+      expect(closedItems.length).toBe(1);
     });
   });
 
