@@ -73,14 +73,16 @@ code --install-extension forgejo-vscode-0.1.0.vsix --force
 ## Starting Work (Always Create Worktree)
 
 **Before writing any code**, ask the user:
-> "Would you like me to create a new worktree for this work? If yes, what branch name should I use?"
+> "Would you like me to create a new worktree for this work?"
+
+If the user says yes but does not provide a branch name, choose a concise, relevant branch name yourself instead of asking a follow-up question.
 
 **Worktree Location:** `.worktrees/<branch-name>/`
 
 **Command sequence:**
 ```bash
-# Ask user for branch name based on feature
-# Example: user says "feature-auth-fix"
+# Use a concise branch name based on the work if the user does not provide one.
+# Example branch: feature-auth-fix
 mkdir -p .worktrees
 git worktree add .worktrees/feature-auth-fix -b feature-auth-fix
 cd .worktrees/feature-auth-fix
