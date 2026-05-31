@@ -155,10 +155,16 @@ jobs:
         VERSION=${VERSION#v}
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-        # Detect pre-release versions (alpha, beta, rc)
-        if echo "$VERSION" | grep -qE '-(alpha|beta|rc)([.-]|$)'; then
+        # VS Marketplace pre-release extensions still require a stable semver
+        # package.json version (for example, tag v0.3.18-beta.1 publishes
+        # package version 0.3.18 with the --pre-release flag).
+        MARKETPLACE_VERSION=${VERSION%%-*}
+        echo "marketplace_version=$MARKETPLACE_VERSION" >> $GITHUB_OUTPUT
+
+        # Detect semver pre-release versions (alpha, beta, rc, etc.).
+        if [ "$VERSION" != "$MARKETPLACE_VERSION" ]; then
           echo "is_prerelease=true" >> $GITHUB_OUTPUT
-          echo "Publishing pre-release version: $VERSION"
+          echo "Publishing pre-release version: $VERSION as registry version: $MARKETPLACE_VERSION"
         else
           echo "is_prerelease=false" >> $GITHUB_OUTPUT
           echo "Publishing stable version: $VERSION"
@@ -173,6 +179,12 @@ jobs:
           exit 1
         fi
         echo "Version verified: $PACKAGE_VERSION"
+
+    - name: Normalize pre-release version for extension registries
+      if: steps.get_version.outputs.is_prerelease == 'true'
+      run: |
+        npm version "${{ steps.get_version.outputs.marketplace_version }}" --no-git-tag-version --allow-same-version
+        echo "Using package.json version ${{ steps.get_version.outputs.marketplace_version }} for pre-release registry publishing"
 
     - name: Package extension
       run: npm run package
@@ -203,8 +215,8 @@ jobs:
           echo "Publishing to Open VSX as stable release..."
           ovsx publish "$OVSX_VSIX" -p $OVSX_PAT
         fi
-        # Restore original publisher
-        git checkout package.json
+        # Restore original package metadata changed during pre-release normalization/package steps.
+        git checkout package.json package-lock.json
 
     - name: Upload VSIX artifact
       uses: actions/upload-artifact@v3
