@@ -39,7 +39,7 @@ async function collectInputs(folderName: string) {
 		title: 'Publish to Forgejo',
 		prompt: 'Repository name',
 		value: folderName,
-		validateInput: v => (v?.trim() ? null : 'Name is required'),
+		validateInput: v => (v.trim() ? null : 'Name is required'),
 	});
 	if (!repoName) return undefined;
 
