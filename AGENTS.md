@@ -13,6 +13,7 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - Authentication sessions should respect requested scopes when VS Code calls `getSessions(scopes)` or `createSession(scopes)`.
 - Configuration-change listeners can race with explicit create/remove flows; avoid double-firing auth/session events after awaited config updates by checking the in-memory cache (e.g. `_knownSessions`) before emitting.
 - Add focused unit tests for provider/session lifecycle behavior and race fixes.
+- Git remote source providers should set `icon` to the contributed Forgejo icon id (`forgejo-logo`) so VS Code/Cursor clone pickers show the branded provider icon.
 
 ## Landing the Plane (Session Completion)
 
