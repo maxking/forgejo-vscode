@@ -4,6 +4,7 @@ import type { RemoteSource, RemoteSourceProvider } from '../types/git';
 
 export class ForgejoRemoteSourceProvider implements RemoteSourceProvider {
 	readonly name: string;
+	readonly icon = 'forgejo-logo';
 	readonly supportsQuery = true;
 
 	readonly #client: ForgejoClient;

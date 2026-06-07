@@ -24,6 +24,10 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ## News
 
+### 0.3.19
+
+- **Forgejo clone picker icon:** the built-in Git clone source picker now shows the Forgejo logo next to configured Forgejo repository sources.
+
 ### 0.3.18
 
 - **Forgejo authentication provider ([#16](https://codeberg.org/maxking/forgejo-vscode/pulls/16)):** configured Forgejo instances are now exposed through VS Code's Authentication API for better account/session integration. Thanks to [@excubitor](https://codeberg.org/excubitor).
