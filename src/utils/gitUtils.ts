@@ -106,6 +106,26 @@ function parseGitRepositories(git: ReturnType<GitExtension['getAPI']>, remoteNam
     .filter((info): info is GitRepositoryRemoteInfo => info !== null);
 }
 
+async function waitForGitRepositoryDiscovery(git: ReturnType<GitExtension['getAPI']>, timeoutMs = 5000): Promise<void> {
+  if (git.repositories.length > 0) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const state: { disposable?: vscode.Disposable } = {};
+    const timeout = setTimeout(() => {
+      state.disposable?.dispose();
+      resolve();
+    }, timeoutMs);
+
+    state.disposable = git.onDidOpenRepository(() => {
+      clearTimeout(timeout);
+      state.disposable?.dispose();
+      resolve();
+    });
+  });
+}
+
 export function detectGitRepositories(remoteName?: string): GitRepositoryRemoteInfo[] {
   const git = getGitExtensionApi();
   return git ? parseGitRepositories(git, remoteName) : [];
@@ -114,6 +134,7 @@ export function detectGitRepositories(remoteName?: string): GitRepositoryRemoteI
 export async function detectGitRepositoriesAsync(remoteName?: string): Promise<GitRepositoryRemoteInfo[]> {
   const activeGit = getGitExtensionApi();
   if (activeGit) {
+    await waitForGitRepositoryDiscovery(activeGit);
     return parseGitRepositories(activeGit, remoteName);
   }
 
@@ -127,7 +148,9 @@ export async function detectGitRepositoriesAsync(remoteName?: string): Promise<G
     if (!gitExtension?.enabled) {
       return [];
     }
-    return parseGitRepositories(gitExtension.getAPI(1), remoteName);
+    const git = gitExtension.getAPI(1);
+    await waitForGitRepositoryDiscovery(git);
+    return parseGitRepositories(git, remoteName);
   } catch (error) {
     console.log('[Forgejo] Git extension activation failed:', error instanceof Error ? error.message : error);
     return [];
