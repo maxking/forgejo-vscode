@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { detectGitRemote, detectGitRepositories, GitRemoteInfo } from './gitUtils';
+import { detectGitRemote, detectGitRepositoriesAsync, GitRemoteInfo } from './gitUtils';
 import { ForgejoInstance } from '../models/instance';
 import {
 	getAllInstances,
@@ -120,7 +120,7 @@ export async function getForgejoRepositoryConfigs(): Promise<ForgejoRepositoryCo
 	const forgejoSettings = vscode.workspace.getConfiguration('forgejo');
 	const preferredRemote = forgejoSettings.get<string>('preferredRemote', '');
 	const autoDetectFromRemote = forgejoSettings.get<boolean>('autoDetectFromRemote') !== false;
-	const gitInfos = detectGitRepositories(preferredRemote || undefined);
+	const gitInfos = await detectGitRepositoriesAsync(preferredRemote || undefined);
 	const configs = new Map<string, ForgejoRepositoryConfig>();
 
 	for (const gitInfo of gitInfos) {

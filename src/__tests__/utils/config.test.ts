@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
-import { detectGitRemote, detectGitRepositories } from '../../utils/gitUtils';
+import { detectGitRemote, detectGitRepositoriesAsync } from '../../utils/gitUtils';
 
 // Mock gitUtils
 jest.mock('../../utils/gitUtils');
@@ -26,6 +26,7 @@ const mockConfig = (instances: any[], options: MockConfigOptions = {}) => {
 describe('config', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        (detectGitRepositoriesAsync as jest.Mock).mockResolvedValue([]);
     });
 
     describe('getForgejoConfig', () => {
@@ -221,7 +222,7 @@ describe('config', () => {
         it('should deduplicate multiple worktrees pointing at the same Forgejo repository', async () => {
             mockConfig(mockInstances);
             (detectGitRemote as jest.Mock).mockReturnValue(null);
-            (detectGitRepositories as jest.Mock).mockReturnValue([
+            (detectGitRepositoriesAsync as jest.Mock).mockResolvedValue([
                 {
                     instanceUrl: 'https://codeberg.org',
                     remoteHost: 'codeberg.org',

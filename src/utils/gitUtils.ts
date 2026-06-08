@@ -36,13 +36,23 @@ function remoteUrl(remote: Remote): string | undefined {
   return urls.find((url): url is string => typeof url === 'string' && url.length > 0);
 }
 
+interface VSCodeExtension<T> {
+  exports?: T;
+  isActive: boolean;
+  activate(): Promise<T>;
+}
+
 interface VSCodeExtensionsApi {
-  getExtension<T>(extensionId: string): { exports?: T; isActive: boolean } | undefined;
+  getExtension<T>(extensionId: string): VSCodeExtension<T> | undefined;
+}
+
+function getGitExtension(): VSCodeExtension<GitExtension> | undefined {
+  const extensions = (vscode as unknown as { extensions?: VSCodeExtensionsApi }).extensions;
+  return extensions?.getExtension<GitExtension>('vscode.git');
 }
 
 function getGitExtensionApi(): ReturnType<GitExtension['getAPI']> | null {
-  const extensions = (vscode as unknown as { extensions?: VSCodeExtensionsApi }).extensions;
-  const extension = extensions?.getExtension<GitExtension>('vscode.git');
+  const extension = getGitExtension();
   const gitExtension = extension?.exports;
 
   if (!extension?.isActive || !gitExtension?.enabled) {
@@ -90,15 +100,38 @@ function detectGitRemoteFromGitExtension(remoteName?: string): GitRemoteInfo | n
   return parseRepositoryRemote(repository, remoteName);
 }
 
-export function detectGitRepositories(remoteName?: string): GitRepositoryRemoteInfo[] {
-  const git = getGitExtensionApi();
-  if (!git) {
-    return [];
-  }
-
+function parseGitRepositories(git: ReturnType<GitExtension['getAPI']>, remoteName?: string): GitRepositoryRemoteInfo[] {
   return git.repositories
     .map(repository => parseRepositoryRemote(repository, remoteName))
     .filter((info): info is GitRepositoryRemoteInfo => info !== null);
+}
+
+export function detectGitRepositories(remoteName?: string): GitRepositoryRemoteInfo[] {
+  const git = getGitExtensionApi();
+  return git ? parseGitRepositories(git, remoteName) : [];
+}
+
+export async function detectGitRepositoriesAsync(remoteName?: string): Promise<GitRepositoryRemoteInfo[]> {
+  const activeGit = getGitExtensionApi();
+  if (activeGit) {
+    return parseGitRepositories(activeGit, remoteName);
+  }
+
+  const extension = getGitExtension();
+  if (!extension) {
+    return [];
+  }
+
+  try {
+    const gitExtension = extension.isActive ? extension.exports : await extension.activate();
+    if (!gitExtension?.enabled) {
+      return [];
+    }
+    return parseGitRepositories(gitExtension.getAPI(1), remoteName);
+  } catch (error) {
+    console.log('[Forgejo] Git extension activation failed:', error instanceof Error ? error.message : error);
+    return [];
+  }
 }
 
 /**

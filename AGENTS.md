@@ -17,6 +17,7 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - Prefer VS Code Git extension repository detection (`git.repositories`/`getRepository(uri)`) before shelling out from `workspaceFolders[0]`, so nested repositories detected by VS Code are respected.
 - Guard optional VS Code API namespaces (for example `vscode.extensions`) in runtime code because Jest's lightweight VS Code mock may omit them.
 - When grouping detected Git repositories for Forgejo views, deduplicate by normalized Forgejo remote identity (`instanceUrl/owner/repo`) so multiple local worktrees of the same repository do not appear as duplicate repo groups.
+- Multi-repository Forgejo views should activate the VS Code Git extension before reading `git.repositories`; otherwise they may show no configuration before the Git extension has activated.
 
 ## Landing the Plane (Session Completion)
 
