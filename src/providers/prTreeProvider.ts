@@ -55,12 +55,12 @@ class PRGroupItem extends vscode.TreeItem {
   }
 }
 
-class PRRepositoryItem extends vscode.TreeItem {
+export class PRRepositoryItem extends vscode.TreeItem {
   constructor(public readonly config: ForgejoRepositoryConfig) {
     super(config.label, vscode.TreeItemCollapsibleState.Collapsed);
     this.description = config.rootPath;
     this.tooltip = config.rootPath ? `${config.label}\n${config.rootPath}` : config.label;
-    this.contextValue = 'forgejoRepository';
+    this.contextValue = 'forgejoPrRepository';
     this.iconPath = new vscode.ThemeIcon('repo');
   }
 }
@@ -176,6 +176,15 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     this._onDidChangeTreeData.fire();
   }
 
+  refreshRepository(repositoryItem: PRRepositoryItem): void {
+    const key = this.configKey(repositoryItem.config);
+    this.pullRequests.delete(key);
+    this.closedPullRequests.delete(key);
+    this.closedPullRequestsPromise.delete(key);
+    this.closedPullRequestCount.delete(key);
+    this._onDidChangeTreeData.fire(repositoryItem);
+  }
+
   getTreeItem(element: PRTreeElement): vscode.TreeItem {
     return element;
   }
@@ -183,6 +192,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   async getChildren(element?: PRTreeElement): Promise<PRTreeElement[]> {
     if (!element) {
       const configs = await getForgejoRepositoryConfigs();
+      void vscode.commands.executeCommand('setContext', 'forgejo.multipleRepositories', configs.length > 1);
       if (configs.length === 0) {
         return [new PRMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
       }

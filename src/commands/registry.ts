@@ -18,7 +18,7 @@ import type { PullRequestListItem, PullRequestFile } from '../models/pullRequest
 import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
 import type { IssueTreeItem } from '../providers/issueTreeProvider';
-import type { PRTreeItem, PROverviewItem, PRFileItem } from '../providers/prTreeProvider';
+import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem } from '../providers/prTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +39,7 @@ export interface CommandMap {
   'forgejo.showDiagnostics': [];
   'forgejo.showOutput': [];
   'forgejo.refreshPullRequests': [];
+  'forgejo.refreshRepositoryPullRequests': [repositoryItem: PRRepositoryItem];
   'forgejo.refreshIssues': [];
   'forgejo.refreshActions': [];
   'forgejo.refreshReleases': [];
@@ -47,6 +48,7 @@ export interface CommandMap {
   'forgejo.selectRemote': [];
   'forgejo.createIssue': [];
   'forgejo.createPullRequest': [];
+  'forgejo.createPullRequestForRepository': [repositoryItem: PRRepositoryItem];
   'forgejo.createRelease': [];
   'forgejo.publishToForgejo': [];
 

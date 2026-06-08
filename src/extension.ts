@@ -171,6 +171,13 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    registerCommand('forgejo.refreshRepositoryPullRequests', (repositoryItem) => {
+      prTreeProvider.refreshRepository(repositoryItem);
+      void vscode.window.showInformationMessage(`Pull Requests refreshed for ${repositoryItem.config.label}`);
+    })
+  );
+
+  context.subscriptions.push(
     registerCommand('forgejo.refreshIssues', () => {
       issueTreeProvider.refresh();
       void vscode.window.showInformationMessage('Issues refreshed');
@@ -185,6 +192,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register create pull request command
   context.subscriptions.push(
     registerCommand('forgejo.createPullRequest', () => createPullRequestCommand(prTreeProvider))
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.createPullRequestForRepository', (repositoryItem) => createPullRequestCommand(prTreeProvider, repositoryItem.config))
   );
 
   context.subscriptions.push(
