@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { getForgejoConfig } from '../../utils/config';
-import { detectGitRemote } from '../../utils/gitUtils';
+import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
+import { detectGitRemote, detectGitRepositories } from '../../utils/gitUtils';
 
 // Mock gitUtils
 jest.mock('../../utils/gitUtils');
@@ -216,6 +216,45 @@ describe('config', () => {
 
             expect(config?.instanceId).toBe('1');
             expect(config?.matchConfidence).toBe('exact');
+        });
+
+        it('should deduplicate multiple worktrees pointing at the same Forgejo repository', async () => {
+            mockConfig(mockInstances);
+            (detectGitRemote as jest.Mock).mockReturnValue(null);
+            (detectGitRepositories as jest.Mock).mockReturnValue([
+                {
+                    instanceUrl: 'https://codeberg.org',
+                    remoteHost: 'codeberg.org',
+                    owner: 'maxking',
+                    repo: 'forgejo-vscode',
+                    rootPath: '/workspace/.worktrees/a',
+                    remoteName: 'origin'
+                },
+                {
+                    instanceUrl: 'https://codeberg.org',
+                    remoteHost: 'codeberg.org',
+                    owner: 'maxking',
+                    repo: 'forgejo-vscode',
+                    rootPath: '/workspace/.worktrees/b',
+                    remoteName: 'origin'
+                },
+                {
+                    instanceUrl: 'https://codeberg.org',
+                    remoteHost: 'codeberg.org',
+                    owner: 'forgejo',
+                    repo: 'forgejo',
+                    rootPath: '/workspace/forgejo',
+                    remoteName: 'origin'
+                }
+            ]);
+
+            const configs = await getForgejoRepositoryConfigs();
+
+            expect(configs.map(config => config.label)).toEqual([
+                'maxking/forgejo-vscode',
+                'forgejo/forgejo'
+            ]);
+            expect(configs[0].rootPath).toBe('/workspace/.worktrees/a');
         });
 
         it('should match configured instance from SSH remote host without inferring instanceUrl', async () => {

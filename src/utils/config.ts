@@ -121,22 +121,25 @@ export async function getForgejoRepositoryConfigs(): Promise<ForgejoRepositoryCo
 	const preferredRemote = forgejoSettings.get<string>('preferredRemote', '');
 	const autoDetectFromRemote = forgejoSettings.get<boolean>('autoDetectFromRemote') !== false;
 	const gitInfos = detectGitRepositories(preferredRemote || undefined);
-	const configs: ForgejoRepositoryConfig[] = [];
+	const configs = new Map<string, ForgejoRepositoryConfig>();
 
 	for (const gitInfo of gitInfos) {
 		const config = await configFromGitInfo(gitInfo, instances, autoDetectFromRemote);
 		if (config) {
-			configs.push({
-				...config,
-				label: `${config.owner}/${config.repo}`,
-				rootPath: gitInfo.rootPath,
-				remoteName: gitInfo.remoteName
-			});
+			const key = `${normalizeUrl(config.instanceUrl)}/${config.owner}/${config.repo}`;
+			if (!configs.has(key)) {
+				configs.set(key, {
+					...config,
+					label: `${config.owner}/${config.repo}`,
+					rootPath: gitInfo.rootPath,
+					remoteName: gitInfo.remoteName
+				});
+			}
 		}
 	}
 
-	if (configs.length > 0) {
-		return configs;
+	if (configs.size > 0) {
+		return Array.from(configs.values());
 	}
 
 	const fallbackConfig = await getForgejoConfig();
