@@ -48,6 +48,7 @@ export interface CommandMap {
   'forgejo.createIssue': [];
   'forgejo.createPullRequest': [];
   'forgejo.createRelease': [];
+  'forgejo.publishToForgejo': [];
 
   // -- Simple URL commands -------------------------------------------------
   'forgejo.openPrInBrowser': [url: string];

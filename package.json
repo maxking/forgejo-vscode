@@ -2,7 +2,7 @@
   "name": "forgejo-vscode",
   "displayName": "Forgejo Integration",
   "description": "Browse Pull Requests, Issues, and Actions from Forgejo, Gitea, and Codeberg directly in VS Code",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "publisher": "maxking",
   "engines": {
     "vscode": "^1.85.0"
@@ -96,6 +96,11 @@
       ]
     },
     "commands": [
+      {
+        "command": "forgejo.publishToForgejo",
+        "title": "Forgejo: Publish to Forgejo",
+        "icon": "$(forgejo-logo)"
+      },
       {
         "command": "forgejo.addInstance",
         "title": "Forgejo: Add Instance",
@@ -370,6 +375,16 @@
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "scm",
+        "contents": "You can push the current folder to a new Forgejo repository.\n[$(forgejo-logo) Publish to Forgejo](command:forgejo.publishToForgejo)",
+        "when": "config.git.enabled && git.state == initialized && workbenchState == folder"
+      },
+      {
+        "view": "scm",
+        "contents": "You can push any of the current folders to a new Forgejo repository.\n[$(forgejo-logo) Publish to Forgejo](command:forgejo.publishToForgejo)",
+        "when": "config.git.enabled && git.state == initialized && workbenchState == workspace"
+      },
       {
         "view": "forgejoPullRequests",
         "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
