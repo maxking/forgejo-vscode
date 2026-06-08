@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { IssueListItem } from '../models/issue';
-import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoRepositoryConfigs } from '../utils/config';
+import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoRepositoryConfigs } from '../utils/config';
 
 export class IssueTreeItem extends vscode.TreeItem {
   constructor(
@@ -93,16 +93,14 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
   async getChildren(element?: IssueTreeElement): Promise<IssueTreeElement[]> {
     if (!element) {
       const configs = await getForgejoRepositoryConfigs();
+      if (configs.length === 0) {
+        return [new IssueMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
+      }
       if (configs.length > 1) {
         return configs.map(config => new IssueRepositoryItem(config));
       }
 
-      const config = configs[0] ?? await getForgejoConfig();
-      if (!config) {
-        return [new IssueMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
-      }
-
-      return this.getGroupsForConfig(config);
+      return this.getGroupsForConfig(configs[0]);
     } else if (element instanceof IssueRepositoryItem) {
       return this.getGroupsForConfig(element.config);
     } else if (element instanceof IssueGroupItem) {

@@ -36,8 +36,13 @@ function remoteUrl(remote: Remote): string | undefined {
   return urls.find((url): url is string => typeof url === 'string' && url.length > 0);
 }
 
+interface VSCodeExtensionsApi {
+  getExtension<T>(extensionId: string): { exports?: T; isActive: boolean } | undefined;
+}
+
 function getGitExtensionApi(): ReturnType<GitExtension['getAPI']> | null {
-  const extension = vscode.extensions?.getExtension<GitExtension>('vscode.git');
+  const extensions = (vscode as unknown as { extensions?: VSCodeExtensionsApi }).extensions;
+  const extension = extensions?.getExtension<GitExtension>('vscode.git');
   const gitExtension = extension?.exports;
 
   if (!extension?.isActive || !gitExtension?.enabled) {
@@ -48,7 +53,7 @@ function getGitExtensionApi(): ReturnType<GitExtension['getAPI']> | null {
 }
 
 function selectRepositoryRemote(repository: Repository, remoteName?: string): Remote | undefined {
-  const preferredRemoteName = remoteName || 'origin';
+  const preferredRemoteName = remoteName ?? 'origin';
   return repository.state.remotes.find(remote => remote.name === preferredRemoteName)
     ?? (!remoteName ? repository.state.remotes.find(remote => remoteUrl(remote)) : undefined);
 }
@@ -75,7 +80,8 @@ function detectGitRemoteFromGitExtension(remoteName?: string): GitRemoteInfo | n
 
   const activeUri = vscode.window.activeTextEditor?.document.uri;
   const activeRepository = activeUri ? git.getRepository(activeUri) : null;
-  const repository: Repository | undefined = activeRepository ?? git.repositories[0];
+  const [firstRepository] = git.repositories as readonly (Repository | undefined)[];
+  const repository = activeRepository ?? firstRepository;
 
   if (!repository) {
     return null;

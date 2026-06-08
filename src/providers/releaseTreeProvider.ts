@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoRepositoryConfigs } from '../utils/config';
+import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoRepositoryConfigs } from '../utils/config';
 import { type Release } from 'forgejo-ts';
 
 export class ReleaseTreeItem extends vscode.TreeItem {
@@ -96,16 +96,14 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
   async getChildren(element?: ReleaseTreeElement): Promise<ReleaseTreeElement[]> {
     if (!element) {
       const configs = await getForgejoRepositoryConfigs();
+      if (configs.length === 0) {
+        return [new ReleaseMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
+      }
       if (configs.length > 1) {
         return configs.map(config => new ReleaseRepositoryItem(config));
       }
 
-      const config = configs[0] ?? await getForgejoConfig();
-      if (!config) {
-        return [new ReleaseMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
-      }
-
-      return this.getGroupsForConfig(config);
+      return this.getGroupsForConfig(configs[0]);
     } else if (element instanceof ReleaseRepositoryItem) {
       return this.getGroupsForConfig(element.config);
     } else if (element instanceof ReleaseGroupItem) {

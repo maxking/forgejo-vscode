@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { detectGitRemote, detectGitRepositories, GitRemoteInfo, GitRepositoryRemoteInfo } from './gitUtils';
+import { detectGitRemote, detectGitRepositories, GitRemoteInfo } from './gitUtils';
 import { ForgejoInstance } from '../models/instance';
 import {
 	getAllInstances,
@@ -129,8 +129,8 @@ export async function getForgejoRepositoryConfigs(): Promise<ForgejoRepositoryCo
 			configs.push({
 				...config,
 				label: `${config.owner}/${config.repo}`,
-				rootPath: (gitInfo as GitRepositoryRemoteInfo).rootPath,
-				remoteName: (gitInfo as GitRepositoryRemoteInfo).remoteName
+				rootPath: gitInfo.rootPath,
+				remoteName: gitInfo.remoteName
 			});
 		}
 	}

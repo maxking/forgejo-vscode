@@ -183,16 +183,14 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   async getChildren(element?: PRTreeElement): Promise<PRTreeElement[]> {
     if (!element) {
       const configs = await getForgejoRepositoryConfigs();
+      if (configs.length === 0) {
+        return [new PRMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
+      }
       if (configs.length > 1) {
         return configs.map(config => new PRRepositoryItem(config));
       }
 
-      const config = configs[0] ?? await getForgejoConfig();
-      if (!config) {
-        return [new PRMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
-      }
-
-      return this.getGroupsForConfig(config);
+      return this.getGroupsForConfig(configs[0]);
     } else if (element instanceof PRRepositoryItem) {
       return this.getGroupsForConfig(element.config);
     } else if (element instanceof PRGroupItem) {

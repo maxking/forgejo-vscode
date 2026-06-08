@@ -231,16 +231,14 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
   async getChildren(element?: ActionTreeElement): Promise<ActionTreeElement[]> {
     if (!element) {
       const configs = await getForgejoRepositoryConfigs();
+      if (configs.length === 0) {
+        return [new ActionMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
+      }
       if (configs.length > 1) {
         return configs.map(config => new ActionRepositoryItem(config));
       }
 
-      const config = configs[0] ?? await getForgejoConfig();
-      if (!config) {
-        return [new ActionMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
-      }
-
-      return this.getRunsForConfig(config);
+      return this.getRunsForConfig(configs[0]);
     } else if (element instanceof ActionRepositoryItem) {
       return this.getRunsForConfig(element.config);
     } else if (element instanceof WorkflowRunTreeItem) {
