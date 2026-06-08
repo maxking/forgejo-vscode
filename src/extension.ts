@@ -32,6 +32,7 @@ import { migrateTokensToSecretStorage } from './utils/migration';
 import { ForgejoRemoteSourceProvider } from './providers/forgejoRemoteSourceProvider';
 import { ForgejoAuthenticationProvider } from './auth/forgejoAuthenticationProvider';
 import { createRemoteSourcePublisher, publishRepositoryFromWorkspace } from './commands/publishToForgejo';
+import { activateGitExtension } from './utils/gitExtension';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -771,13 +772,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // Add releases tree view to subscriptions
   context.subscriptions.push(releaseTreeView);
 
-  let gitExtension: import('./types/git').GitExtension | undefined;
-  try {
-    const ext = vscode.extensions.getExtension('vscode.git');
-    gitExtension = await ext?.activate();
-  } catch {
-    logInfo('Git extension not available, clone/publish features disabled');
-  }
+  const gitExtension = await activateGitExtension();
 
   context.subscriptions.push(
     registerCommand('forgejo.publishToForgejo', async () => {
