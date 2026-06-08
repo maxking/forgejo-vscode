@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, ActionsTreeProvider, ScrapedStep } from '../../providers/actionsTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
-import { getForgejoConfig } from '../../utils/config';
+import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { WorkflowRunListItem } from '../../models/action';
 import {
   mockWorkflowRunSuccess,
@@ -27,6 +27,7 @@ describe('ActionsTreeProvider', () => {
   let provider: ActionsTreeProvider;
   let mockClient: jest.Mocked<ForgejoClient>;
   let mockGetForgejoConfig: jest.MockedFunction<typeof getForgejoConfig>;
+  let mockGetForgejoRepositoryConfigs: jest.MockedFunction<typeof getForgejoRepositoryConfigs>;
 
   const mockConfig = {
     instanceUrl: 'https://git.example.com',
@@ -42,7 +43,9 @@ describe('ActionsTreeProvider', () => {
     } as any;
 
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
+    mockGetForgejoRepositoryConfigs = getForgejoRepositoryConfigs as jest.MockedFunction<typeof getForgejoRepositoryConfigs>;
     mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, label: 'test-owner/test-repo' }]);
 
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);
 
@@ -356,8 +359,24 @@ describe('ActionsTreeProvider', () => {
   });
 
   describe('Provider getChildren - Root level', () => {
+    test('groups multiple detected repositories by owner and repo at the root', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([
+        { ...mockConfig, owner: 'maxking', repo: 'forgejo-vscode', label: 'maxking/forgejo-vscode' },
+        { ...mockConfig, owner: 'forgejo', repo: 'forgejo', label: 'forgejo/forgejo' }
+      ]);
+
+      const children = await provider.getChildren();
+
+      expect(children.map(child => String((child as vscode.TreeItem).label))).toEqual([
+        'maxking/forgejo-vscode',
+        'forgejo/forgejo'
+      ]);
+      expect(mockClient.getWorkflowRuns).not.toHaveBeenCalled();
+    });
+
     test('should return error message when no config', async () => {
       mockGetForgejoConfig.mockResolvedValue(null as any);
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([]);
       mockClient.getWorkflowRuns.mockResolvedValue(mockEmptyActionTasksResponse);
 
       const children = await provider.getChildren();

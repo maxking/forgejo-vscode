@@ -152,7 +152,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     registerCommand('forgejo.showDiagnostics', async () => {
-      await showDiagnostics();
+      return await showDiagnostics();
     })
   );
 

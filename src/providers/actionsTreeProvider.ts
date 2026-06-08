@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { WorkflowRunListItem, WorkflowJobRef } from '../models/action';
-import { getForgejoConfig } from '../utils/config';
+import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoRepositoryConfigs } from '../utils/config';
 
 /**
  * Step data scraped from Forgejo's web page.
@@ -184,6 +184,16 @@ export class StepTreeItem extends vscode.TreeItem {
 /**
  * Message item for errors or info
  */
+class ActionRepositoryItem extends vscode.TreeItem {
+  constructor(public readonly config: ForgejoRepositoryConfig) {
+    super(config.label, vscode.TreeItemCollapsibleState.Collapsed);
+    this.description = config.rootPath;
+    this.tooltip = config.rootPath ? `${config.label}\n${config.rootPath}` : config.label;
+    this.contextValue = 'forgejoRepository';
+    this.iconPath = new vscode.ThemeIcon('repo');
+  }
+}
+
 class ActionMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
@@ -195,13 +205,13 @@ class ActionMessageItem extends vscode.TreeItem {
   }
 }
 
-type ActionTreeElement = WorkflowRunTreeItem | JobTreeItem | StepTreeItem | ActionMessageItem;
+type ActionTreeElement = ActionRepositoryItem | WorkflowRunTreeItem | JobTreeItem | StepTreeItem | ActionMessageItem;
 
 export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ActionTreeElement | undefined | null | void> = new vscode.EventEmitter<ActionTreeElement | undefined | null | void>();
   readonly onDidChangeTreeData: vscode.Event<ActionTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
 
-  private workflowRuns: WorkflowRunListItem[] = [];
+  private workflowRuns = new Map<string, WorkflowRunListItem[]>();
   private error: string | null = null;
   private owner = '';
   private repo = '';
@@ -220,36 +230,19 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
 
   async getChildren(element?: ActionTreeElement): Promise<ActionTreeElement[]> {
     if (!element) {
-      // Root level - fetch workflow runs and list chronologically (newest first)
-      try {
-        await this.fetchWorkflowRuns();
-
-        if (this.error) {
-          console.error('[Forgejo] Actions fetch error:', this.error);
-          return [new ActionMessageItem(this.error, true)];
-        }
-
-        if (this.workflowRuns.length === 0) {
-          return [new ActionMessageItem('No workflow runs found', false)];
-        }
-
-        // Group jobs by run_number
-        const runsByNumber = new Map<number, WorkflowRunListItem[]>();
-        for (const job of this.workflowRuns) {
-          const existing = runsByNumber.get(job.run_number) ?? [];
-          existing.push(job);
-          runsByNumber.set(job.run_number, existing);
-        }
-
-        // Sort by run_number descending (newest first)
-        const sortedRuns = Array.from(runsByNumber.entries()).sort((a, b) => b[0] - a[0]);
-        return sortedRuns.map(([runNumber, jobs]) =>
-          new WorkflowRunTreeItem(runNumber, jobs, this.owner, this.repo)
-        );
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : 'Unknown error';
-        return [new ActionMessageItem(this.error, true)];
+      const configs = await getForgejoRepositoryConfigs();
+      if (configs.length > 1) {
+        return configs.map(config => new ActionRepositoryItem(config));
       }
+
+      const config = configs[0] ?? await getForgejoConfig();
+      if (!config) {
+        return [new ActionMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
+      }
+
+      return this.getRunsForConfig(config);
+    } else if (element instanceof ActionRepositoryItem) {
+      return this.getRunsForConfig(element.config);
     } else if (element instanceof WorkflowRunTreeItem) {
       // Show jobs within this run (data already available from /actions/tasks)
       return element.jobs.map((job, index) =>
@@ -287,7 +280,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       }
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const steps = await client.getJobSteps(config.owner, config.repo, jobItem.job.run_number, jobItem.jobRef);
+      const steps = await client.getJobSteps(jobItem.owner, jobItem.repo, jobItem.job.run_number, jobItem.jobRef);
 
       jobItem.fetchedSteps = steps;
 
@@ -309,16 +302,43 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
     }
   }
 
-  private async fetchWorkflowRuns(): Promise<void> {
-    console.log('[Forgejo] Fetching workflow runs...');
-    const config = await getForgejoConfig();
+  private configKey(config: ForgejoConfig): string {
+    return `${config.instanceUrl}/${config.owner}/${config.repo}`;
+  }
 
-    if (!config) {
-      this.error = 'No Forgejo configuration found. Please configure instance URL or open a git repository.';
-      this.workflowRuns = [];
-      console.warn('[Forgejo] No config found');
-      return;
+  private async getRunsForConfig(config: ForgejoConfig): Promise<ActionTreeElement[]> {
+    try {
+      const workflowRuns = await this.fetchWorkflowRuns(config);
+
+      if (this.error) {
+        console.error('[Forgejo] Actions fetch error:', this.error);
+        return [new ActionMessageItem(this.error, true)];
+      }
+
+      if (workflowRuns.length === 0) {
+        return [new ActionMessageItem('No workflow runs found', false)];
+      }
+
+      const runsByNumber = new Map<number, WorkflowRunListItem[]>();
+      for (const job of workflowRuns) {
+        const existing = runsByNumber.get(job.run_number) ?? [];
+        existing.push(job);
+        runsByNumber.set(job.run_number, existing);
+      }
+
+      const sortedRuns = Array.from(runsByNumber.entries()).sort((a, b) => b[0] - a[0]);
+      return sortedRuns.map(([runNumber, jobs]) =>
+        new WorkflowRunTreeItem(runNumber, jobs, config.owner, config.repo)
+      );
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : 'Unknown error';
+      return [new ActionMessageItem(this.error, true)];
     }
+  }
+
+  private async fetchWorkflowRuns(config: ForgejoConfig): Promise<WorkflowRunListItem[]> {
+    console.log('[Forgejo] Fetching workflow runs...');
+    const key = this.configKey(config);
 
     this.owner = config.owner;
     this.repo = config.repo;
@@ -333,12 +353,13 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       const response = await client.getWorkflowRuns(config.owner, config.repo);
-      this.workflowRuns = response.workflow_runs;
+      this.workflowRuns.set(key, response.workflow_runs);
       this.error = null;
-      console.log(`[Forgejo] Fetched ${this.workflowRuns.length} workflow runs`);
+      console.log(`[Forgejo] Fetched ${response.workflow_runs.length} workflow runs`);
+      return response.workflow_runs;
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Failed to fetch workflow runs';
-      this.workflowRuns = [];
+      this.workflowRuns.set(key, []);
       console.error('[Forgejo] Error fetching workflow runs:', error);
       throw error;
     }

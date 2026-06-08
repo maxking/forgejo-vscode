@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { getForgejoConfig } from '../utils/config';
+import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoRepositoryConfigs } from '../utils/config';
 import { type Release } from 'forgejo-ts';
 
 export class ReleaseTreeItem extends vscode.TreeItem {
@@ -46,6 +46,16 @@ class ReleaseGroupItem extends vscode.TreeItem {
   }
 }
 
+class ReleaseRepositoryItem extends vscode.TreeItem {
+  constructor(public readonly config: ForgejoRepositoryConfig) {
+    super(config.label, vscode.TreeItemCollapsibleState.Collapsed);
+    this.description = config.rootPath;
+    this.tooltip = config.rootPath ? `${config.label}\n${config.rootPath}` : config.label;
+    this.contextValue = 'forgejoRepository';
+    this.iconPath = new vscode.ThemeIcon('repo');
+  }
+}
+
 class ReleaseMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
@@ -57,13 +67,13 @@ class ReleaseMessageItem extends vscode.TreeItem {
   }
 }
 
-type ReleaseTreeElement = ReleaseTreeItem | ReleaseGroupItem | ReleaseMessageItem;
+type ReleaseTreeElement = ReleaseRepositoryItem | ReleaseTreeItem | ReleaseGroupItem | ReleaseMessageItem;
 
 export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ReleaseTreeElement | undefined | null | void> = new vscode.EventEmitter<ReleaseTreeElement | undefined | null | void>();
   readonly onDidChangeTreeData: vscode.Event<ReleaseTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
 
-  private releases: Release[] = [];
+  private releases = new Map<string, Release[]>();
   private error: string | null = null;
   private owner = '';
   private repo = '';
@@ -85,59 +95,77 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
 
   async getChildren(element?: ReleaseTreeElement): Promise<ReleaseTreeElement[]> {
     if (!element) {
-      try {
-        await this._fetchReleases();
-
-        if (this.error) {
-          console.error('[Forgejo] Release fetch error:', this.error);
-          return [new ReleaseMessageItem(this.error, true)];
-        }
-
-        if (this.releases.length === 0) {
-          return [new ReleaseMessageItem('No releases found', false)];
-        }
-
-        const published = this.releases.filter(r => !r.draft && !r.prerelease);
-        const prereleases = this.releases.filter(r => !r.draft && r.prerelease);
-        const drafts = this.releases.filter(r => r.draft);
-
-        const groups: ReleaseGroupItem[] = [];
-        if (published.length > 0) groups.push(new ReleaseGroupItem('Released', published));
-        if (prereleases.length > 0) groups.push(new ReleaseGroupItem('Pre-releases', prereleases));
-        if (drafts.length > 0) groups.push(new ReleaseGroupItem('Drafts', drafts));
-
-        return groups;
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : 'Unknown error';
-        return [new ReleaseMessageItem(this.error, true)];
+      const configs = await getForgejoRepositoryConfigs();
+      if (configs.length > 1) {
+        return configs.map(config => new ReleaseRepositoryItem(config));
       }
+
+      const config = configs[0] ?? await getForgejoConfig();
+      if (!config) {
+        return [new ReleaseMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
+      }
+
+      return this.getGroupsForConfig(config);
+    } else if (element instanceof ReleaseRepositoryItem) {
+      return this.getGroupsForConfig(element.config);
     } else if (element instanceof ReleaseGroupItem) {
-      return element.releases.map(r => new ReleaseTreeItem(r, this.owner, this.repo));
+      const config = (element as ReleaseGroupItem & { config?: ForgejoConfig }).config;
+      return element.releases.map(r => new ReleaseTreeItem(r, config?.owner ?? this.owner, config?.repo ?? this.repo));
     }
 
     return [];
   }
 
-  private async _fetchReleases(): Promise<void> {
-    console.log('[Forgejo] Fetching releases...');
-    const config = await getForgejoConfig();
+  private configKey(config: ForgejoConfig): string {
+    return `${config.instanceUrl}/${config.owner}/${config.repo}`;
+  }
 
-    if (!config) {
-      this.error = 'No Forgejo configuration found. Please configure instance URL or open a git repository.';
-      this.releases = [];
-      return;
+  private async getGroupsForConfig(config: ForgejoConfig): Promise<ReleaseTreeElement[]> {
+    try {
+      const releases = await this._fetchReleases(config);
+
+      if (this.error) {
+        console.error('[Forgejo] Release fetch error:', this.error);
+        return [new ReleaseMessageItem(this.error, true)];
+      }
+
+      if (releases.length === 0) {
+        return [new ReleaseMessageItem('No releases found', false)];
+      }
+
+      const published = releases.filter(r => !r.draft && !r.prerelease);
+      const prereleases = releases.filter(r => !r.draft && r.prerelease);
+      const drafts = releases.filter(r => r.draft);
+      const attachConfig = (group: ReleaseGroupItem): ReleaseGroupItem => Object.assign(group, { config });
+
+      const groups: ReleaseGroupItem[] = [];
+      if (published.length > 0) groups.push(attachConfig(new ReleaseGroupItem('Released', published)));
+      if (prereleases.length > 0) groups.push(attachConfig(new ReleaseGroupItem('Pre-releases', prereleases)));
+      if (drafts.length > 0) groups.push(attachConfig(new ReleaseGroupItem('Drafts', drafts)));
+
+      return groups;
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : 'Unknown error';
+      return [new ReleaseMessageItem(this.error, true)];
     }
+  }
+
+  private async _fetchReleases(config: ForgejoConfig): Promise<Release[]> {
+    console.log('[Forgejo] Fetching releases...');
+    const key = this.configKey(config);
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      this.releases = await client.listReleases(config.owner, config.repo);
+      const releases = await client.listReleases(config.owner, config.repo);
+      this.releases.set(key, releases);
       this.owner = config.owner;
       this.repo = config.repo;
       this.error = null;
-      console.log(`[Forgejo] Fetched ${this.releases.length} releases`);
+      console.log(`[Forgejo] Fetched ${releases.length} releases`);
+      return releases;
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Failed to fetch releases';
-      this.releases = [];
+      this.releases.set(key, []);
       console.error('[Forgejo] Error fetching releases:', error);
       throw error;
     }

@@ -14,6 +14,7 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - Configuration-change listeners can race with explicit create/remove flows; avoid double-firing auth/session events after awaited config updates by checking the in-memory cache (e.g. `_knownSessions`) before emitting.
 - Add focused unit tests for provider/session lifecycle behavior and race fixes.
 - Git remote source providers should set `icon` to the contributed Forgejo icon id (`forgejo-logo`) so VS Code/Cursor clone pickers show the branded provider icon.
+- Prefer VS Code Git extension repository detection (`git.repositories`/`getRepository(uri)`) before shelling out from `workspaceFolders[0]`, so nested repositories detected by VS Code are respected.
 
 ## Landing the Plane (Session Completion)
 

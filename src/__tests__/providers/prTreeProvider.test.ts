@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { PRTreeProvider, PRTreeItem } from '../../providers/prTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
-import { getForgejoConfig } from '../../utils/config';
+import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { PullRequestListItem, PullRequestFile } from '../../models/pullRequest';
 import { mockAllFileTypes, mockUnsortedFiles, mockAddedFile, mockModifiedFile, mockRenamedFile, mockRemovedFile } from '../fixtures/prFiles';
 import { mockStandardRefs } from '../fixtures/prRefs';
@@ -14,6 +14,7 @@ describe('PRTreeProvider', () => {
   let provider: PRTreeProvider;
   let mockClient: jest.Mocked<ForgejoClient>;
   let mockGetForgejoConfig: jest.MockedFunction<typeof getForgejoConfig>;
+  let mockGetForgejoRepositoryConfigs: jest.MockedFunction<typeof getForgejoRepositoryConfigs>;
 
   const mockConfig = {
     instanceUrl: 'https://git.example.com',
@@ -44,7 +45,9 @@ describe('PRTreeProvider', () => {
     } as any;
 
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
+    mockGetForgejoRepositoryConfigs = getForgejoRepositoryConfigs as jest.MockedFunction<typeof getForgejoRepositoryConfigs>;
     mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, label: 'test-owner/test-repo' }]);
 
     (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
       get: jest.fn((_key: string, defaultValue: unknown) => defaultValue)
@@ -342,6 +345,21 @@ describe('PRTreeProvider', () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
     });
 
+    test('should group multiple detected repositories by owner and repo at the root', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([
+        { ...mockConfig, owner: 'maxking', repo: 'forgejo-vscode', label: 'maxking/forgejo-vscode' },
+        { ...mockConfig, owner: 'forgejo', repo: 'forgejo', label: 'forgejo/forgejo' }
+      ]);
+
+      const children = await provider.getChildren();
+
+      expect(children.map(child => String((child as any).label))).toEqual([
+        'maxking/forgejo-vscode',
+        'forgejo/forgejo'
+      ]);
+      expect(mockClient.getPullRequests).not.toHaveBeenCalled();
+    });
+
     test('should fetch open PRs by default', async () => {
       mockClient.getPullRequests.mockResolvedValue([mockPR]);
 
@@ -390,6 +408,7 @@ describe('PRTreeProvider', () => {
 
     test('should return error message when no config', async () => {
       mockGetForgejoConfig.mockResolvedValue(null as any);
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([]);
       mockClient.getPullRequests.mockRejectedValue(new Error('No config'));
 
       // fetchPullRequests sets error when config is null
@@ -398,6 +417,7 @@ describe('PRTreeProvider', () => {
       const noConfigProvider = new PRTreeProvider();
       jest.clearAllMocks();
       mockGetForgejoConfig.mockResolvedValue(null as any);
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([]);
 
       const children = await noConfigProvider.getChildren();
 

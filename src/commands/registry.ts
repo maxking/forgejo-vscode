@@ -142,7 +142,7 @@ export interface CommandMap {
  */
 export function registerCommand<K extends keyof CommandMap>(
   id: K,
-  handler: (...args: CommandMap[K]) => void | Promise<void>,
+  handler: (...args: CommandMap[K]) => unknown | Promise<unknown>,
 ): vscode.Disposable {
   return vscode.commands.registerCommand(
     id,

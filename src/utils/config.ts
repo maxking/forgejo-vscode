@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { detectGitRemote } from './gitUtils';
+import { detectGitRemote, detectGitRepositories, GitRemoteInfo, GitRepositoryRemoteInfo } from './gitUtils';
 import { ForgejoInstance } from '../models/instance';
 import {
 	getAllInstances,
@@ -18,12 +18,69 @@ export interface ForgejoConfig {
 	matchConfidence?: 'exact' | 'domain' | 'default' | 'first';
 }
 
-function getInstanceMatchTarget(gitInfo: ReturnType<typeof detectGitRemote>): string | null {
+export interface ForgejoRepositoryConfig extends ForgejoConfig {
+	label: string;
+	rootPath?: string;
+	remoteName?: string;
+}
+
+function getInstanceMatchTarget(gitInfo: GitRemoteInfo | null): string | null {
 	if (!gitInfo) {
 		return null;
 	}
 
 	return gitInfo.instanceUrl ?? gitInfo.remoteHost;
+}
+
+async function configFromGitInfo(gitInfo: GitRemoteInfo, instances: ForgejoInstance[], autoDetectFromRemote: boolean): Promise<ForgejoConfig | null> {
+	let selectedInstance: ForgejoInstance | undefined;
+	let confidence: 'exact' | 'domain' | 'default' | 'first' = 'first';
+
+	if (instances.length > 0) {
+		if (autoDetectFromRemote) {
+			const matchTarget = getInstanceMatchTarget(gitInfo);
+			const match = findBestInstanceMatch(instances, matchTarget);
+			if (match) {
+				selectedInstance = match.instance;
+				confidence = match.confidence;
+				logInfo(`Matched instance: ${selectedInstance.name} (${confidence} match)`);
+			}
+		}
+
+		if (!selectedInstance) {
+			selectedInstance = await getDefaultOrFirstInstance();
+			confidence = selectedInstance?.isDefault ? 'default' : 'first';
+
+			if (selectedInstance) {
+				logInfo(`Using ${confidence} instance: ${selectedInstance.name}`);
+			}
+		}
+	}
+
+	if (!selectedInstance) {
+		if (!gitInfo.instanceUrl) {
+			logInfo('Git remote is SSH-based and no configured Forgejo instance matched; cannot infer API URL safely');
+			return null;
+		}
+
+		logInfo('No instances configured, using HTTP(S) git remote for unauthenticated access');
+		return {
+			instanceUrl: normalizeUrl(gitInfo.instanceUrl),
+			token: '',
+			owner: gitInfo.owner,
+			repo: gitInfo.repo,
+			matchConfidence: 'default'
+		};
+	}
+
+	return {
+		instanceUrl: normalizeUrl(selectedInstance.instanceUrl),
+		token: selectedInstance.token ?? '',
+		owner: gitInfo.owner,
+		repo: gitInfo.repo,
+		instanceId: selectedInstance.id,
+		matchConfidence: confidence
+	};
 }
 
 /**
@@ -43,78 +100,47 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 	// Get git remote info, using preferred remote if configured
 	const gitInfo = detectGitRemote(preferredRemote || undefined);
 
-	let selectedInstance: ForgejoInstance | undefined;
-	let confidence: 'exact' | 'domain' | 'default' | 'first' = 'first';
-
-	if (instances.length > 0) {
-		// Try to match instance to git remote
-		if (gitInfo && autoDetectFromRemote) {
-			const matchTarget = getInstanceMatchTarget(gitInfo);
-			const match = findBestInstanceMatch(instances, matchTarget);
-			if (match) {
-				selectedInstance = match.instance;
-				confidence = match.confidence;
-				logInfo(`Matched instance: ${selectedInstance.name} (${confidence} match)`);
-			}
-		}
-
-		// Fall back to default or first instance
-		if (!selectedInstance) {
-			selectedInstance = await getDefaultOrFirstInstance();
-			confidence = selectedInstance?.isDefault ? 'default' : 'first';
-
-			if (selectedInstance) {
-				logInfo(`Using ${confidence} instance: ${selectedInstance.name}`);
-			}
-		}
-	}
-
-	// If we don't have git info, we can't determine owner/repo
 	if (!gitInfo) {
 		logInfo('Could not determine owner/repo from git remote');
 		return null;
 	}
 
-	// If no instance matched but we have an explicit HTTP(S) remote, try unauthenticated access.
-	// For SSH-based remotes we intentionally avoid guessing the web/API URL from the git transport.
-	if (!selectedInstance) {
-		if (!gitInfo.instanceUrl) {
-			logInfo('Git remote is SSH-based and no configured Forgejo instance matched; cannot infer API URL safely');
-			return null;
-		}
-
-		logInfo('No instances configured, using HTTP(S) git remote for unauthenticated access');
-		const finalConfig: ForgejoConfig = {
-			instanceUrl: normalizeUrl(gitInfo.instanceUrl),
-			token: '',
-			owner: gitInfo.owner,
-			repo: gitInfo.repo,
-			matchConfidence: 'default'
-		};
-
-		logDebug('Final configuration (unauthenticated):', {
+	const finalConfig = await configFromGitInfo(gitInfo, instances, autoDetectFromRemote);
+	if (finalConfig) {
+		logDebug('Final configuration:', {
 			...finalConfig,
-			token: '(not set)'
+			token: finalConfig.token ? '***' : '(not set)'
 		});
+	}
+	return finalConfig;
+}
 
-		return finalConfig;
+export async function getForgejoRepositoryConfigs(): Promise<ForgejoRepositoryConfig[]> {
+	const instances = await getAllInstances();
+	const forgejoSettings = vscode.workspace.getConfiguration('forgejo');
+	const preferredRemote = forgejoSettings.get<string>('preferredRemote', '');
+	const autoDetectFromRemote = forgejoSettings.get<boolean>('autoDetectFromRemote') !== false;
+	const gitInfos = detectGitRepositories(preferredRemote || undefined);
+	const configs: ForgejoRepositoryConfig[] = [];
+
+	for (const gitInfo of gitInfos) {
+		const config = await configFromGitInfo(gitInfo, instances, autoDetectFromRemote);
+		if (config) {
+			configs.push({
+				...config,
+				label: `${config.owner}/${config.repo}`,
+				rootPath: (gitInfo as GitRepositoryRemoteInfo).rootPath,
+				remoteName: (gitInfo as GitRepositoryRemoteInfo).remoteName
+			});
+		}
 	}
 
-	const finalConfig: ForgejoConfig = {
-		instanceUrl: normalizeUrl(selectedInstance.instanceUrl),
-		token: selectedInstance.token ?? '',
-		owner: gitInfo.owner,
-		repo: gitInfo.repo,
-		instanceId: selectedInstance.id,
-		matchConfidence: confidence
-	};
+	if (configs.length > 0) {
+		return configs;
+	}
 
-	logDebug('Final configuration:', {
-		...finalConfig,
-		token: finalConfig.token ? '***' : '(not set)'
-	});
-
-	return finalConfig;
+	const fallbackConfig = await getForgejoConfig();
+	return fallbackConfig ? [{ ...fallbackConfig, label: `${fallbackConfig.owner}/${fallbackConfig.repo}` }] : [];
 }
 
 /**

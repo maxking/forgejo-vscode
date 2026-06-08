@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ReleaseTreeItem, ReleaseTreeProvider } from '../../providers/releaseTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
-import { getForgejoConfig } from '../../utils/config';
+import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { type Release } from 'forgejo-ts';
 
 // Mock dependencies
@@ -29,6 +29,7 @@ describe('ReleaseTreeProvider', () => {
   let provider: ReleaseTreeProvider;
   let mockClient: jest.Mocked<ForgejoClient>;
   let mockGetForgejoConfig: jest.MockedFunction<typeof getForgejoConfig>;
+  let mockGetForgejoRepositoryConfigs: jest.MockedFunction<typeof getForgejoRepositoryConfigs>;
 
   const mockConfig = {
     instanceUrl: 'https://git.example.com',
@@ -43,7 +44,9 @@ describe('ReleaseTreeProvider', () => {
     } as any;
 
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
+    mockGetForgejoRepositoryConfigs = getForgejoRepositoryConfigs as jest.MockedFunction<typeof getForgejoRepositoryConfigs>;
     mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, label: 'test-owner/test-repo' }]);
 
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);
 
@@ -141,8 +144,24 @@ describe('ReleaseTreeProvider', () => {
   });
 
   describe('getChildren (root level)', () => {
+    test('groups multiple detected repositories by owner and repo at the root', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([
+        { ...mockConfig, owner: 'maxking', repo: 'forgejo-vscode', label: 'maxking/forgejo-vscode' },
+        { ...mockConfig, owner: 'forgejo', repo: 'forgejo', label: 'forgejo/forgejo' }
+      ]);
+
+      const children = await provider.getChildren();
+
+      expect(children.map(child => String((child as vscode.TreeItem).label))).toEqual([
+        'maxking/forgejo-vscode',
+        'forgejo/forgejo'
+      ]);
+      expect(mockClient.listReleases).not.toHaveBeenCalled();
+    });
+
     test('returns error message when no config', async () => {
       mockGetForgejoConfig.mockResolvedValue(null);
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([]);
       const children = await provider.getChildren();
       expect(children).toHaveLength(1);
       expect((children[0] as any).label).toContain('No Forgejo configuration');
