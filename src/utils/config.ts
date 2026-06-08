@@ -115,6 +115,32 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 	return finalConfig;
 }
 
+export async function getForgejoConfigFor(owner: string, repo: string, instanceUrl?: string): Promise<ForgejoConfig | null> {
+	const normalizedInstanceUrl = instanceUrl ? normalizeUrl(instanceUrl) : undefined;
+	const instances = await getAllInstances();
+
+	if (normalizedInstanceUrl) {
+		const instance = instances.find(item => normalizeUrl(item.instanceUrl) === normalizedInstanceUrl);
+		return {
+			instanceUrl: normalizedInstanceUrl,
+			token: instance?.token ?? '',
+			owner,
+			repo,
+			instanceId: instance?.id,
+			matchConfidence: instance ? 'exact' : 'default'
+		};
+	}
+
+	const repositoryConfigs = await getForgejoRepositoryConfigs();
+	const matchingConfig = repositoryConfigs.find(config => config.owner === owner && config.repo === repo);
+	if (matchingConfig) {
+		return matchingConfig;
+	}
+
+	const activeConfig = await getForgejoConfig();
+	return activeConfig?.owner === owner && activeConfig.repo === repo ? activeConfig : null;
+}
+
 export async function getForgejoRepositoryConfigs(): Promise<ForgejoRepositoryConfig[]> {
 	const instances = await getAllInstances();
 	const forgejoSettings = vscode.workspace.getConfiguration('forgejo');

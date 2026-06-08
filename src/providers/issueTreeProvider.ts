@@ -123,11 +123,6 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
     try {
       const issues = await this.fetchIssues(config);
 
-      if (this.error) {
-        console.error('Forgejo Issue fetch error:', this.error);
-        return [new IssueMessageItem(this.error, true)];
-      }
-
       if (issues.length === 0) {
         return [new IssueMessageItem('No issues found', false)];
       }

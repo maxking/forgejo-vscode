@@ -69,6 +69,7 @@ export interface CommandMap {
     repo: string,
     baseRef: string,
     headRef: string,
+    instanceUrl?: string,
   ];
 
   // -- Context menu commands -----------------------------------------------
@@ -84,6 +85,7 @@ export interface CommandMap {
     prOrItem: PullRequestListItem | PROverviewItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   // view/item/context: viewItem == pullRequest

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { WorkflowRunListItem, WorkflowJobRef } from '../models/action';
-import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoRepositoryConfigs } from '../utils/config';
+import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoConfigFor, getForgejoRepositoryConfigs } from '../utils/config';
 
 /**
  * Step data scraped from Forgejo's web page.
@@ -25,6 +25,7 @@ export interface StepLogArgs {
   repo: string;
   runNumber: number;
   jobRef: WorkflowJobRef;
+  instanceUrl?: string;
 }
 
 function createJobRef(job: WorkflowRunListItem): WorkflowJobRef {
@@ -68,7 +69,8 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
     public readonly runNumber: number,
     public readonly jobs: WorkflowRunListItem[],
     public readonly owner: string,
-    public readonly repo: string
+    public readonly repo: string,
+    public readonly instanceUrl?: string
   ) {
     // Use first job to get run metadata (all jobs in same run share these)
     const firstJob = jobs[0];
@@ -127,7 +129,8 @@ export class JobTreeItem extends vscode.TreeItem {
     public readonly job: WorkflowRunListItem,
     public readonly jobIndex: number,
     public readonly owner: string,
-    public readonly repo: string
+    public readonly repo: string,
+    public readonly instanceUrl?: string
   ) {
     super(job.name, vscode.TreeItemCollapsibleState.Collapsed);
 
@@ -154,7 +157,8 @@ export class StepTreeItem extends vscode.TreeItem {
     public readonly jobRef: WorkflowJobRef,
     public readonly runNumber: number,
     public readonly owner: string,
-    public readonly repo: string
+    public readonly repo: string,
+    public readonly instanceUrl?: string
   ) {
     super(step.summary, vscode.TreeItemCollapsibleState.None);
 
@@ -171,7 +175,8 @@ export class StepTreeItem extends vscode.TreeItem {
       owner,
       repo,
       runNumber,
-      jobRef
+      jobRef,
+      instanceUrl
     };
     this.command = {
       command: 'forgejo.viewStepLogs',
@@ -244,7 +249,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
     } else if (element instanceof WorkflowRunTreeItem) {
       // Show jobs within this run (data already available from /actions/tasks)
       return element.jobs.map((job, index) =>
-        new JobTreeItem(job, index, element.owner, element.repo)
+        new JobTreeItem(job, index, element.owner, element.repo, element.instanceUrl)
       );
     } else if (element instanceof JobTreeItem) {
       // Lazy-load steps by scraping the Forgejo web page
@@ -262,7 +267,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
     // Return cached result if available
     if (jobItem.fetchedSteps) {
       return jobItem.fetchedSteps.map(step =>
-        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo)
+        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo, jobItem.instanceUrl)
       );
     }
     if (jobItem.fetchError) {
@@ -270,7 +275,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
     }
 
     try {
-      const config = await getForgejoConfig();
+      const config = await getForgejoConfigFor(jobItem.owner, jobItem.repo, jobItem.instanceUrl) ?? await getForgejoConfig();
       if (!config) {
         const err = 'No Forgejo configuration found';
         jobItem.fetchError = err;
@@ -287,7 +292,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       }
 
       return steps.map(step =>
-        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo)
+        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo, jobItem.instanceUrl)
       );
     } catch (error) {
       const is404 = error instanceof Error && error.message.includes('404');
@@ -308,11 +313,6 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
     try {
       const workflowRuns = await this.fetchWorkflowRuns(config);
 
-      if (this.error) {
-        console.error('[Forgejo] Actions fetch error:', this.error);
-        return [new ActionMessageItem(this.error, true)];
-      }
-
       if (workflowRuns.length === 0) {
         return [new ActionMessageItem('No workflow runs found', false)];
       }
@@ -326,7 +326,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
 
       const sortedRuns = Array.from(runsByNumber.entries()).sort((a, b) => b[0] - a[0]);
       return sortedRuns.map(([runNumber, jobs]) =>
-        new WorkflowRunTreeItem(runNumber, jobs, config.owner, config.repo)
+        new WorkflowRunTreeItem(runNumber, jobs, config.owner, config.repo, config.instanceUrl)
       );
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Unknown error';

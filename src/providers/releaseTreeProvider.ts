@@ -122,11 +122,6 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
     try {
       const releases = await this._fetchReleases(config);
 
-      if (this.error) {
-        console.error('[Forgejo] Release fetch error:', this.error);
-        return [new ReleaseMessageItem(this.error, true)];
-      }
-
       if (releases.length === 0) {
         return [new ReleaseMessageItem('No releases found', false)];
       }

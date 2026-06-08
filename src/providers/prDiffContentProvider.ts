@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { getForgejoConfig } from '../utils/config';
+import { getForgejoConfig, getForgejoConfigFor } from '../utils/config';
 
 /**
  * Custom URI scheme for PR diff virtual documents
@@ -41,16 +41,21 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
       return cached;
     }
 
-    // Parse URI: forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
+    // Parse URI:
+    // - New format: forgejo-pr:/{base64url_instance}/{owner}/{repo}/{base64url_ref}/{filepath}
+    // - Legacy format: forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
     const parts = uri.path.split('/').filter(p => p);
     if (parts.length < 4) {
       throw new Error('Invalid PR diff URI format');
     }
 
-    const owner = parts[0];
-    const repo = parts[1];
-    const encodedRef = parts[2];
-    const filepath = decodeURIComponent(parts.slice(3).join('/'));
+    const hasInstanceSegment = parts.length >= 5;
+    const encodedInstanceUrl = hasInstanceSegment ? parts[0] : undefined;
+    const owner = hasInstanceSegment ? parts[1] : parts[0];
+    const repo = hasInstanceSegment ? parts[2] : parts[1];
+    const encodedRef = hasInstanceSegment ? parts[3] : parts[2];
+    const filepath = decodeURIComponent(parts.slice(hasInstanceSegment ? 4 : 3).join('/'));
+    const instanceUrl = encodedInstanceUrl ? Buffer.from(encodedInstanceUrl, 'base64url').toString() : undefined;
 
     // Decode base64url-encoded ref
     const ref = Buffer.from(encodedRef, 'base64url').toString();
@@ -62,7 +67,7 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
     console.log('[Forgejo] Fetching file:', { owner, repo, ref, filepath });
 
     try {
-      const config = await getForgejoConfig();
+      const config = await getForgejoConfigFor(owner, repo, instanceUrl) ?? await getForgejoConfig();
       if (!config) {
         throw new Error('Forgejo configuration not found');
       }
@@ -104,13 +109,15 @@ export function createPRFileUri(
   owner: string,
   repo: string,
   ref: string,
-  filepath: string
+  filepath: string,
+  instanceUrl?: string
 ): vscode.Uri {
-  // Base64url-encode the ref so it's a single path segment (no slashes)
-  // and survives VS Code tab serialization (which strips query parameters)
+  // Base64url-encode the ref and instance URL so each is a single path segment
+  // and survives VS Code tab serialization (which strips query parameters).
   const encodedRef = Buffer.from(ref).toString('base64url');
+  const encodedInstanceUrl = instanceUrl ? `${Buffer.from(instanceUrl).toString('base64url')}/` : '';
   // Encode each filepath segment to handle special characters (#, &, spaces, etc.)
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  const path = `/${owner}/${repo}/${encodedRef}/${encodedPath}`;
+  const path = `/${encodedInstanceUrl}${owner}/${repo}/${encodedRef}/${encodedPath}`;
   return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
 }

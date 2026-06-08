@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { PullRequestListItem, PullRequestFile } from '../models/pullRequest';
-import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoRepositoryConfigs } from '../utils/config';
+import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoConfigFor, getForgejoRepositoryConfigs } from '../utils/config';
 
 export class PRTreeItem extends vscode.TreeItem {
   public files?: PullRequestFile[];
@@ -13,7 +13,8 @@ export class PRTreeItem extends vscode.TreeItem {
     public readonly pr: PullRequestListItem,
     public readonly htmlUrl: string,
     public readonly owner: string,
-    public readonly repo: string
+    public readonly repo: string,
+    public readonly config?: ForgejoConfig
   ) {
     super(`#${pr.number}: ${pr.title}`, vscode.TreeItemCollapsibleState.Collapsed);
 
@@ -86,7 +87,8 @@ export class PRFileItem extends vscode.TreeItem {
     public readonly owner: string,
     public readonly repo: string,
     public readonly baseRef: string,
-    public readonly headRef: string
+    public readonly headRef: string,
+    public readonly instanceUrl?: string
   ) {
     super(file.filename, vscode.TreeItemCollapsibleState.None);
 
@@ -117,7 +119,7 @@ export class PRFileItem extends vscode.TreeItem {
     this.command = {
       command: 'forgejo.showPrFileDiff',
       title: 'Show Diff',
-      arguments: [this.file, this.pr, this.owner, this.repo, this.baseRef, this.headRef]
+      arguments: [this.file, this.pr, this.owner, this.repo, this.baseRef, this.headRef, this.instanceUrl]
     };
   }
 }
@@ -140,7 +142,8 @@ export class PROverviewItem extends vscode.TreeItem {
   constructor(
     public readonly pr: PullRequestListItem,
     public readonly owner: string,
-    public readonly repo: string
+    public readonly repo: string,
+    public readonly instanceUrl?: string
   ) {
     super('Overview', vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon('info');
@@ -148,7 +151,7 @@ export class PROverviewItem extends vscode.TreeItem {
     this.command = {
       command: 'forgejo.showPrDetails',
       title: 'Show PR Details',
-      arguments: [pr, owner, repo]
+      arguments: [pr, owner, repo, instanceUrl]
     };
   }
 }
@@ -217,7 +220,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
         if (pullRequests.length === 0) {
           return [new PRMessageItem(`No ${element.label.toLowerCase()} pull requests found`, false)];
         }
-        return pullRequests.map(pr => new PRTreeItem(pr, pr.html_url, config.owner, config.repo));
+        return pullRequests.map(pr => new PRTreeItem(pr, pr.html_url, config.owner, config.repo, config));
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to fetch pull requests';
         return [new PRMessageItem(message, true)];
@@ -238,14 +241,14 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
    */
   private async getPRFiles(prItem: PRTreeItem): Promise<PRTreeElement[]> {
     // Create overview item (always shown first)
-    const overviewItem = new PROverviewItem(prItem.pr, prItem.owner, prItem.repo);
+    const overviewItem = new PROverviewItem(prItem.pr, prItem.owner, prItem.repo, prItem.config?.instanceUrl);
 
     // Return cached files if available
     if (prItem.files && prItem.baseRef && prItem.headRef) {
       const baseRef = prItem.baseRef;
       const headRef = prItem.headRef;
       const fileItems = prItem.files.map(file =>
-        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef)
+        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef, prItem.config?.instanceUrl)
       );
       return [overviewItem, ...fileItems];
     }
@@ -257,11 +260,10 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
     // Fetch files from API
     try {
-      const config = await getForgejoConfig();
+      const config = prItem.config ?? await getForgejoConfigFor(prItem.owner, prItem.repo) ?? await getForgejoConfig();
       if (!config) {
         return [overviewItem, new PRMessageItem('Configuration not available', true)];
       }
-
       const client = new ForgejoClient(config.instanceUrl, config.token);
       console.log(`[Forgejo] Fetching files for PR #${prItem.pr.number}...`);
 
@@ -288,7 +290,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const sortedFiles = files.sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status));
 
       const fileItems = sortedFiles.map(file =>
-        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head)
+        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head, config.instanceUrl)
       );
       return [overviewItem, ...fileItems];
     } catch (error) {
@@ -306,11 +308,6 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   private async getGroupsForConfig(config: ForgejoConfig): Promise<PRTreeElement[]> {
     try {
       const pullRequests = await this.fetchOpenPullRequests(config);
-
-      if (this.error) {
-        console.error('Forgejo PR fetch error:', this.error);
-        return [new PRMessageItem(this.error, true)];
-      }
 
       const openPRs = pullRequests.filter(pr => pr.state === 'open' && !pr.draft);
       const draftPRs = pullRequests.filter(pr => pr.draft);

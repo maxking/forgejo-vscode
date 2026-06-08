@@ -106,23 +106,35 @@ function parseGitRepositories(git: ReturnType<GitExtension['getAPI']>, remoteNam
     .filter((info): info is GitRepositoryRemoteInfo => info !== null);
 }
 
-async function waitForGitRepositoryDiscovery(git: ReturnType<GitExtension['getAPI']>, timeoutMs = 5000): Promise<void> {
-  if (git.repositories.length > 0) {
-    return;
-  }
-
+async function waitForGitRepositoryDiscovery(git: ReturnType<GitExtension['getAPI']>, timeoutMs = 5000, quietMs = 750): Promise<void> {
   await new Promise<void>((resolve) => {
-    const state: { disposable?: vscode.Disposable } = {};
-    const timeout = setTimeout(() => {
-      state.disposable?.dispose();
-      resolve();
-    }, timeoutMs);
-
-    state.disposable = git.onDidOpenRepository(() => {
+    const state: { disposable?: vscode.Disposable; quietTimer?: ReturnType<typeof setTimeout> } = {};
+    let finished = false;
+    const timeout = setTimeout(() => finish(), timeoutMs);
+    const finish = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
       clearTimeout(timeout);
+      if (state.quietTimer) {
+        clearTimeout(state.quietTimer);
+      }
       state.disposable?.dispose();
       resolve();
-    });
+    };
+    const scheduleQuietFinish = () => {
+      if (state.quietTimer) {
+        clearTimeout(state.quietTimer);
+      }
+      state.quietTimer = setTimeout(finish, quietMs);
+    };
+
+    state.disposable = git.onDidOpenRepository(scheduleQuietFinish);
+
+    if (git.repositories.length > 0) {
+      scheduleQuietFinish();
+    }
   });
 }
 
