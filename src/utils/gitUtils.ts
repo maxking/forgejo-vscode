@@ -37,7 +37,7 @@ function remoteUrl(remote: Remote): string | undefined {
 }
 
 function getGitExtensionApi(): ReturnType<GitExtension['getAPI']> | null {
-  const extension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+  const extension = vscode.extensions?.getExtension<GitExtension>('vscode.git');
   const gitExtension = extension?.exports;
 
   if (!extension?.isActive || !gitExtension?.enabled) {

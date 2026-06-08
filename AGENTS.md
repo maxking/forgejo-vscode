@@ -15,6 +15,7 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - Add focused unit tests for provider/session lifecycle behavior and race fixes.
 - Git remote source providers should set `icon` to the contributed Forgejo icon id (`forgejo-logo`) so VS Code/Cursor clone pickers show the branded provider icon.
 - Prefer VS Code Git extension repository detection (`git.repositories`/`getRepository(uri)`) before shelling out from `workspaceFolders[0]`, so nested repositories detected by VS Code are respected.
+- Guard optional VS Code API namespaces (for example `vscode.extensions`) in runtime code because Jest's lightweight VS Code mock may omit them.
 
 ## Landing the Plane (Session Completion)
 
