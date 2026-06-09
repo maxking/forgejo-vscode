@@ -6,14 +6,28 @@ on:
   pull_request:
     branches: [ master, dev ]
 
+permissions:
+  contents: read
+
 jobs:
+  build-live-test-image:
+    runs-on: docker
+    env:
+      LIVE_TEST_IMAGE: forgejo-vscode-live-test-node20:${{ github.sha }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build live-test image
+      run: docker build -f .forgejo/ci/live-test-node20.Dockerfile -t "$LIVE_TEST_IMAGE" .
+
   live-test:
+    needs: build-live-test-image
     strategy:
       matrix:
         forgejo-version: ['11', '12', '13']
 
     runs-on: docker
-    container: node:20
+    container: forgejo-vscode-live-test-node20:${{ github.sha }}
 
     services:
       forgejo:
@@ -33,7 +47,9 @@ jobs:
 
     - name: Install dependencies
       run: |
-        apt-get update && apt-get install -y jq curl xvfb libgtk-3-0 libxss1 libasound2 libgbm1 libnspr4 libnss3
+        command -v jq
+        command -v curl
+        command -v xvfb-run
         npm ci
 
     - name: Wait for Forgejo & setup test data
@@ -42,7 +58,10 @@ jobs:
     - name: Run live integration tests
       run: npm run test:live
 
+    # API compatibility is covered across the full Forgejo matrix above.
+    # Run the expensive VS Code UI smoke suite only once, against the newest version.
     - name: Create test workspace for Playwright
+      if: matrix.forgejo-version == '13'
       run: |
         mkdir -p /tmp/forgejo-test-workspace
         cd /tmp/forgejo-test-workspace
@@ -50,9 +69,11 @@ jobs:
         git remote add origin http://forgejo:3000/testuser/test-repo.git
 
     - name: Compile extension
+      if: matrix.forgejo-version == '13'
       run: npm run compile
 
     - name: Run Playwright VS Code live tests
+      if: matrix.forgejo-version == '13'
       run: xvfb-run -a npm run test:e2e:live
       env:
         FORGEJO_LIVE_WORKSPACE: /tmp/forgejo-test-workspace
