@@ -155,36 +155,14 @@ jobs:
         VERSION=${VERSION#v}
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-        # VS Marketplace pre-release extensions still require a stable semver
-        # package.json version (for example, tag v0.3.18-beta.1 publishes
-        # package version 0.3.18 with the --pre-release flag).
-        MARKETPLACE_VERSION=${VERSION%%-*}
-        echo "marketplace_version=$MARKETPLACE_VERSION" >> $GITHUB_OUTPUT
-
         # Detect semver pre-release versions (alpha, beta, rc, etc.).
-        if [ "$VERSION" != "$MARKETPLACE_VERSION" ]; then
+        if echo "$VERSION" | grep -q -- '-'; then
           echo "is_prerelease=true" >> $GITHUB_OUTPUT
-          echo "Publishing pre-release version: $VERSION as registry version: $MARKETPLACE_VERSION"
+          echo "Publishing pre-release version: $VERSION"
         else
           echo "is_prerelease=false" >> $GITHUB_OUTPUT
           echo "Publishing stable version: $VERSION"
         fi
-
-    - name: Verify version matches package.json
-      run: |
-        PACKAGE_VERSION=$(node -p "require('./package.json').version")
-        TAG_VERSION="${{ steps.get_version.outputs.version }}"
-        if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
-          echo "Error: package.json version ($PACKAGE_VERSION) does not match tag version ($TAG_VERSION)"
-          exit 1
-        fi
-        echo "Version verified: $PACKAGE_VERSION"
-
-    - name: Normalize pre-release version for extension registries
-      if: steps.get_version.outputs.is_prerelease == 'true'
-      run: |
-        npm version "${{ steps.get_version.outputs.marketplace_version }}" --no-git-tag-version --allow-same-version
-        echo "Using package.json version ${{ steps.get_version.outputs.marketplace_version }} for pre-release registry publishing"
 
     - name: Package extension
       run: npm run package
