@@ -21,6 +21,7 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - Tree items and webview commands that originate from a repository group must carry enough repository identity (especially `instanceUrl`) into follow-up API calls; do not re-resolve with the active editor/default config for nested or multi-instance workflows.
 - When extending custom URI schemes, make optional path segments self-identifying or versioned; do not infer new URI formats from segment count when legacy file paths can contain arbitrary nested segments.
 - Skip VS Code Git extension repository discovery when there are no workspace folders so no-config command/provider paths do not wait on repository discovery timeouts.
+- User-facing releases should bump `package.json`/`package-lock.json` together and add a README News entry that links to the public Codeberg issue or PR.
 
 ## Landing the Plane (Session Completion)
 
