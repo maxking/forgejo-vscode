@@ -24,6 +24,10 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ## News
 
+### 0.3.20
+
+- **Nested repository detection ([#22](https://codeberg.org/maxking/forgejo-vscode/issues/22)):** workspaces with nested Forgejo/Gitea repositories are now detected through VS Code's Git API and grouped by repository across Pull Requests, Issues, Actions, and Releases.
+
 ### 0.3.19
 
 - **Forgejo clone picker icon:** the built-in Git clone source picker now shows the Forgejo logo next to configured Forgejo repository sources.
