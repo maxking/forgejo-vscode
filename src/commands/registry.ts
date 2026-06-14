@@ -18,7 +18,7 @@ import type { PullRequestListItem, PullRequestFile } from '../models/pullRequest
 import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
 import type { IssueTreeItem } from '../providers/issueTreeProvider';
-import type { PRTreeItem, PROverviewItem, PRFileItem } from '../providers/prTreeProvider';
+import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem } from '../providers/prTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +39,7 @@ export interface CommandMap {
   'forgejo.showDiagnostics': [];
   'forgejo.showOutput': [];
   'forgejo.refreshPullRequests': [];
+  'forgejo.refreshRepositoryPullRequests': [repositoryItem: PRRepositoryItem];
   'forgejo.refreshIssues': [];
   'forgejo.refreshActions': [];
   'forgejo.refreshReleases': [];
@@ -47,6 +48,7 @@ export interface CommandMap {
   'forgejo.selectRemote': [];
   'forgejo.createIssue': [];
   'forgejo.createPullRequest': [];
+  'forgejo.createPullRequestForRepository': [repositoryItem: PRRepositoryItem];
   'forgejo.createRelease': [];
   'forgejo.publishToForgejo': [];
 
@@ -67,6 +69,7 @@ export interface CommandMap {
     repo: string,
     baseRef: string,
     headRef: string,
+    instanceUrl?: string,
   ];
 
   // -- Context menu commands -----------------------------------------------
@@ -82,6 +85,7 @@ export interface CommandMap {
     prOrItem: PullRequestListItem | PROverviewItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   // view/item/context: viewItem == pullRequest
@@ -89,6 +93,7 @@ export interface CommandMap {
     prOrItem: PullRequestListItem | PRTreeItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   // view/item/context: viewItem == pullRequest
@@ -96,6 +101,7 @@ export interface CommandMap {
     prOrItem: PullRequestListItem | PRTreeItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   // view/item/context: viewItem == issue  +  TreeItem.command
@@ -103,6 +109,7 @@ export interface CommandMap {
     issueOrItem: IssueListItem | IssueTreeItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   'forgejo.openIssueInBrowserFromContext': [issueItem: IssueTreeItem];
@@ -112,6 +119,7 @@ export interface CommandMap {
     runOrItem: WorkflowRunListItem | WorkflowRunTreeItem | JobTreeItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   // view/item/context: viewItem == workflowRun | workflowJob | workflowStep
@@ -142,7 +150,7 @@ export interface CommandMap {
  */
 export function registerCommand<K extends keyof CommandMap>(
   id: K,
-  handler: (...args: CommandMap[K]) => void | Promise<void>,
+  handler: (...args: CommandMap[K]) => unknown,
 ): vscode.Disposable {
   return vscode.commands.registerCommand(
     id,

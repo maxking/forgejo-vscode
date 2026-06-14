@@ -1,14 +1,15 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { IssueListItem } from '../models/issue';
-import { getForgejoConfig } from '../utils/config';
+import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoRepositoryConfigs } from '../utils/config';
 
 export class IssueTreeItem extends vscode.TreeItem {
   constructor(
     public readonly issue: IssueListItem,
     public readonly htmlUrl: string,
     public readonly owner: string,
-    public readonly repo: string
+    public readonly repo: string,
+    public readonly instanceUrl?: string
   ) {
     super(`#${issue.number}: ${issue.title}`, vscode.TreeItemCollapsibleState.None);
 
@@ -27,7 +28,7 @@ export class IssueTreeItem extends vscode.TreeItem {
     this.command = {
       command: 'forgejo.showIssueDetails',
       title: 'Show Issue Details',
-      arguments: [issue, owner, repo]
+      arguments: [issue, owner, repo, instanceUrl]
     };
   }
 }
@@ -46,6 +47,16 @@ class IssueGroupItem extends vscode.TreeItem {
   }
 }
 
+class IssueRepositoryItem extends vscode.TreeItem {
+  constructor(public readonly config: ForgejoRepositoryConfig) {
+    super(config.label, vscode.TreeItemCollapsibleState.Collapsed);
+    this.description = config.rootPath;
+    this.tooltip = config.rootPath ? `${config.label}\n${config.rootPath}` : config.label;
+    this.contextValue = 'forgejoRepository';
+    this.iconPath = new vscode.ThemeIcon('repo');
+  }
+}
+
 class IssueMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
@@ -57,13 +68,13 @@ class IssueMessageItem extends vscode.TreeItem {
   }
 }
 
-type IssueTreeElement = IssueTreeItem | IssueGroupItem | IssueMessageItem;
+type IssueTreeElement = IssueRepositoryItem | IssueTreeItem | IssueGroupItem | IssueMessageItem;
 
 export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<IssueTreeElement | undefined | null | void> = new vscode.EventEmitter<IssueTreeElement | undefined | null | void>();
   readonly onDidChangeTreeData: vscode.Event<IssueTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
 
-  private issues: IssueListItem[] = [];
+  private issues = new Map<string, IssueListItem[]>();
   private error: string | null = null;
   private owner = '';
   private repo = '';
@@ -82,40 +93,21 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
 
   async getChildren(element?: IssueTreeElement): Promise<IssueTreeElement[]> {
     if (!element) {
-      // Root level - fetch issues and group them
-      try {
-        await this.fetchIssues();
-
-        if (this.error) {
-          console.error('Forgejo Issue fetch error:', this.error);
-          return [new IssueMessageItem(this.error, true)];
-        }
-
-        if (this.issues.length === 0) {
-          return [new IssueMessageItem('No issues found', false)];
-        }
-
-        // Group by state
-        const openIssues = this.issues.filter(issue => issue.state === 'open');
-        const closedIssues = this.issues.filter(issue => issue.state === 'closed');
-
-        const groups: IssueGroupItem[] = [];
-
-        if (openIssues.length > 0) {
-          groups.push(new IssueGroupItem('Open', openIssues));
-        }
-        if (closedIssues.length > 0) {
-          groups.push(new IssueGroupItem('Closed', closedIssues));
-        }
-
-        return groups;
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : 'Unknown error';
-        return [new IssueMessageItem(this.error, true)];
+      const configs = await getForgejoRepositoryConfigs();
+      if (configs.length === 0) {
+        return [new IssueMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
       }
+      if (configs.length > 1) {
+        return configs.map(config => new IssueRepositoryItem(config));
+      }
+
+      return this.getGroupsForConfig(configs[0]);
+    } else if (element instanceof IssueRepositoryItem) {
+      return this.getGroupsForConfig(element.config);
     } else if (element instanceof IssueGroupItem) {
       // Show issues in this group
-      return element.issues.map(issue => new IssueTreeItem(issue, issue.html_url, this.owner, this.repo));
+      const config = (element as IssueGroupItem & { config?: ForgejoConfig }).config;
+      return element.issues.map(issue => new IssueTreeItem(issue, issue.html_url, config?.owner ?? this.owner, config?.repo ?? this.repo, config?.instanceUrl));
     } else if (element instanceof IssueMessageItem) {
       // Message items have no children
       return [];
@@ -124,16 +116,40 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
     return [];
   }
 
-  private async fetchIssues(): Promise<void> {
-    console.log('[Forgejo] Fetching issues...');
-    const config = await getForgejoConfig();
+  private configKey(config: ForgejoConfig): string {
+    return `${config.instanceUrl}/${config.owner}/${config.repo}`;
+  }
 
-    if (!config) {
-      this.error = 'No Forgejo configuration found. Please configure instance URL or open a git repository.';
-      this.issues = [];
-      console.warn('[Forgejo] No config found');
-      return;
+  private async getGroupsForConfig(config: ForgejoConfig): Promise<IssueTreeElement[]> {
+    try {
+      const issues = await this.fetchIssues(config);
+
+      if (issues.length === 0) {
+        return [new IssueMessageItem('No issues found', false)];
+      }
+
+      const openIssues = issues.filter(issue => issue.state === 'open');
+      const closedIssues = issues.filter(issue => issue.state === 'closed');
+      const groups: IssueGroupItem[] = [];
+      const attachConfig = (group: IssueGroupItem): IssueGroupItem => Object.assign(group, { config });
+
+      if (openIssues.length > 0) {
+        groups.push(attachConfig(new IssueGroupItem('Open', openIssues)));
+      }
+      if (closedIssues.length > 0) {
+        groups.push(attachConfig(new IssueGroupItem('Closed', closedIssues)));
+      }
+
+      return groups;
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : 'Unknown error';
+      return [new IssueMessageItem(this.error, true)];
     }
+  }
+
+  private async fetchIssues(config: ForgejoConfig): Promise<IssueListItem[]> {
+    console.log('[Forgejo] Fetching issues...');
+    const key = this.configKey(config);
 
     console.log('[Forgejo] Using config:', {
       instanceUrl: config.instanceUrl,
@@ -144,14 +160,16 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      this.issues = await client.getIssues(config.owner, config.repo, 'all');
+      const issues = await client.getIssues(config.owner, config.repo, 'all');
+      this.issues.set(key, issues);
       this.owner = config.owner;
       this.repo = config.repo;
       this.error = null;
-      console.log(`[Forgejo] Fetched ${this.issues.length} issues`);
+      console.log(`[Forgejo] Fetched ${issues.length} issues`);
+      return issues;
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Failed to fetch issues';
-      this.issues = [];
+      this.issues.set(key, []);
       console.error('[Forgejo] Error fetching issues:', error);
       throw error;
     }

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
-import { getForgejoConfig } from '../../utils/config';
+import { getForgejoConfigFor } from '../../utils/config';
 import { WorkflowRun, WorkflowRunListItem, WorkflowJob, WorkflowJobRef } from '../../models/action';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 
@@ -41,6 +41,7 @@ interface PanelState {
   repo: string;
   runId: number;
   run: WorkflowRunListItem;  // Store the run data to avoid 404 on /actions/runs/{id}
+  instanceUrl?: string;
   isReady: boolean;
   pendingData?: ActionDetailViewData | null;
   pendingError?: string | null;
@@ -52,11 +53,11 @@ export class ActionDetailWebviewProvider {
 
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
-  public async showActionDetails(owner: string, repo: string, run: WorkflowRunListItem): Promise<void> {
+  public async showActionDetails(owner: string, repo: string, run: WorkflowRunListItem, instanceUrl?: string): Promise<void> {
     const runId = run.id;
-    logInfo('Showing action details in webview:', { owner, repo, runId });
+    logInfo('Showing action details in webview:', { owner, repo, runId, instanceUrl });
 
-    const panelKey = `${owner}/${repo}/${String(runId)}`;
+    const panelKey = `${instanceUrl ?? ''}/${owner}/${repo}/${String(runId)}`;
 
     if (this._panels.has(panelKey)) {
       const state = this._panels.get(panelKey);
@@ -84,6 +85,7 @@ export class ActionDetailWebviewProvider {
       repo,
       runId,
       run,
+      instanceUrl,
       isReady: false,
       pendingData: null,
       pendingError: null
@@ -112,12 +114,11 @@ export class ActionDetailWebviewProvider {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
-    const { panel, owner, repo, run } = state;
+    const { panel, owner, repo, run, instanceUrl } = state;
     logInfo('_fetchActionData starting:', { panelKey, isReady: state.isReady });
 
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('Forgejo configuration not found');
+      const config = await this._getConfig(owner, repo, instanceUrl);
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
       logInfo('Fetching jobs from API...');
@@ -192,7 +193,7 @@ export class ActionDetailWebviewProvider {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
-    const { panel, owner, repo, runId } = state;
+    const { panel, owner, repo, runId, instanceUrl } = state;
 
     switch (message.type) {
       case 'ready':
@@ -214,25 +215,32 @@ export class ActionDetailWebviewProvider {
         await this._fetchActionData(panelKey);
         break;
       case 'rerun':
-        await this._rerunWorkflow(owner, repo, runId, panelKey);
+        await this._rerunWorkflow(owner, repo, runId, panelKey, instanceUrl);
         break;
       case 'openInBrowser':
-        await this._openInBrowser(owner, repo, runId);
+        await this._openInBrowser(owner, repo, runId, instanceUrl);
         break;
       case 'viewLogs':
         if (!isValidJobRef(message.jobRef)) {
           void vscode.window.showErrorMessage('Action log request did not include a valid job reference');
           return;
         }
-        await this._viewLogs(owner, repo, runId, message.jobRef);
+        await this._viewLogs(owner, repo, runId, message.jobRef, instanceUrl);
         break;
     }
   }
 
-  private async _rerunWorkflow(owner: string, repo: string, runId: number, panelKey: string): Promise<void> {
+  private async _getConfig(owner: string, repo: string, instanceUrl?: string) {
+    const config = await getForgejoConfigFor(owner, repo, instanceUrl);
+    if (!config) {
+      throw new Error('Forgejo configuration not found');
+    }
+    return config;
+  }
+
+  private async _rerunWorkflow(owner: string, repo: string, runId: number, panelKey: string, instanceUrl?: string): Promise<void> {
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('No config');
+      const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.rerunWorkflow(owner, repo, runId);
       void vscode.window.showInformationMessage('Workflow re-run triggered successfully');
@@ -242,13 +250,12 @@ export class ActionDetailWebviewProvider {
     }
   }
 
-  private async _openInBrowser(owner: string, repo: string, runId: number): Promise<void> {
+  private async _openInBrowser(owner: string, repo: string, runId: number, instanceUrl?: string): Promise<void> {
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('No config');
+      const config = await this._getConfig(owner, repo, instanceUrl);
 
       // Get run_number from stored run data (web UI uses run_number, not internal id)
-      const panelKey = `${owner}/${repo}/${String(runId)}`;
+      const panelKey = `${instanceUrl ?? ''}/${owner}/${repo}/${String(runId)}`;
       const state = this._panels.get(panelKey);
       const runNumber = state?.run.run_number ?? runId;
 
@@ -259,9 +266,9 @@ export class ActionDetailWebviewProvider {
     }
   }
 
-  private async _viewLogs(owner: string, repo: string, runId: number, jobRef: WorkflowJobRef): Promise<void> {
+  private async _viewLogs(owner: string, repo: string, runId: number, jobRef: WorkflowJobRef, instanceUrl?: string): Promise<void> {
     // Get the run data to access run_number (sequential index, not internal id)
-    const panelKey = `${owner}/${repo}/${String(runId)}`;
+    const panelKey = `${instanceUrl ?? ''}/${owner}/${repo}/${String(runId)}`;
     const state = this._panels.get(panelKey);
     const run = state?.pendingData?.run;
 
@@ -271,8 +278,7 @@ export class ActionDetailWebviewProvider {
     }
 
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('No config');
+      const config = await this._getConfig(owner, repo, instanceUrl);
 
       await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,

@@ -127,6 +127,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "forgejo.refreshRepositoryPullRequests",
+        "title": "Refresh Pull Requests",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "forgejo.refreshIssues",
         "title": "Forgejo: Refresh Issues",
         "icon": "$(refresh)"
@@ -228,6 +233,11 @@
         "icon": "$(git-pull-request-create)"
       },
       {
+        "command": "forgejo.createPullRequestForRepository",
+        "title": "Create Pull Request",
+        "icon": "$(git-pull-request-create)"
+      },
+      {
         "command": "forgejo.submitInlineComment",
         "title": "Submit Comment"
       },
@@ -251,7 +261,7 @@
       "view/title": [
         {
           "command": "forgejo.createPullRequest",
-          "when": "view == forgejoPullRequests",
+          "when": "view == forgejoPullRequests && !forgejo.multipleRepositories",
           "group": "navigation@0"
         },
         {
@@ -306,6 +316,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "forgejo.createPullRequestForRepository",
+          "when": "viewItem == forgejoPrRepository",
+          "group": "inline@0"
+        },
+        {
+          "command": "forgejo.refreshRepositoryPullRequests",
+          "when": "viewItem == forgejoPrRepository",
+          "group": "inline@1"
+        },
         {
           "command": "forgejo.showPrDetails",
           "when": "viewItem == prOverview",

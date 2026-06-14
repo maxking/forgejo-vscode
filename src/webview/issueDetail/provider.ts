@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
-import { getForgejoConfig } from '../../utils/config';
+import { getForgejoConfigFor } from '../../utils/config';
 import { Issue } from '../../models/issue';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 
@@ -46,6 +46,7 @@ interface PanelState {
   owner: string;
   repo: string;
   number: number;
+  instanceUrl?: string;
   isReady: boolean;
   pendingData?: IssueDetailViewData | null;
 }
@@ -56,10 +57,10 @@ export class IssueDetailWebviewProvider {
 
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
-  public async showIssueDetails(owner: string, repo: string, number: number): Promise<void> {
-    logInfo('Showing Issue details in webview:', { owner, repo, number });
+  public async showIssueDetails(owner: string, repo: string, number: number, instanceUrl?: string): Promise<void> {
+    logInfo('Showing Issue details in webview:', { owner, repo, number, instanceUrl });
 
-    const panelKey = `${owner}/${repo}/issue/${String(number)}`;
+    const panelKey = `${instanceUrl ?? ''}/${owner}/${repo}/issue/${String(number)}`;
 
     if (this._panels.has(panelKey)) {
       const state = this._panels.get(panelKey);
@@ -86,6 +87,7 @@ export class IssueDetailWebviewProvider {
       owner,
       repo,
       number,
+      instanceUrl,
       isReady: false,
       pendingData: null
     };
@@ -113,12 +115,11 @@ export class IssueDetailWebviewProvider {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
-    const { panel, owner, repo, number } = state;
+    const { panel, owner, repo, number, instanceUrl } = state;
     logInfo('_fetchIssueData starting:', { panelKey, isReady: state.isReady });
 
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('Forgejo configuration not found');
+      const config = await this._getConfig(owner, repo, instanceUrl);
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
       logInfo('Fetching Issue details from API...');
@@ -192,7 +193,7 @@ export class IssueDetailWebviewProvider {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
-    const { owner, repo, number } = state;
+    const { owner, repo, number, instanceUrl } = state;
 
     switch (message.type) {
       case 'ready':
@@ -207,18 +208,25 @@ export class IssueDetailWebviewProvider {
         }
         break;
       case 'refresh': await this._fetchIssueData(panelKey); break;
-      case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey); break;
-      case 'openInBrowser': await this._openInBrowser(owner, repo, number); break;
-      case 'closeIssue': await this._closeIssue(owner, repo, number, panelKey); break;
-      case 'reopenIssue': await this._reopenIssue(owner, repo, number, panelKey); break;
-      case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey); break;
+      case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey, instanceUrl); break;
+      case 'openInBrowser': await this._openInBrowser(owner, repo, number, instanceUrl); break;
+      case 'closeIssue': await this._closeIssue(owner, repo, number, panelKey, instanceUrl); break;
+      case 'reopenIssue': await this._reopenIssue(owner, repo, number, panelKey, instanceUrl); break;
+      case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey, instanceUrl); break;
     }
   }
 
-  private async _addComment(owner: string, repo: string, number: number, body: string, panelKey?: string): Promise<void> {
+  private async _getConfig(owner: string, repo: string, instanceUrl?: string) {
+    const config = await getForgejoConfigFor(owner, repo, instanceUrl);
+    if (!config) {
+      throw new Error('Forgejo configuration not found');
+    }
+    return config;
+  }
+
+  private async _addComment(owner: string, repo: string, number: number, body: string, panelKey?: string, instanceUrl?: string): Promise<void> {
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('No config');
+      const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.createComment(owner, repo, number, body);
       void vscode.window.showInformationMessage('Comment added');
@@ -228,10 +236,9 @@ export class IssueDetailWebviewProvider {
     }
   }
 
-  private async _closeIssue(owner: string, repo: string, number: number, panelKey?: string): Promise<void> {
+  private async _closeIssue(owner: string, repo: string, number: number, panelKey?: string, instanceUrl?: string): Promise<void> {
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('No config');
+      const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.updateIssueState(owner, repo, number, 'closed');
       void vscode.window.showInformationMessage(`Issue #${String(number)} closed`);
@@ -241,10 +248,9 @@ export class IssueDetailWebviewProvider {
     }
   }
 
-  private async _reopenIssue(owner: string, repo: string, number: number, panelKey?: string): Promise<void> {
+  private async _reopenIssue(owner: string, repo: string, number: number, panelKey?: string, instanceUrl?: string): Promise<void> {
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('No config');
+      const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.updateIssueState(owner, repo, number, 'open');
       void vscode.window.showInformationMessage(`Issue #${String(number)} reopened`);
@@ -254,11 +260,10 @@ export class IssueDetailWebviewProvider {
     }
   }
 
-  private async _updateBody(owner: string, repo: string, number: number, body: string, panelKey?: string): Promise<void> {
+  private async _updateBody(owner: string, repo: string, number: number, body: string, panelKey?: string, instanceUrl?: string): Promise<void> {
     const panelState = panelKey ? this._panels.get(panelKey) : undefined;
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('No config');
+      const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
       const updatedIssue = await client.updateIssueBody(owner, repo, number, body);
       logInfo('Issue body updated:', { owner, repo, number });
@@ -278,10 +283,9 @@ export class IssueDetailWebviewProvider {
     }
   }
 
-  private async _openInBrowser(owner: string, repo: string, number: number): Promise<void> {
+  private async _openInBrowser(owner: string, repo: string, number: number, instanceUrl?: string): Promise<void> {
     try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('No config');
+      const config = await this._getConfig(owner, repo, instanceUrl);
       const url = `${config.instanceUrl}/${owner}/${repo}/issues/${String(number)}`;
       void vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (error) {

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { getForgejoConfig } from '../utils/config';
+import { ForgejoConfig, getForgejoConfig, getForgejoConfigFor } from '../utils/config';
 import { PullRequestListItem } from '../models/pullRequest';
 import { PRTreeProvider } from '../providers/prTreeProvider';
 
@@ -12,7 +12,9 @@ export async function closePrCommand(
 	pr: PullRequestListItem,
 	owner: string,
 	repo: string,
-	prTreeProvider: PRTreeProvider
+	prTreeProvider: PRTreeProvider,
+	repositoryConfig?: ForgejoConfig,
+	instanceUrl?: string
 ): Promise<void> {
 	try {
 		// Confirm close
@@ -27,7 +29,7 @@ export async function closePrCommand(
 		}
 
 		// Execute close
-		const config = await getForgejoConfig();
+		const config = repositoryConfig ?? await getForgejoConfigFor(owner, repo, instanceUrl) ?? await getForgejoConfig();
 		if (!config) {
 			void vscode.window.showErrorMessage('Forgejo configuration not found');
 			return;

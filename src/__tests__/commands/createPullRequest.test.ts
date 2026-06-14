@@ -121,6 +121,32 @@ describe('createPullRequestCommand', () => {
     expect(mockPRTreeProvider.refresh).not.toHaveBeenCalled();
   });
 
+  it('uses repository config root path when creating a PR from a repository group', async () => {
+    const repositoryConfig = { ...mockConfig, rootPath: '/workspace/.worktrees/repo-a' };
+    mockGetForgejoConfig.mockResolvedValue(null);
+    (vscode.window.showInputBox as jest.Mock)
+      .mockResolvedValueOnce('My PR')
+      .mockResolvedValueOnce('Body')
+      .mockResolvedValueOnce('master');
+
+    await createPullRequestCommand(mockPRTreeProvider as any, repositoryConfig);
+
+    expect(mockedExecSync).toHaveBeenCalledWith('git rev-parse --abbrev-ref HEAD', expect.objectContaining({
+      cwd: '/workspace/.worktrees/repo-a'
+    }));
+    expect(mockedSpawnSync).toHaveBeenCalledWith('git', expect.any(Array), expect.objectContaining({
+      cwd: '/workspace/.worktrees/repo-a'
+    }));
+    expect(mockCreatePullRequest).toHaveBeenCalledWith(
+      mockConfig.owner,
+      mockConfig.repo,
+      'My PR',
+      'feat/issue-88',
+      'master',
+      'Body'
+    );
+  });
+
   it('shows error and returns early when no workspace folder is open', async () => {
     mockGetForgejoConfig.mockResolvedValue(mockConfig);
     (vscode.workspace as any).workspaceFolders = undefined;

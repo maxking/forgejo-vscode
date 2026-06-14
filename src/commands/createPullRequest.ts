@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { execSync, spawnSync } from 'child_process';
 import { ForgejoClient } from '../api/forgejoClient';
-import { getForgejoConfig } from '../utils/config';
+import { ForgejoConfig, getForgejoConfig } from '../utils/config';
 import { logInfo, logError } from '../utils/logger';
 import { PRTreeProvider } from '../providers/prTreeProvider';
 
@@ -20,9 +20,9 @@ export function branchNameToTitle(branchName: string): string {
  * Handles the forgejo.createPullRequest command.
  * Extracted from extension.ts for unit testability.
  */
-export async function createPullRequestCommand(prTreeProvider: PRTreeProvider): Promise<void> {
+export async function createPullRequestCommand(prTreeProvider: PRTreeProvider, repositoryConfig?: ForgejoConfig & { rootPath?: string }): Promise<void> {
 	try {
-		const config = await getForgejoConfig();
+		const config = repositoryConfig ?? await getForgejoConfig();
 		if (!config) {
 			void vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
 			return;
@@ -33,7 +33,7 @@ export async function createPullRequestCommand(prTreeProvider: PRTreeProvider): 
 			return;
 		}
 
-		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+		const workspaceRoot = repositoryConfig?.rootPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 		if (!workspaceRoot) {
 			void vscode.window.showErrorMessage('No workspace folder open.');
 			return;

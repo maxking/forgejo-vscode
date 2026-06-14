@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 
 // Mock the config module
 jest.mock('../../utils/config', () => ({
-  getForgejoConfig: jest.fn()
+  getForgejoConfig: jest.fn(),
+  getForgejoConfigFor: jest.fn()
 }));
 
 // Mock the ForgejoClient
@@ -16,10 +17,11 @@ jest.mock('../../api/forgejoClient', () => ({
 
 import { ForgejoCommentController } from '../../providers/prCommentController';
 import { PRContext } from '../../models/comment';
-import { getForgejoConfig } from '../../utils/config';
+import { getForgejoConfig, getForgejoConfigFor } from '../../utils/config';
 import { ForgejoClient } from '../../api/forgejoClient';
 
 const mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
+const mockGetForgejoConfigFor = getForgejoConfigFor as jest.MockedFunction<typeof getForgejoConfigFor>;
 const MockForgejoClient = ForgejoClient as jest.MockedClass<typeof ForgejoClient>;
 
 describe('ForgejoCommentController', () => {
@@ -31,6 +33,7 @@ describe('ForgejoCommentController', () => {
     // Re-setup mocks after clearAllMocks
     (vscode.workspace.onDidOpenTextDocument as jest.Mock).mockReturnValue({ dispose: jest.fn() });
     (vscode.workspace.onDidCloseTextDocument as jest.Mock).mockReturnValue({ dispose: jest.fn() });
+    mockGetForgejoConfigFor.mockImplementation(() => mockGetForgejoConfig());
 
     (vscode.comments.createCommentController as jest.Mock).mockReturnValue({
       commentingRangeProvider: null,

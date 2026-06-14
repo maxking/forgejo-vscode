@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { IssueTreeItem, IssueTreeProvider } from '../../providers/issueTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
-import { getForgejoConfig } from '../../utils/config';
+import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { IssueListItem } from '../../models/issue';
 
 // Mock dependencies
@@ -12,6 +12,7 @@ describe('IssueTreeProvider', () => {
   let provider: IssueTreeProvider;
   let mockClient: jest.Mocked<ForgejoClient>;
   let mockGetForgejoConfig: jest.MockedFunction<typeof getForgejoConfig>;
+  let mockGetForgejoRepositoryConfigs: jest.MockedFunction<typeof getForgejoRepositoryConfigs>;
 
   const mockConfig = {
     instanceUrl: 'https://git.example.com',
@@ -46,7 +47,9 @@ describe('IssueTreeProvider', () => {
     } as any;
 
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
+    mockGetForgejoRepositoryConfigs = getForgejoRepositoryConfigs as jest.MockedFunction<typeof getForgejoRepositoryConfigs>;
     mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, label: 'test-owner/test-repo' }]);
 
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);
 
@@ -110,8 +113,24 @@ describe('IssueTreeProvider', () => {
   });
 
   describe('IssueTreeProvider - getChildren', () => {
+    test('should group multiple detected repositories by owner and repo at the root', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([
+        { ...mockConfig, owner: 'maxking', repo: 'forgejo-vscode', label: 'maxking/forgejo-vscode' },
+        { ...mockConfig, owner: 'forgejo', repo: 'forgejo', label: 'forgejo/forgejo' }
+      ]);
+
+      const children = await provider.getChildren();
+
+      expect(children.map(child => String((child as vscode.TreeItem).label))).toEqual([
+        'maxking/forgejo-vscode',
+        'forgejo/forgejo'
+      ]);
+      expect(mockClient.getIssues).not.toHaveBeenCalled();
+    });
+
     test('should return error message when no config', async () => {
       mockGetForgejoConfig.mockResolvedValue(null as any);
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([]);
       const children = await provider.getChildren();
 
       expect(children).toHaveLength(1);

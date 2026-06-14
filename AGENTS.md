@@ -14,6 +14,13 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - Configuration-change listeners can race with explicit create/remove flows; avoid double-firing auth/session events after awaited config updates by checking the in-memory cache (e.g. `_knownSessions`) before emitting.
 - Add focused unit tests for provider/session lifecycle behavior and race fixes.
 - Git remote source providers should set `icon` to the contributed Forgejo icon id (`forgejo-logo`) so VS Code/Cursor clone pickers show the branded provider icon.
+- Prefer VS Code Git extension repository detection (`git.repositories`/`getRepository(uri)`) before shelling out from `workspaceFolders[0]`, so nested repositories detected by VS Code are respected.
+- Guard optional VS Code API namespaces (for example `vscode.extensions`) in runtime code because Jest's lightweight VS Code mock may omit them.
+- When grouping detected Git repositories for Forgejo views, deduplicate by normalized Forgejo remote identity (`instanceUrl/owner/repo`) so multiple local worktrees of the same repository do not appear as duplicate repo groups.
+- Multi-repository Forgejo views should activate the VS Code Git extension before reading `git.repositories`; otherwise they may show no configuration before the Git extension has activated.
+- Tree items and webview commands that originate from a repository group must carry enough repository identity (especially `instanceUrl`) into follow-up API calls; do not re-resolve with the active editor/default config for nested or multi-instance workflows.
+- When extending custom URI schemes, make optional path segments self-identifying or versioned; do not infer new URI formats from segment count when legacy file paths can contain arbitrary nested segments.
+- Skip VS Code Git extension repository discovery when there are no workspace folders so no-config command/provider paths do not wait on repository discovery timeouts.
 
 ## Landing the Plane (Session Completion)
 
@@ -99,4 +106,3 @@ After creating worktree:
 
 Switch to the worktree directory
 Begin coding in the worktree
-

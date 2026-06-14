@@ -1,11 +1,17 @@
 import * as vscode from 'vscode';
 import { execSync, spawnSync } from 'child_process';
+import type { GitExtension, Repository, Remote } from '../types/git';
 
 export interface GitRemoteInfo {
   owner: string;
   repo: string;
   remoteHost: string;
   instanceUrl?: string;
+}
+
+export interface GitRepositoryRemoteInfo extends GitRemoteInfo {
+  rootPath?: string;
+  remoteName?: string;
 }
 
 function maskRemoteUrlForLogging(remoteUrl: string): string {
@@ -25,11 +31,158 @@ function maskRemoteUrlForLogging(remoteUrl: string): string {
   }
 }
 
+function remoteUrl(remote: Remote): string | undefined {
+  const urls = [remote.fetchUrl, remote.pushUrl];
+  return urls.find((url): url is string => typeof url === 'string' && url.length > 0);
+}
+
+interface VSCodeExtension<T> {
+  exports?: T;
+  isActive: boolean;
+  activate(): Promise<T>;
+}
+
+interface VSCodeExtensionsApi {
+  getExtension<T>(extensionId: string): VSCodeExtension<T> | undefined;
+}
+
+function getGitExtension(): VSCodeExtension<GitExtension> | undefined {
+  const extensions = (vscode as unknown as { extensions?: VSCodeExtensionsApi }).extensions;
+  return extensions?.getExtension<GitExtension>('vscode.git');
+}
+
+function getGitExtensionApi(): ReturnType<GitExtension['getAPI']> | null {
+  const extension = getGitExtension();
+  const gitExtension = extension?.exports;
+
+  if (!extension?.isActive || !gitExtension?.enabled) {
+    return null;
+  }
+
+  return gitExtension.getAPI(1);
+}
+
+function selectRepositoryRemote(repository: Repository, remoteName?: string): Remote | undefined {
+  const preferredRemoteName = remoteName ?? 'origin';
+  return repository.state.remotes.find(remote => remote.name === preferredRemoteName)
+    ?? (!remoteName ? repository.state.remotes.find(remote => remoteUrl(remote)) : undefined);
+}
+
+function parseRepositoryRemote(repository: Repository, remoteName?: string): GitRepositoryRemoteInfo | null {
+  const selectedRemote = selectRepositoryRemote(repository, remoteName);
+  const selectedRemoteUrl = selectedRemote ? remoteUrl(selectedRemote) : undefined;
+
+  if (!selectedRemote || !selectedRemoteUrl) {
+    return null;
+  }
+
+  console.log('[Forgejo] Found git remote URL from VS Code Git repository:', repository.rootUri.fsPath, maskRemoteUrlForLogging(selectedRemoteUrl));
+  const parsed = parseRemoteUrl(selectedRemoteUrl);
+  console.log('[Forgejo] Parsed VS Code Git remote info:', parsed);
+  return parsed ? { ...parsed, rootPath: repository.rootUri.fsPath, remoteName: selectedRemote.name } : null;
+}
+
+function detectGitRemoteFromGitExtension(remoteName?: string): GitRemoteInfo | null {
+  const git = getGitExtensionApi();
+  if (!git) {
+    return null;
+  }
+
+  const activeUri = vscode.window.activeTextEditor?.document.uri;
+  const activeRepository = activeUri ? git.getRepository(activeUri) : null;
+  const [firstRepository] = git.repositories as readonly (Repository | undefined)[];
+  const repository = activeRepository ?? firstRepository;
+
+  if (!repository) {
+    return null;
+  }
+
+  return parseRepositoryRemote(repository, remoteName);
+}
+
+function parseGitRepositories(git: ReturnType<GitExtension['getAPI']>, remoteName?: string): GitRepositoryRemoteInfo[] {
+  return git.repositories
+    .map(repository => parseRepositoryRemote(repository, remoteName))
+    .filter((info): info is GitRepositoryRemoteInfo => info !== null);
+}
+
+async function waitForGitRepositoryDiscovery(git: ReturnType<GitExtension['getAPI']>, timeoutMs = 5000, quietMs = 750): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const state: { disposable?: vscode.Disposable; quietTimer?: ReturnType<typeof setTimeout> } = {};
+    let finished = false;
+    const timeout = setTimeout(() => finish(), timeoutMs);
+    const finish = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      clearTimeout(timeout);
+      if (state.quietTimer) {
+        clearTimeout(state.quietTimer);
+      }
+      state.disposable?.dispose();
+      resolve();
+    };
+    const scheduleQuietFinish = () => {
+      if (state.quietTimer) {
+        clearTimeout(state.quietTimer);
+      }
+      state.quietTimer = setTimeout(finish, quietMs);
+    };
+
+    state.disposable = git.onDidOpenRepository(scheduleQuietFinish);
+
+    if (git.repositories.length > 0) {
+      scheduleQuietFinish();
+    }
+  });
+}
+
+export function detectGitRepositories(remoteName?: string): GitRepositoryRemoteInfo[] {
+  const git = getGitExtensionApi();
+  return git ? parseGitRepositories(git, remoteName) : [];
+}
+
+export async function detectGitRepositoriesAsync(remoteName?: string): Promise<GitRepositoryRemoteInfo[]> {
+  if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+    return [];
+  }
+
+  const activeGit = getGitExtensionApi();
+  if (activeGit) {
+    await waitForGitRepositoryDiscovery(activeGit);
+    return parseGitRepositories(activeGit, remoteName);
+  }
+
+  const extension = getGitExtension();
+  if (!extension) {
+    return [];
+  }
+
+  try {
+    const gitExtension = extension.isActive ? extension.exports : await extension.activate();
+    if (!gitExtension?.enabled) {
+      return [];
+    }
+    const git = gitExtension.getAPI(1);
+    await waitForGitRepositoryDiscovery(git);
+    return parseGitRepositories(git, remoteName);
+  } catch (error) {
+    console.log('[Forgejo] Git extension activation failed:', error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
 /**
  * Detect git repository and extract remote information
  * @param remoteName Optional remote name to use instead of 'origin'
  */
 export function detectGitRemote(remoteName?: string): GitRemoteInfo | null {
+  const gitExtensionRemote = detectGitRemoteFromGitExtension(remoteName);
+  if (gitExtensionRemote) {
+    return gitExtensionRemote;
+  }
+
   const workspaceFolders = vscode.workspace.workspaceFolders;
 
   if (!workspaceFolders || workspaceFolders.length === 0) {

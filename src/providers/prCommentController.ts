@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { getForgejoConfig } from '../utils/config';
+import { getForgejoConfigFor } from '../utils/config';
 import { PRContext, PullReview, ReviewComment } from '../models/comment';
-import { PR_DIFF_SCHEME } from './prDiffContentProvider';
+import { parsePRFileUri, PR_DIFF_SCHEME } from './prDiffContentProvider';
 
 /**
  * Manages inline PR comments using the VS Code Comment Controller API.
@@ -71,21 +71,17 @@ export class ForgejoCommentController implements vscode.Disposable {
 
   /**
    * Parse a forgejo-pr: URI to extract the ref used.
-   * URI format: forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
+   * URI format:
+   * - forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
+   * - forgejo-pr:/{base64url_instance}/{owner}/{repo}/{base64url_ref}/{filepath}
    */
   private parseUri(uri: vscode.Uri): { owner: string; repo: string; ref: string; filePath: string } | undefined {
-    const parts = uri.path.split('/').filter(p => p);
-    if (parts.length < 4) {
+    try {
+      const parsed = parsePRFileUri(uri);
+      return { owner: parsed.owner, repo: parsed.repo, ref: parsed.ref, filePath: parsed.filepath };
+    } catch {
       return undefined;
     }
-
-    const owner = parts[0];
-    const repo = parts[1];
-    const encodedRef = parts[2];
-    const filePath = decodeURIComponent(parts.slice(3).join('/'));
-    const ref = Buffer.from(encodedRef, 'base64url').toString();
-
-    return { owner, repo, ref, filePath };
   }
 
   /**
@@ -116,7 +112,7 @@ export class ForgejoCommentController implements vscode.Disposable {
     }
 
     try {
-      const config = await getForgejoConfig();
+      const config = await getForgejoConfigFor(ctx.owner, ctx.repo, ctx.instanceUrl);
       if (!config) {
         return;
       }
@@ -210,7 +206,7 @@ export class ForgejoCommentController implements vscode.Disposable {
       return;
     }
 
-    const config = await getForgejoConfig();
+    const config = await getForgejoConfigFor(ctx.owner, ctx.repo, ctx.instanceUrl);
     if (!config) {
       void vscode.window.showErrorMessage('Forgejo configuration not found.');
       return;

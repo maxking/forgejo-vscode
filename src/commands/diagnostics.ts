@@ -5,7 +5,7 @@ import { getForgejoConfig } from '../utils/config';
 /**
  * Shows diagnostic information about the current Forgejo configuration
  */
-export async function showDiagnostics(): Promise<void> {
+export async function showDiagnostics(): Promise<string> {
 	console.log('[Forgejo] === DIAGNOSTICS ===');
 
 	const config = vscode.workspace.getConfiguration('forgejo');
@@ -86,4 +86,6 @@ export async function showDiagnostics(): Promise<void> {
 			void vscode.window.showInformationMessage('Diagnostics copied to clipboard');
 		}
 	});
+
+	return report;
 }
