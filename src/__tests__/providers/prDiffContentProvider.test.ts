@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { PRDiffContentProvider, createPRFileUri, PR_DIFF_SCHEME } from '../../providers/prDiffContentProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
-import { getForgejoConfig } from '../../utils/config';
+import { getForgejoConfig, getForgejoConfigFor } from '../../utils/config';
 import { mockPlainTextContent, mockModifiedContent } from '../fixtures/fileContents';
 
 // Mock dependencies
@@ -12,6 +12,7 @@ describe('PRDiffContentProvider', () => {
   let provider: PRDiffContentProvider;
   let mockClient: jest.Mocked<ForgejoClient>;
   let mockGetForgejoConfig: jest.MockedFunction<typeof getForgejoConfig>;
+  let mockGetForgejoConfigFor: jest.MockedFunction<typeof getForgejoConfigFor>;
 
   beforeEach(() => {
     provider = new PRDiffContentProvider();
@@ -19,9 +20,11 @@ describe('PRDiffContentProvider', () => {
       getFileContents: jest.fn()
     } as any;
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
+    mockGetForgejoConfigFor = getForgejoConfigFor as jest.MockedFunction<typeof getForgejoConfigFor>;
 
     // Reset mocks
     jest.clearAllMocks();
+    mockGetForgejoConfigFor.mockImplementation(() => mockGetForgejoConfig());
 
     // Mock ForgejoClient constructor
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);

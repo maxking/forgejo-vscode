@@ -144,6 +144,10 @@ export function detectGitRepositories(remoteName?: string): GitRepositoryRemoteI
 }
 
 export async function detectGitRepositoriesAsync(remoteName?: string): Promise<GitRepositoryRemoteInfo[]> {
+  if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+    return [];
+  }
+
   const activeGit = getGitExtensionApi();
   if (activeGit) {
     await waitForGitRepositoryDiscovery(activeGit);

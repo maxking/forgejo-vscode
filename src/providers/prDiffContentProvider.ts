@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { getForgejoConfig, getForgejoConfigFor } from '../utils/config';
+import { getForgejoConfigFor } from '../utils/config';
 
 /**
  * Custom URI scheme for PR diff virtual documents
@@ -11,6 +11,45 @@ import { getForgejoConfig, getForgejoConfigFor } from '../utils/config';
  * 2. Survive VS Code tab serialization, which strips query parameters from custom scheme URIs
  */
 export const PR_DIFF_SCHEME = 'forgejo-pr';
+
+export interface ParsedPRFileUri {
+  owner: string;
+  repo: string;
+  ref: string;
+  filepath: string;
+  instanceUrl?: string;
+}
+
+function decodeBase64Url(value: string): string {
+  return Buffer.from(value, 'base64url').toString();
+}
+
+function decodeInstanceSegment(value: string): string | undefined {
+  const decoded = decodeBase64Url(value);
+  return /^https?:\/\//i.test(decoded) ? decoded : undefined;
+}
+
+export function parsePRFileUri(uri: vscode.Uri): ParsedPRFileUri {
+  const parts = uri.path.split('/').filter(p => p);
+  if (parts.length < 4) {
+    throw new Error('Invalid PR diff URI format');
+  }
+
+  const instanceUrl = parts.length >= 5 ? decodeInstanceSegment(parts[0]) : undefined;
+  const offset = instanceUrl ? 1 : 0;
+
+  if (parts.length - offset < 4) {
+    throw new Error('Invalid PR diff URI format');
+  }
+
+  const owner = parts[offset];
+  const repo = parts[offset + 1];
+  const encodedRef = parts[offset + 2];
+  const filepath = decodeURIComponent(parts.slice(offset + 3).join('/'));
+  const ref = decodeBase64Url(encodedRef);
+
+  return { owner, repo, ref, filepath, instanceUrl };
+}
 
 /**
  * Provides virtual document content for PR diffs
@@ -41,24 +80,7 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
       return cached;
     }
 
-    // Parse URI:
-    // - New format: forgejo-pr:/{base64url_instance}/{owner}/{repo}/{base64url_ref}/{filepath}
-    // - Legacy format: forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
-    const parts = uri.path.split('/').filter(p => p);
-    if (parts.length < 4) {
-      throw new Error('Invalid PR diff URI format');
-    }
-
-    const hasInstanceSegment = parts.length >= 5;
-    const encodedInstanceUrl = hasInstanceSegment ? parts[0] : undefined;
-    const owner = hasInstanceSegment ? parts[1] : parts[0];
-    const repo = hasInstanceSegment ? parts[2] : parts[1];
-    const encodedRef = hasInstanceSegment ? parts[3] : parts[2];
-    const filepath = decodeURIComponent(parts.slice(hasInstanceSegment ? 4 : 3).join('/'));
-    const instanceUrl = encodedInstanceUrl ? Buffer.from(encodedInstanceUrl, 'base64url').toString() : undefined;
-
-    // Decode base64url-encoded ref
-    const ref = Buffer.from(encodedRef, 'base64url').toString();
+    const { owner, repo, ref, filepath, instanceUrl } = parsePRFileUri(uri);
     if (!ref) {
       console.warn('[Forgejo] Empty ref after decoding in URI:', uri.toString());
       return '// This PR diff tab could not be restored.\n// Please re-open the file from the Pull Requests tree view.';
@@ -67,7 +89,7 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
     console.log('[Forgejo] Fetching file:', { owner, repo, ref, filepath });
 
     try {
-      const config = await getForgejoConfigFor(owner, repo, instanceUrl) ?? await getForgejoConfig();
+      const config = await getForgejoConfigFor(owner, repo, instanceUrl);
       if (!config) {
         throw new Error('Forgejo configuration not found');
       }

@@ -26,7 +26,7 @@ import { closePrCommand } from './commands/closePr';
 import { registerCommand } from './commands/registry';
 import { logger, logInfo } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
-import { getForgejoConfig, getForgejoConfigFor } from './utils/config';
+import { ForgejoConfig, getForgejoConfig, getForgejoConfigFor } from './utils/config';
 import { initializeSecretStorage } from './utils/secretStorage';
 import { migrateTokensToSecretStorage } from './utils/migration';
 import { ForgejoRemoteSourceProvider } from './providers/forgejoRemoteSourceProvider';
@@ -260,7 +260,7 @@ export async function activate(context: vscode.ExtensionContext) {
           if (file.status === 'removed') {
             const beforeUri = createPRFileUri(owner, repo, baseRef, file.filename, instanceUrl);
             commentController.registerPRContext(beforeUri, {
-              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
+              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename, instanceUrl
             });
             const doc = await vscode.workspace.openTextDocument(beforeUri);
             await vscode.window.showTextDocument(doc, { preview: true });
@@ -275,7 +275,7 @@ export async function activate(context: vscode.ExtensionContext) {
           if (file.status === 'added') {
             const afterUri = createPRFileUri(owner, repo, headRef, file.filename, instanceUrl);
             commentController.registerPRContext(afterUri, {
-              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
+              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename, instanceUrl
             });
             const doc = await vscode.workspace.openTextDocument(afterUri);
             await vscode.window.showTextDocument(doc, { preview: true });
@@ -295,10 +295,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
           // Register PR context for both sides of the diff
           commentController.registerPRContext(beforeUri, {
-            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforePath
+            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforePath, instanceUrl
           });
           commentController.registerPRContext(afterUri, {
-            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: afterPath
+            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: afterPath, instanceUrl
           });
 
           const title = `PR #${pr.number}: ${file.filename}`;
@@ -388,22 +388,27 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand(
       'forgejo.mergePr',
-      (prOrItem, owner?, repo?) => {
+      (prOrItem, owner?, repo?, instanceUrl?) => {
         let pr: PullRequestListItem;
         let actualOwner: string;
         let actualRepo: string;
+        let actualInstanceUrl: string | undefined;
+        let repositoryConfig: ForgejoConfig | undefined;
 
         if (prOrItem instanceof PRTreeItem) {
           pr = prOrItem.pr;
           actualOwner = prOrItem.owner;
           actualRepo = prOrItem.repo;
+          actualInstanceUrl = prOrItem.config?.instanceUrl;
+          repositoryConfig = prOrItem.config;
         } else {
           pr = prOrItem;
           actualOwner = owner ?? '';
           actualRepo = repo ?? '';
+          actualInstanceUrl = instanceUrl;
         }
 
-        return mergePrCommand(pr, actualOwner, actualRepo, prTreeProvider);
+        return mergePrCommand(pr, actualOwner, actualRepo, prTreeProvider, repositoryConfig, actualInstanceUrl);
       }
     )
   );
@@ -413,22 +418,27 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand(
       'forgejo.closePr',
-      async (prOrItem, owner?, repo?) => {
+      async (prOrItem, owner?, repo?, instanceUrl?) => {
         let pr: PullRequestListItem;
         let actualOwner: string;
         let actualRepo: string;
+        let actualInstanceUrl: string | undefined;
+        let repositoryConfig: ForgejoConfig | undefined;
 
         if (prOrItem instanceof PRTreeItem) {
           pr = prOrItem.pr;
           actualOwner = prOrItem.owner;
           actualRepo = prOrItem.repo;
+          actualInstanceUrl = prOrItem.config?.instanceUrl;
+          repositoryConfig = prOrItem.config;
         } else {
           pr = prOrItem;
           actualOwner = owner ?? '';
           actualRepo = repo ?? '';
+          actualInstanceUrl = instanceUrl;
         }
 
-        await closePrCommand(pr, actualOwner, actualRepo, prTreeProvider);
+        await closePrCommand(pr, actualOwner, actualRepo, prTreeProvider, repositoryConfig, actualInstanceUrl);
       }
     )
   );
@@ -458,7 +468,7 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         } else if (item instanceof StepTreeItem) {
           // Steps don't have their own URL; open the parent job page
-          void getForgejoConfig().then(config => {
+          void getForgejoConfigFor(item.owner, item.repo, item.instanceUrl).then(config => {
             if (config) {
               const jobTarget = item.jobRef.jobHtmlUrl
                 ?? (item.jobRef.jobId !== undefined
@@ -546,28 +556,32 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand(
       'forgejo.showActionDetails',
-      async (runOrItem, owner?, repo?) => {
+      async (runOrItem, owner?, repo?, instanceUrl?) => {
         try {
           let run: WorkflowRunListItem;
           let actualOwner: string;
           let actualRepo: string;
+          let actualInstanceUrl: string | undefined;
 
           if (runOrItem instanceof WorkflowRunTreeItem) {
             // jobs is guaranteed non-empty — the constructor accesses jobs[0]
             run = runOrItem.jobs[0];
             actualOwner = runOrItem.owner;
             actualRepo = runOrItem.repo;
+            actualInstanceUrl = runOrItem.instanceUrl;
           } else if (runOrItem instanceof JobTreeItem) {
             run = runOrItem.job;
             actualOwner = runOrItem.owner;
             actualRepo = runOrItem.repo;
+            actualInstanceUrl = runOrItem.instanceUrl;
           } else {
             run = runOrItem;
             actualOwner = owner ?? '';
             actualRepo = repo ?? '';
+            actualInstanceUrl = instanceUrl;
           }
 
-          await actionDetailWebviewProvider.showActionDetails(actualOwner, actualRepo, run);
+          await actionDetailWebviewProvider.showActionDetails(actualOwner, actualRepo, run, actualInstanceUrl);
         } catch (error) {
           console.error('[Forgejo] Error opening Action details:', error);
           void vscode.window.showErrorMessage(
@@ -730,23 +744,26 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand(
       'forgejo.showIssueDetails',
-      async (issueOrItem, owner?, repo?) => {
+      async (issueOrItem, owner?, repo?, instanceUrl?) => {
         try {
           let issueNumber: number;
           let actualOwner: string;
           let actualRepo: string;
+          let actualInstanceUrl: string | undefined;
 
           if (issueOrItem instanceof IssueTreeItem) {
             issueNumber = issueOrItem.issue.number;
             actualOwner = issueOrItem.owner;
             actualRepo = issueOrItem.repo;
+            actualInstanceUrl = issueOrItem.instanceUrl;
           } else {
             issueNumber = issueOrItem.number;
             actualOwner = owner ?? '';
             actualRepo = repo ?? '';
+            actualInstanceUrl = instanceUrl;
           }
 
-          await issueDetailWebviewProvider.showIssueDetails(actualOwner, actualRepo, issueNumber);
+          await issueDetailWebviewProvider.showIssueDetails(actualOwner, actualRepo, issueNumber, actualInstanceUrl);
         } catch (error) {
           console.error('[Forgejo] Error opening Issue details:', error);
           void vscode.window.showErrorMessage(

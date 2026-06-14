@@ -8,7 +8,8 @@ export class IssueTreeItem extends vscode.TreeItem {
     public readonly issue: IssueListItem,
     public readonly htmlUrl: string,
     public readonly owner: string,
-    public readonly repo: string
+    public readonly repo: string,
+    public readonly instanceUrl?: string
   ) {
     super(`#${issue.number}: ${issue.title}`, vscode.TreeItemCollapsibleState.None);
 
@@ -27,7 +28,7 @@ export class IssueTreeItem extends vscode.TreeItem {
     this.command = {
       command: 'forgejo.showIssueDetails',
       title: 'Show Issue Details',
-      arguments: [issue, owner, repo]
+      arguments: [issue, owner, repo, instanceUrl]
     };
   }
 }
@@ -106,7 +107,7 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
     } else if (element instanceof IssueGroupItem) {
       // Show issues in this group
       const config = (element as IssueGroupItem & { config?: ForgejoConfig }).config;
-      return element.issues.map(issue => new IssueTreeItem(issue, issue.html_url, config?.owner ?? this.owner, config?.repo ?? this.repo));
+      return element.issues.map(issue => new IssueTreeItem(issue, issue.html_url, config?.owner ?? this.owner, config?.repo ?? this.repo, config?.instanceUrl));
     } else if (element instanceof IssueMessageItem) {
       // Message items have no children
       return [];

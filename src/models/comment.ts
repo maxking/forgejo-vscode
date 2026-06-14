@@ -14,4 +14,5 @@ export interface PRContext {
   baseRef: string;
   headRef: string;
   filePath: string;
+  instanceUrl?: string;
 }

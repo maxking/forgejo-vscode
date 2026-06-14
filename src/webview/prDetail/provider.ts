@@ -265,7 +265,7 @@ export class PRDetailWebviewProvider {
       case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey, instanceUrl); break;
       case 'openCIStatus':
         if (message.url) {
-          await this._openCIStatus(message.url, owner, repo);
+          await this._openCIStatus(message.url, owner, repo, instanceUrl);
         }
         break;
       case 'viewCommit': break;
@@ -273,14 +273,14 @@ export class PRDetailWebviewProvider {
     }
   }
 
-  private async _openCIStatus(url: string, owner: string, repo: string): Promise<void> {
+  private async _openCIStatus(url: string, owner: string, repo: string, instanceUrl?: string): Promise<void> {
     // Check if this is a Forgejo Actions URL (e.g., /owner/repo/actions/runs/283/jobs/1)
     // These URLs are relative paths from the Forgejo instance
     const actionsMatch = url.match(/\/[^/]+\/[^/]+\/actions\/runs\/(\d+)(?:\/jobs\/(\d+))?/);
     if (actionsMatch) {
       const runNumber = parseInt(actionsMatch[1], 10);
       try {
-        const config = await this._getConfig(owner, repo);
+        const config = await this._getConfig(owner, repo, instanceUrl);
 
         // Fetch workflow runs and find the matching one by run_number
         const client = new ForgejoClient(config.instanceUrl, config.token);
@@ -289,7 +289,7 @@ export class PRDetailWebviewProvider {
 
         if (matchingRun) {
           // Deep-link to the action detail webview within the extension
-          await executeCommand('forgejo.showActionDetails', matchingRun, owner, repo);
+          await executeCommand('forgejo.showActionDetails', matchingRun, owner, repo, instanceUrl);
           return;
         }
       } catch (error) {
@@ -301,7 +301,7 @@ export class PRDetailWebviewProvider {
     try {
       let fullUrl = url;
       if (url.startsWith('/')) {
-        const config = await getForgejoConfigFor(owner, repo);
+        const config = await getForgejoConfigFor(owner, repo, instanceUrl);
         if (config?.instanceUrl) {
           fullUrl = `${config.instanceUrl}${url}`;
         }

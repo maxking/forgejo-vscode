@@ -93,6 +93,7 @@ export interface CommandMap {
     prOrItem: PullRequestListItem | PRTreeItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   // view/item/context: viewItem == pullRequest
@@ -100,6 +101,7 @@ export interface CommandMap {
     prOrItem: PullRequestListItem | PRTreeItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   // view/item/context: viewItem == issue  +  TreeItem.command
@@ -107,6 +109,7 @@ export interface CommandMap {
     issueOrItem: IssueListItem | IssueTreeItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   'forgejo.openIssueInBrowserFromContext': [issueItem: IssueTreeItem];
@@ -116,6 +119,7 @@ export interface CommandMap {
     runOrItem: WorkflowRunListItem | WorkflowRunTreeItem | JobTreeItem,
     owner?: string,
     repo?: string,
+    instanceUrl?: string,
   ];
 
   // view/item/context: viewItem == workflowRun | workflowJob | workflowStep
