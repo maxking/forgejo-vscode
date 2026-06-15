@@ -17,8 +17,8 @@ import * as vscode from 'vscode';
 import type { PullRequestListItem, PullRequestFile } from '../models/pullRequest';
 import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
-import type { IssueTreeItem } from '../providers/issueTreeProvider';
-import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem } from '../providers/prTreeProvider';
+import type { IssueLoadMoreItem, IssueTreeItem } from '../providers/issueTreeProvider';
+import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem, PRLoadMoreItem } from '../providers/prTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,9 @@ export interface CommandMap {
   'forgejo.showOutput': [];
   'forgejo.refreshPullRequests': [];
   'forgejo.refreshRepositoryPullRequests': [repositoryItem: PRRepositoryItem];
+  'forgejo.loadMorePullRequests': [item: PRLoadMoreItem];
   'forgejo.refreshIssues': [];
+  'forgejo.loadMoreIssues': [item: IssueLoadMoreItem];
   'forgejo.refreshActions': [];
   'forgejo.refreshReleases': [];
   'forgejo.configureInstanceUrl': [];

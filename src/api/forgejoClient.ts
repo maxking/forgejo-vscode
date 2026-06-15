@@ -16,6 +16,20 @@ import {
 } from 'forgejo-ts';
 import { vscodeLogger } from '../utils/forgejoLoggerAdapter';
 
+export interface PullRequestPage {
+  items: PullRequestListItem[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface IssuePage {
+  items: IssueListItem[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
 export class ForgejoClient extends BaseClient {
   constructor(
     private readonly vscodeInstanceUrl: string,
@@ -45,6 +59,32 @@ export class ForgejoClient extends BaseClient {
     return this.listPullRequests(owner, repo, state);
   }
 
+  async getPullRequestsPage(
+    owner: string,
+    repo: string,
+    state: 'open' | 'closed' | 'all' = 'all',
+    page = 1,
+    limit = 50
+  ): Promise<PullRequestPage> {
+    const params = new URLSearchParams({
+      state,
+      page: String(page),
+      limit: String(limit)
+    });
+    const items = await this.rawRequest<PullRequestListItem[]>('GET', `/repos/${owner}/${repo}/pulls?${params.toString()}`);
+    return {
+      items,
+      page,
+      limit,
+      hasMore: items.length === limit
+    };
+  }
+
+  async hasPullRequests(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<boolean> {
+    const page = await this.getPullRequestsPage(owner, repo, state, 1, 1);
+    return page.items.length > 0;
+  }
+
   async getPullRequestCount(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<number | null> {
     const response = await fetch(`${this.vscodeInstanceUrl}/api/v1/repos/${owner}/${repo}/pulls?state=${state}&page=1&limit=1`, {
       headers: {
@@ -72,6 +112,27 @@ export class ForgejoClient extends BaseClient {
 
   async getIssues(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<IssueListItem[]> {
     return this.listIssues(owner, repo, state);
+  }
+
+  async getIssuesPage(
+    owner: string,
+    repo: string,
+    state: 'open' | 'closed' | 'all' = 'all',
+    page = 1,
+    limit = 50
+  ): Promise<IssuePage> {
+    const params = new URLSearchParams({
+      state,
+      page: String(page),
+      limit: String(limit)
+    });
+    const items = await this.rawRequest<(IssueListItem & { pull_request?: unknown })[]>('GET', `/repos/${owner}/${repo}/issues?${params.toString()}`);
+    return {
+      items: items.filter(item => !item.pull_request),
+      page,
+      limit,
+      hasMore: items.length === limit
+    };
   }
 
   async getIssueDetails(owner: string, repo: string, number: number): Promise<Issue> {

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PRTreeProvider, PRTreeItem } from '../../providers/prTreeProvider';
+import { PRTreeProvider, PRTreeItem, PRLoadMoreItem, PRFileItem, PROverviewItem, PRRepositoryItem } from '../../providers/prTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { PullRequestListItem, PullRequestFile } from '../../models/pullRequest';
@@ -39,7 +39,8 @@ describe('PRTreeProvider', () => {
     // Create mock client
     mockClient = {
       getPullRequests: jest.fn(),
-      getPullRequestCount: jest.fn(),
+      getPullRequestsPage: jest.fn(),
+      hasPullRequests: jest.fn(),
       getPullRequestFiles: jest.fn(),
       getPullRequestRefs: jest.fn()
     } as any;
@@ -58,7 +59,13 @@ describe('PRTreeProvider', () => {
 
     // Create provider (it calls refresh in constructor, so mock needs to be set up first)
     mockClient.getPullRequests.mockResolvedValue([mockPR]);
-    mockClient.getPullRequestCount.mockResolvedValue(null);
+    mockClient.getPullRequestsPage.mockResolvedValue({
+      items: [mockPR],
+      page: 1,
+      limit: 50,
+      hasMore: false
+    });
+    mockClient.hasPullRequests.mockResolvedValue(false);
     provider = new PRTreeProvider();
 
     jest.clearAllMocks();
@@ -202,15 +209,36 @@ describe('PRTreeProvider', () => {
 
   describe('PRTreeItem Creation', () => {
     test('should create PRTreeItem with correct properties', () => {
-      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'owner', 'repo');
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'owner', 'repo', mockConfig);
 
       expect(prItem.label).toBe('#42: Test PR');
       expect(prItem.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
       expect(prItem.description).toBe('by testuser');
       expect(prItem.contextValue).toBe('pullRequest');
+      expect(prItem.id).toBe('pr/https%3A%2F%2Fgit.example.com/owner/repo/42');
       expect(prItem.command).toBeUndefined();
       expect(prItem.tooltip).toContain('Test PR');
       expect(prItem.tooltip).toContain('testuser');
+    });
+
+    test('should create stable ids for command-bearing PR child items', () => {
+      const overviewItem = new PROverviewItem(mockPR, 'owner', 'repo', 'https://git.example.com');
+      const fileItem = new PRFileItem(mockModifiedFile, mockPR, 'owner', 'repo', 'main', 'feature', 'https://git.example.com');
+
+      expect(overviewItem.id).toBe('pr-overview/https%3A%2F%2Fgit.example.com/owner/repo/42');
+      expect(overviewItem.command?.command).toBe('forgejo.showPrDetails');
+      expect(fileItem.id).toBe(`pr-file/https%3A%2F%2Fgit.example.com/owner/repo/42/${encodeURIComponent(mockModifiedFile.filename)}`);
+      expect(fileItem.command?.command).toBe('forgejo.showPrFileDiff');
+    });
+
+    test('should include repository identity in repository item ids', () => {
+      const repositoryItem = new PRRepositoryItem({
+        ...mockConfig,
+        label: 'test-owner/test-repo',
+        rootPath: '/workspace/repo'
+      });
+
+      expect(repositoryItem.id).toBe('pr-repository/https%3A%2F%2Fgit.example.com/test-owner/test-repo/%2Fworkspace%2Frepo');
     });
 
     test('should set merged icon for merged PRs', () => {
@@ -361,38 +389,81 @@ describe('PRTreeProvider', () => {
     });
 
     test('should fetch open PRs by default', async () => {
-      mockClient.getPullRequests.mockResolvedValue([mockPR]);
+      mockClient.getPullRequestsPage.mockResolvedValue({
+        items: [mockPR],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
 
       await provider.getChildren();
 
-      expect(mockClient.getPullRequests).toHaveBeenCalledWith('test-owner', 'test-repo', 'open');
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50);
+      expect(mockClient.getPullRequests).not.toHaveBeenCalled();
     });
 
     test('should group open PRs into "Open" group', async () => {
       const openPR: PullRequestListItem = { ...mockPR, state: 'open', draft: false, merged: false };
-      mockClient.getPullRequests.mockResolvedValue([openPR]);
+      mockClient.getPullRequestsPage.mockResolvedValue({
+        items: [openPR],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
 
       const children = await provider.getChildren();
 
       const openGroup = children.find(child => (child as any).label === 'Open');
       expect(openGroup).toBeDefined();
-      expect((openGroup as any).pullRequests).toEqual([openPR]);
+      expect((openGroup as vscode.TreeItem).id).toBe('pr-group/https%3A%2F%2Fgit.example.com/test-owner/test-repo/open');
+      const openItems = await provider.getChildren(openGroup);
+      expect((openItems[0] as PRTreeItem).pr).toEqual(openPR);
+    });
+
+    test('should not fire tree refresh while resolving group children', async () => {
+      const openPR: PullRequestListItem = { ...mockPR, state: 'open', draft: false, merged: false };
+      mockClient.getPullRequestsPage.mockResolvedValue({
+        items: [openPR],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
+
+      const children = await provider.getChildren();
+      const openGroup = children.find(child => (child as any).label === 'Open');
+      const changes: Array<unknown> = [];
+      provider.onDidChangeTreeData(item => changes.push(item));
+
+      await provider.getChildren(openGroup);
+
+      expect(changes).toEqual([]);
     });
 
     test('should group draft PRs into "Draft" group', async () => {
       const draftPR: PullRequestListItem = { ...mockPR, state: 'open', draft: true, merged: false };
-      mockClient.getPullRequests.mockResolvedValue([draftPR]);
+      mockClient.getPullRequestsPage.mockResolvedValue({
+        items: [draftPR],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
 
       const children = await provider.getChildren();
 
       const draftGroup = children.find(child => (child as any).label === 'Draft');
       expect(draftGroup).toBeDefined();
-      expect((draftGroup as any).pullRequests).toEqual([draftPR]);
+      const draftItems = await provider.getChildren(draftGroup);
+      expect((draftItems[0] as PRTreeItem).pr).toEqual(draftPR);
     });
 
     test('should include lazy Merged and Closed groups without fetching closed PRs initially', async () => {
-      mockClient.getPullRequests.mockResolvedValue([mockPR]);
-      mockClient.getPullRequestCount.mockResolvedValue(2);
+      mockClient.getPullRequestsPage.mockResolvedValue({
+        items: [mockPR],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
+      mockClient.hasPullRequests.mockResolvedValue(true);
 
       const children = await provider.getChildren();
 
@@ -402,8 +473,8 @@ describe('PRTreeProvider', () => {
       expect(closedGroup).toBeDefined();
       expect((mergedGroup as any).pullRequests).toBeNull();
       expect((closedGroup as any).pullRequests).toBeNull();
-      expect(mockClient.getPullRequests).toHaveBeenCalledTimes(1);
-      expect(mockClient.getPullRequests).toHaveBeenCalledWith('test-owner', 'test-repo', 'open');
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledTimes(1);
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50);
     });
 
     test('should return error message when no config', async () => {
@@ -426,18 +497,28 @@ describe('PRTreeProvider', () => {
       expect((children[0] as any).isError).toBe(true);
     });
 
-    test('should show lazy historical groups when closed count is unavailable and no open pull requests exist', async () => {
-      mockClient.getPullRequests.mockResolvedValue([]);
-      mockClient.getPullRequestCount.mockResolvedValue(null);
+    test('should show lazy historical groups when closed availability is unavailable and no open pull requests exist', async () => {
+      mockClient.getPullRequestsPage.mockResolvedValue({
+        items: [],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
+      mockClient.hasPullRequests.mockRejectedValue(new Error('Header unavailable'));
 
       const children = await provider.getChildren();
 
       expect(children.map(child => (child as any).label)).toEqual(['Merged', 'Closed']);
     });
 
-    test('should not show lazy historical groups when closed count is zero and no open pull requests exist', async () => {
-      mockClient.getPullRequests.mockResolvedValue([]);
-      mockClient.getPullRequestCount.mockResolvedValue(0);
+    test('should not show lazy historical groups when no closed pull requests exist', async () => {
+      mockClient.getPullRequestsPage.mockResolvedValue({
+        items: [],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
+      mockClient.hasPullRequests.mockResolvedValue(false);
 
       const children = await provider.getChildren();
 
@@ -447,7 +528,7 @@ describe('PRTreeProvider', () => {
     });
 
     test('should return error message on fetch failure', async () => {
-      mockClient.getPullRequests.mockRejectedValue(new Error('Network error'));
+      mockClient.getPullRequestsPage.mockRejectedValue(new Error('Network error'));
 
       const children = await provider.getChildren();
 
@@ -466,7 +547,12 @@ describe('PRTreeProvider', () => {
     test('should return PRTreeItems for group pull requests', async () => {
       const pr1: PullRequestListItem = { ...mockPR, number: 1, title: 'PR One' };
       const pr2: PullRequestListItem = { ...mockPR, number: 2, title: 'PR Two' };
-      mockClient.getPullRequests.mockResolvedValue([pr1, pr2]);
+      mockClient.getPullRequestsPage.mockResolvedValue({
+        items: [pr1, pr2],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
 
       // Get root children (groups)
       const groups = await provider.getChildren();
@@ -487,15 +573,26 @@ describe('PRTreeProvider', () => {
       const openPR: PullRequestListItem = { ...mockPR, number: 1, state: 'open', merged: false };
       const mergedPR: PullRequestListItem = { ...mockPR, number: 2, state: 'closed', merged: true, draft: false };
       const closedPR: PullRequestListItem = { ...mockPR, number: 3, state: 'closed', merged: false, draft: false };
-      mockClient.getPullRequests
-        .mockResolvedValueOnce([openPR])
-        .mockResolvedValueOnce([mergedPR, closedPR]);
+      mockClient.hasPullRequests.mockResolvedValue(true);
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [openPR],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        })
+        .mockResolvedValueOnce({
+          items: [mergedPR, closedPR],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        });
 
       const groups = await provider.getChildren();
       const mergedGroup = groups.find(group => (group as any).label === 'Merged');
       const prItems = await provider.getChildren(mergedGroup);
 
-      expect(mockClient.getPullRequests).toHaveBeenCalledWith('test-owner', 'test-repo', 'closed');
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(2, 'test-owner', 'test-repo', 'closed', 1, 50);
       expect(prItems.length).toBe(1);
       expect((prItems[0] as PRTreeItem).pr.number).toBe(2);
     });
@@ -503,9 +600,20 @@ describe('PRTreeProvider', () => {
     test('should reuse closed PR cache when Closed group is expanded after Merged', async () => {
       const mergedPR: PullRequestListItem = { ...mockPR, number: 2, state: 'closed', merged: true, draft: false };
       const closedPR: PullRequestListItem = { ...mockPR, number: 3, state: 'closed', merged: false, draft: false };
-      mockClient.getPullRequests
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([mergedPR, closedPR]);
+      mockClient.hasPullRequests.mockResolvedValue(true);
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        })
+        .mockResolvedValueOnce({
+          items: [mergedPR, closedPR],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        });
 
       const groups = await provider.getChildren();
       const mergedGroup = groups.find(group => (group as any).label === 'Merged');
@@ -514,7 +622,8 @@ describe('PRTreeProvider', () => {
       await provider.getChildren(mergedGroup);
       const closedItems = await provider.getChildren(closedGroup);
 
-      expect(mockClient.getPullRequests).toHaveBeenCalledTimes(2);
+      expect(mockClient.getPullRequests).not.toHaveBeenCalled();
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledTimes(2);
       expect(closedItems.length).toBe(1);
       expect((closedItems[0] as PRTreeItem).pr.number).toBe(3);
       expect((closedGroup as any).description).toBe('1');
@@ -523,9 +632,20 @@ describe('PRTreeProvider', () => {
     test('should reuse in-flight closed PR request during simultaneous expansion', async () => {
       const mergedPR: PullRequestListItem = { ...mockPR, number: 2, state: 'closed', merged: true, draft: false };
       const closedPR: PullRequestListItem = { ...mockPR, number: 3, state: 'closed', merged: false, draft: false };
-      mockClient.getPullRequests
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([mergedPR, closedPR]);
+      mockClient.hasPullRequests.mockResolvedValue(true);
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        })
+        .mockResolvedValueOnce({
+          items: [mergedPR, closedPR],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        });
 
       const groups = await provider.getChildren();
       const mergedGroup = groups.find(group => (group as any).label === 'Merged');
@@ -536,9 +656,247 @@ describe('PRTreeProvider', () => {
         provider.getChildren(closedGroup)
       ]);
 
-      expect(mockClient.getPullRequests).toHaveBeenCalledTimes(2);
+      expect(mockClient.getPullRequests).not.toHaveBeenCalled();
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledTimes(2);
       expect(mergedItems.length).toBe(1);
       expect(closedItems.length).toBe(1);
+    });
+
+    test('should add a load more item when more closed PR pages are available', async () => {
+      const mergedPR: PullRequestListItem = { ...mockPR, number: 2, state: 'closed', merged: true, draft: false };
+      mockClient.hasPullRequests.mockResolvedValue(true);
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        })
+        .mockResolvedValueOnce({
+          items: [mergedPR],
+          page: 1,
+          limit: 50,
+          hasMore: true
+        });
+
+      const groups = await provider.getChildren();
+      const mergedGroup = groups.find(group => (group as any).label === 'Merged');
+      const mergedItems = await provider.getChildren(mergedGroup);
+
+      expect(mergedItems[0]).toBeInstanceOf(PRTreeItem);
+      expect(mergedItems[1]).toBeInstanceOf(PRLoadMoreItem);
+      expect((mergedGroup as any).description).toBe('1+');
+    });
+
+    test('should load the next closed PR page through the load more item', async () => {
+      const firstMergedPR: PullRequestListItem = { ...mockPR, number: 2, state: 'closed', merged: true, draft: false };
+      const secondMergedPR: PullRequestListItem = { ...mockPR, number: 4, state: 'closed', merged: true, draft: false };
+      mockClient.hasPullRequests.mockResolvedValue(true);
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        })
+        .mockResolvedValueOnce({
+          items: [firstMergedPR],
+          page: 1,
+          limit: 50,
+          hasMore: true
+        })
+        .mockResolvedValueOnce({
+          items: [secondMergedPR],
+          page: 2,
+          limit: 50,
+          hasMore: false
+        });
+
+      const groups = await provider.getChildren();
+      const mergedGroup = groups.find(group => (group as any).label === 'Merged');
+      const initialItems = await provider.getChildren(mergedGroup);
+      const loadMoreItem = initialItems.find(item => item instanceof PRLoadMoreItem) as PRLoadMoreItem;
+
+      await provider.loadMorePullRequests(loadMoreItem);
+      const loadedItems = await provider.getChildren(mergedGroup);
+
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(2, 'test-owner', 'test-repo', 'closed', 1, 50);
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(3, 'test-owner', 'test-repo', 'closed', 2, 50);
+      expect(loadedItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([2, 4]);
+      expect(loadedItems.some(item => item instanceof PRLoadMoreItem)).toBe(false);
+    });
+
+    test('should add a load more item when more open PR pages are available', async () => {
+      const openPR: PullRequestListItem = { ...mockPR, number: 2, state: 'open', draft: false };
+      mockClient.getPullRequestsPage.mockResolvedValueOnce({
+        items: [openPR],
+        page: 1,
+        limit: 50,
+        hasMore: true
+      });
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as any).label === 'Open');
+      const openItems = await provider.getChildren(openGroup);
+
+      expect(openItems[0]).toBeInstanceOf(PRTreeItem);
+      expect(openItems[1]).toBeInstanceOf(PRLoadMoreItem);
+      expect((openGroup as any).description).toBe('1+');
+    });
+
+    test('should show Draft group when later open pages may contain drafts', async () => {
+      const openPR: PullRequestListItem = { ...mockPR, number: 2, state: 'open', draft: false };
+      mockClient.getPullRequestsPage.mockResolvedValueOnce({
+        items: [openPR],
+        page: 1,
+        limit: 50,
+        hasMore: true
+      });
+
+      const groups = await provider.getChildren();
+
+      expect(groups.find(group => (group as any).label === 'Draft')).toBeDefined();
+    });
+
+    test('should allow loading more from Draft when loaded open page has no drafts', async () => {
+      const openPR: PullRequestListItem = { ...mockPR, number: 2, state: 'open', draft: false };
+      const draftPR: PullRequestListItem = { ...mockPR, number: 4, state: 'open', draft: true };
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [openPR],
+          page: 1,
+          limit: 50,
+          hasMore: true
+        })
+        .mockResolvedValueOnce({
+          items: [draftPR],
+          page: 2,
+          limit: 50,
+          hasMore: false
+        });
+
+      const groups = await provider.getChildren();
+      const draftGroup = groups.find(group => (group as any).label === 'Draft');
+      const initialDraftItems = await provider.getChildren(draftGroup);
+      const loadMoreItem = initialDraftItems.find(item => item instanceof PRLoadMoreItem) as PRLoadMoreItem;
+
+      expect((initialDraftItems[0] as any).message).toBe('No draft pull requests found');
+      expect(loadMoreItem).toBeInstanceOf(PRLoadMoreItem);
+
+      await provider.loadMorePullRequests(loadMoreItem);
+      const loadedDraftItems = await provider.getChildren(draftGroup);
+
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(2, 'test-owner', 'test-repo', 'open', 2, 50);
+      expect(loadedDraftItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([4]);
+    });
+
+    test('should load the next open PR page through the load more item', async () => {
+      const firstOpenPR: PullRequestListItem = { ...mockPR, number: 2, state: 'open', draft: false };
+      const secondOpenPR: PullRequestListItem = { ...mockPR, number: 4, state: 'open', draft: false };
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [firstOpenPR],
+          page: 1,
+          limit: 50,
+          hasMore: true
+        })
+        .mockResolvedValueOnce({
+          items: [secondOpenPR],
+          page: 2,
+          limit: 50,
+          hasMore: false
+        });
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as any).label === 'Open');
+      const initialItems = await provider.getChildren(openGroup);
+      const loadMoreItem = initialItems.find(item => item instanceof PRLoadMoreItem) as PRLoadMoreItem;
+
+      await provider.loadMorePullRequests(loadMoreItem);
+      const loadedItems = await provider.getChildren(openGroup);
+
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(1, 'test-owner', 'test-repo', 'open', 1, 50);
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(2, 'test-owner', 'test-repo', 'open', 2, 50);
+      expect(loadedItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([2, 4]);
+      expect(loadedItems.some(item => item instanceof PRLoadMoreItem)).toBe(false);
+    });
+
+    test('should allow loading more from Merged when loaded closed page has no merged PRs', async () => {
+      const closedPR: PullRequestListItem = { ...mockPR, number: 2, state: 'closed', merged: false, draft: false };
+      const mergedPR: PullRequestListItem = { ...mockPR, number: 4, state: 'closed', merged: true, draft: false };
+      mockClient.hasPullRequests.mockResolvedValue(true);
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        })
+        .mockResolvedValueOnce({
+          items: [closedPR],
+          page: 1,
+          limit: 50,
+          hasMore: true
+        })
+        .mockResolvedValueOnce({
+          items: [mergedPR],
+          page: 2,
+          limit: 50,
+          hasMore: false
+        });
+
+      const groups = await provider.getChildren();
+      const mergedGroup = groups.find(group => (group as any).label === 'Merged');
+      const initialMergedItems = await provider.getChildren(mergedGroup);
+      const loadMoreItem = initialMergedItems.find(item => item instanceof PRLoadMoreItem) as PRLoadMoreItem;
+
+      expect((initialMergedItems[0] as any).message).toBe('No merged pull requests found');
+      expect(loadMoreItem).toBeInstanceOf(PRLoadMoreItem);
+
+      await provider.loadMorePullRequests(loadMoreItem);
+      const loadedMergedItems = await provider.getChildren(mergedGroup);
+
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(3, 'test-owner', 'test-repo', 'closed', 2, 50);
+      expect(loadedMergedItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([4]);
+    });
+
+    test('should allow loading more from Closed when loaded closed page has only merged PRs', async () => {
+      const mergedPR: PullRequestListItem = { ...mockPR, number: 2, state: 'closed', merged: true, draft: false };
+      const closedPR: PullRequestListItem = { ...mockPR, number: 4, state: 'closed', merged: false, draft: false };
+      mockClient.hasPullRequests.mockResolvedValue(true);
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false
+        })
+        .mockResolvedValueOnce({
+          items: [mergedPR],
+          page: 1,
+          limit: 50,
+          hasMore: true
+        })
+        .mockResolvedValueOnce({
+          items: [closedPR],
+          page: 2,
+          limit: 50,
+          hasMore: false
+        });
+
+      const groups = await provider.getChildren();
+      const closedGroup = groups.find(group => (group as any).label === 'Closed');
+      const initialClosedItems = await provider.getChildren(closedGroup);
+      const loadMoreItem = initialClosedItems.find(item => item instanceof PRLoadMoreItem) as PRLoadMoreItem;
+
+      expect((initialClosedItems[0] as any).message).toBe('No closed pull requests found');
+      expect(loadMoreItem).toBeInstanceOf(PRLoadMoreItem);
+
+      await provider.loadMorePullRequests(loadMoreItem);
+      const loadedClosedItems = await provider.getChildren(closedGroup);
+
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(3, 'test-owner', 'test-repo', 'closed', 2, 50);
+      expect(loadedClosedItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([4]);
     });
   });
 
