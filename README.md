@@ -27,6 +27,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.20
 
 - **Nested repository detection ([#22](https://codeberg.org/maxking/forgejo-vscode/issues/22)):** workspaces with nested Forgejo/Gitea repositories are now detected through VS Code's Git API and grouped by repository across Pull Requests, Issues, Actions, and Releases.
+- **Safer instance matching ([#171](https://git.araj.me/maxking/forgejo-vscode/issues/171)):** repositories whose HTTP(S) git remote does not match any configured Forgejo instance now use the remote host unauthenticated instead of falling back to an unrelated default instance.
 
 ### 0.3.19
 
