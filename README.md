@@ -30,6 +30,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - **Paged PR and issue loading ([#20](https://codeberg.org/maxking/forgejo-vscode/issues/20)):** Pull request and issue trees now fetch the first page for each group, then load additional pages through explicit load-more actions so very large repositories remain responsive.
 - **More reliable PR tree actions ([#20](https://codeberg.org/maxking/forgejo-vscode/issues/20)):** pull request tree rows now use stable identities so overview and file commands continue to work after refreshes and load-more updates.
 - **Tree UI regression coverage ([#20](https://codeberg.org/maxking/forgejo-vscode/issues/20)):** VS Code Playwright tests now exercise the Pull Requests and Issues tree load-more rows with mocked API pages.
+- **Agent workflow guidance:** repo instructions now ask agents to add follow-up commits instead of amending or force-pushing ongoing PR branches.
 
 ### 0.3.19
 

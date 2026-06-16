@@ -53,6 +53,7 @@ Before merging any PR, ask the user for confirmation even if the PR appears read
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
+- Do not amend commits or force-push ongoing PR branches; add follow-up commits and push normally so reviewers can track incremental changes.
 
 ## Building and Installing Extension
 
