@@ -1182,6 +1182,36 @@ describe('ForgejoClient', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
+    test('getPullRequestsPage should fetch only the requested page', async () => {
+      const page3 = generateMockPRs(50, 101);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page3 } as unknown as Response);
+
+      const result = await client.getPullRequestsPage('owner', 'repo', 'closed', 3, 50);
+
+      expect(result.items).toEqual(page3);
+      expect(result.page).toBe(3);
+      expect(result.limit).toBe(50);
+      expect(result.hasMore).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('state=closed&page=3&limit=50'), expect.any(Object));
+    });
+
+    test('hasPullRequests should use a one-item page probe', async () => {
+      const page1 = generateMockPRs(1, 1);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page1 } as unknown as Response);
+
+      await expect(client.hasPullRequests('owner', 'repo', 'closed')).resolves.toBe(true);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('state=closed&page=1&limit=1'), expect.any(Object));
+    });
+
+    test('hasPullRequests should return false for an empty probe', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as unknown as Response);
+
+      await expect(client.hasPullRequests('owner', 'repo', 'closed')).resolves.toBe(false);
+    });
+
     test('getIssues should fetch all pages and still filter out PRs', async () => {
       const page1 = generateMockIssueItems(50, 10, 1);
       const page2 = generateMockIssueItems(20, 5, 51);
@@ -1191,6 +1221,21 @@ describe('ForgejoClient', () => {
       expect(result.length).toBe(55);
       expect(result.every(item => !item.pull_request)).toBe(true);
       expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    test('getIssuesPage should fetch only the requested page and filter out PRs', async () => {
+      const page4 = generateMockIssueItems(50, 10, 151);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page4 } as unknown as Response);
+
+      const result = await client.getIssuesPage('owner', 'repo', 'open', 4, 50);
+
+      expect(result.items).toHaveLength(40);
+      expect(result.items.every(item => !item.pull_request)).toBe(true);
+      expect(result.page).toBe(4);
+      expect(result.limit).toBe(50);
+      expect(result.hasMore).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('state=open&page=4&limit=50'), expect.any(Object));
     });
 
     test('getWorkflowRuns should fetch multiple pages', async () => {

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { IssueTreeItem, IssueTreeProvider } from '../../providers/issueTreeProvider';
+import { IssueLoadMoreItem, IssueTreeItem, IssueTreeProvider } from '../../providers/issueTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { IssueListItem } from '../../models/issue';
@@ -41,9 +41,28 @@ describe('IssueTreeProvider', () => {
     comments: 0
   };
 
+  const page = (items: IssueListItem[], pageNumber = 1, hasMore = false) => ({
+    items,
+    page: pageNumber,
+    limit: 50,
+    hasMore
+  });
+
+  function mockIssuePages(openIssues: IssueListItem[], closedIssues: IssueListItem[], openHasMore = false, closedHasMore = false): void {
+    mockClient.getIssuesPage.mockImplementation((_owner, _repo, state, pageNumber = 1) => {
+      if (state === 'open') {
+        return Promise.resolve(page(openIssues, pageNumber, openHasMore));
+      }
+      if (state === 'closed') {
+        return Promise.resolve(page(closedIssues, pageNumber, closedHasMore));
+      }
+      return Promise.resolve(page([...openIssues, ...closedIssues], pageNumber, openHasMore || closedHasMore));
+    });
+  }
+
   beforeEach(() => {
     mockClient = {
-      getIssues: jest.fn()
+      getIssuesPage: jest.fn()
     } as any;
 
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
@@ -53,7 +72,7 @@ describe('IssueTreeProvider', () => {
 
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);
 
-    mockClient.getIssues.mockResolvedValue([]);
+    mockIssuePages([], []);
     provider = new IssueTreeProvider();
 
     jest.clearAllMocks();
@@ -125,7 +144,7 @@ describe('IssueTreeProvider', () => {
         'maxking/forgejo-vscode',
         'forgejo/forgejo'
       ]);
-      expect(mockClient.getIssues).not.toHaveBeenCalled();
+      expect(mockClient.getIssuesPage).not.toHaveBeenCalled();
     });
 
     test('should return error message when no config', async () => {
@@ -143,7 +162,7 @@ describe('IssueTreeProvider', () => {
 
     test('should return "No issues found" when empty', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getIssues.mockResolvedValue([]);
+      mockIssuePages([], []);
       const children = await provider.getChildren();
 
       expect(children).toHaveLength(1);
@@ -155,7 +174,7 @@ describe('IssueTreeProvider', () => {
 
     test('should group open issues into Open group', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getIssues.mockResolvedValue([mockOpenIssue]);
+      mockIssuePages([mockOpenIssue], []);
       const children = await provider.getChildren();
 
       expect(children).toHaveLength(1);
@@ -166,7 +185,7 @@ describe('IssueTreeProvider', () => {
 
     test('should group closed issues into Closed group', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getIssues.mockResolvedValue([mockClosedIssue]);
+      mockIssuePages([], [mockClosedIssue]);
       const children = await provider.getChildren();
 
       expect(children).toHaveLength(1);
@@ -177,7 +196,7 @@ describe('IssueTreeProvider', () => {
 
     test('should show both Open and Closed groups', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getIssues.mockResolvedValue([mockOpenIssue, mockClosedIssue]);
+      mockIssuePages([mockOpenIssue], [mockClosedIssue]);
       const children = await provider.getChildren();
 
       expect(children).toHaveLength(2);
@@ -187,7 +206,7 @@ describe('IssueTreeProvider', () => {
 
     test('should set Open group as Expanded and Closed group as Collapsed', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getIssues.mockResolvedValue([mockOpenIssue, mockClosedIssue]);
+      mockIssuePages([mockOpenIssue], [mockClosedIssue]);
       const children = await provider.getChildren();
 
       expect(children[0].collapsibleState).toBe(vscode.TreeItemCollapsibleState.Expanded);
@@ -196,7 +215,7 @@ describe('IssueTreeProvider', () => {
 
     test('should return IssueTreeItems as children of group', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getIssues.mockResolvedValue([mockOpenIssue]);
+      mockIssuePages([mockOpenIssue], []);
 
       // Get root groups
       const groups = await provider.getChildren();
@@ -214,7 +233,7 @@ describe('IssueTreeProvider', () => {
 
     test('should handle fetch error gracefully', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getIssues.mockRejectedValue(new Error('Network timeout'));
+      mockClient.getIssuesPage.mockRejectedValue(new Error('Network timeout'));
       const children = await provider.getChildren();
 
       expect(children).toHaveLength(1);
@@ -235,7 +254,7 @@ describe('IssueTreeProvider', () => {
     test('should fetch fresh issues on next getChildren call after refresh', async () => {
       // Initial state: 1 open issue
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getIssues.mockResolvedValue([mockOpenIssue]);
+      mockIssuePages([mockOpenIssue], []);
 
       const initialGroups = await provider.getChildren();
       expect(initialGroups).toHaveLength(1);
@@ -252,7 +271,7 @@ describe('IssueTreeProvider', () => {
         created_at: '2026-02-20T00:00:00Z',
         comments: 0
       };
-      mockClient.getIssues.mockResolvedValue([mockOpenIssue, mockNewIssue]);
+      mockIssuePages([mockOpenIssue, mockNewIssue], []);
 
       // Trigger refresh (as createIssue command does immediately after API call)
       provider.refresh();
@@ -267,6 +286,67 @@ describe('IssueTreeProvider', () => {
       expect(issueItems).toHaveLength(2);
       const labels = issueItems.map(item => (item as vscode.TreeItem).label as string);
       expect(labels).toContain('#11: New issue after refresh');
+    });
+
+    test('should fetch open and closed issues one page at a time', async () => {
+      mockIssuePages([mockOpenIssue], [mockClosedIssue]);
+
+      await provider.getChildren();
+
+      expect(mockClient.getIssuesPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50);
+      expect(mockClient.getIssuesPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'closed', 1, 50);
+      expect(mockClient.getIssuesPage).not.toHaveBeenCalledWith('test-owner', 'test-repo', 'all');
+    });
+
+    test('should add a load more item when more issue pages are available', async () => {
+      mockIssuePages([mockOpenIssue], [], true);
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as vscode.TreeItem).label === 'Open');
+      const issueItems = await provider.getChildren(openGroup);
+
+      expect((openGroup as vscode.TreeItem).description).toBe('1+');
+      expect(issueItems.some(item => item instanceof IssueLoadMoreItem)).toBe(true);
+    });
+
+    test('should show an empty message with load more when current page has no issues but more pages exist', async () => {
+      mockIssuePages([], [], true);
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as vscode.TreeItem).label === 'Open');
+      const issueItems = await provider.getChildren(openGroup);
+
+      expect((issueItems[0] as vscode.TreeItem).label).toBe('No open issues found');
+      expect(issueItems.some(item => item instanceof IssueLoadMoreItem)).toBe(true);
+    });
+
+    test('should load the next issue page through the load more item', async () => {
+      const secondIssue: IssueListItem = {
+        ...mockOpenIssue,
+        number: 11,
+        title: 'Second issue',
+        html_url: 'https://git.example.com/test-owner/test-repo/issues/11'
+      };
+      mockClient.getIssuesPage.mockImplementation((_owner, _repo, state, pageNumber = 1) => {
+        if (state === 'closed') {
+          return Promise.resolve(page([], pageNumber, false));
+        }
+        return Promise.resolve(pageNumber === 1
+          ? page([mockOpenIssue], 1, true)
+          : page([secondIssue], 2, false));
+      });
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as vscode.TreeItem).label === 'Open');
+      const initialItems = await provider.getChildren(openGroup);
+      const loadMoreItem = initialItems.find(item => item instanceof IssueLoadMoreItem) as IssueLoadMoreItem;
+
+      await provider.loadMoreIssues(loadMoreItem);
+      const loadedItems = await provider.getChildren(openGroup);
+
+      expect(mockClient.getIssuesPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 2, 50);
+      expect(loadedItems.filter(item => item instanceof IssueTreeItem).map(item => (item as IssueTreeItem).issue.number)).toEqual([10, 11]);
+      expect(loadedItems.some(item => item instanceof IssueLoadMoreItem)).toBe(false);
     });
   });
 

@@ -19,10 +19,13 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - When grouping detected Git repositories for Forgejo views, deduplicate by normalized Forgejo remote identity (`instanceUrl/owner/repo`) so multiple local worktrees of the same repository do not appear as duplicate repo groups.
 - Multi-repository Forgejo views should activate the VS Code Git extension before reading `git.repositories`; otherwise they may show no configuration before the Git extension has activated.
 - Tree items and webview commands that originate from a repository group must carry enough repository identity (especially `instanceUrl`) into follow-up API calls; do not re-resolve with the active editor/default config for nested or multi-instance workflows.
+- Tree items with commands or async-loaded children should set stable `TreeItem.id` values that include repository identity, and providers should not fire tree refresh events from inside `getChildren()`.
 - When extending custom URI schemes, make optional path segments self-identifying or versioned; do not infer new URI formats from segment count when legacy file paths can contain arbitrary nested segments.
 - Skip VS Code Git extension repository discovery when there are no workspace folders so no-config command/provider paths do not wait on repository discovery timeouts.
 - When auto-detecting from a Git remote, never fall back to a configured default instance if the detected remote host does not match; use an HTTP(S) remote host unauthenticated or return no config for unmatched SSH remotes.
-- User-facing releases should bump `package.json`/`package-lock.json` together and add a README News entry that links to the public Codeberg issue or PR.
+- Every change should add a README News entry under the current version and link to the public Codeberg issue or PR when one exists; user-facing releases should also bump `package.json`/`package-lock.json` together.
+- Avoid unbounded pull request and issue fetches in tree providers; page Open/Draft/Merged/Closed PR groups and issue groups behind initial render, expansion, or explicit load-more actions.
+- For tree-view pagination changes, add VS Code Playwright coverage that opens the contributed view, interacts with visible tree rows, and uses mocked API pages so the UI behavior is deterministic.
 
 ## Landing the Plane (Session Completion)
 
@@ -51,6 +54,7 @@ Before merging any PR, ask the user for confirmation even if the PR appears read
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
+- Do not amend commits or force-push ongoing PR branches; add follow-up commits and push normally so reviewers can track incremental changes.
 
 ## Building and Installing Extension
 
