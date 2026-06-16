@@ -11,7 +11,9 @@ test.describe('Forgejo Extension UI', () => {
     const commands = await harness.getRegisteredCommands('forgejo.');
     expect(commands).toContain('forgejo.addInstance');
     expect(commands).toContain('forgejo.refreshPullRequests');
+    expect(commands).toContain('forgejo.loadMorePullRequests');
     expect(commands).toContain('forgejo.refreshIssues');
+    expect(commands).toContain('forgejo.loadMoreIssues');
     expect(commands).toContain('forgejo.showDiagnostics');
     expect(commands).toContain('forgejo.showOutput');
   });

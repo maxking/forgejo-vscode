@@ -221,4 +221,118 @@ test.describe('Pull Request lazy loading', () => {
     const prListCallsAfterExpand = calls.filter(url => url.includes('/pulls'));
     expect(prListCallsAfterExpand.some(url => url.includes('state=closed') && !url.includes('limit=1'))).toBe(true);
   });
+
+  test('loads additional PR pages from the tree Load more row', async ({ harness, evaluateInVSCode, workbox }) => {
+    await harness.waitForExtensionActivation();
+
+    await evaluateInVSCode(async (vscode) => {
+      const config = vscode.workspace.getConfiguration('forgejo');
+      await config.update('instances', [{
+        id: 'test-forgejo-pr-load-more',
+        name: 'Forgejo PR Load More',
+        instanceUrl: 'https://codeberg.org',
+        token: '',
+        isDefault: true,
+      }], vscode.ConfigurationTarget.Global);
+      await config.update('autoDetectFromRemote', false, vscode.ConfigurationTarget.Global);
+    });
+
+    await evaluateInVSCode(() => {
+      type FetchGlobals = typeof globalThis & {
+        __forgejoOriginalFetch?: typeof fetch;
+        __forgejoFetchCalls?: string[];
+      };
+      const globals = globalThis as FetchGlobals;
+      globals.__forgejoOriginalFetch ??= globalThis.fetch;
+      globals.__forgejoFetchCalls = [];
+
+      globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+        if (!url.includes('/api/v1/repos/maxking/forgejo-vscode/pulls')) {
+          return globals.__forgejoOriginalFetch!(input, init);
+        }
+
+        globals.__forgejoFetchCalls?.push(url);
+        const parsed = new URL(url);
+        const state = parsed.searchParams.get('state');
+        const page = parsed.searchParams.get('page') ?? '1';
+        const limit = parsed.searchParams.get('limit');
+
+        if (state === 'closed' && limit === '1') {
+          return new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '0' } });
+        }
+
+        if (state === 'closed') {
+          return new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '0' } });
+        }
+
+        if (state === 'open' && page === '1') {
+          const openItems = Array.from({ length: 2 }, (_, index) => ({
+            number: 1000 + index,
+            title: `Open PR page one ${index + 1}`,
+            state: 'open',
+            user: { login: 'alice' },
+            html_url: `https://codeberg.org/maxking/forgejo-vscode/pulls/${1000 + index}`,
+            created_at: '2026-01-01T00:00:00Z',
+            merged: false,
+            draft: false,
+            comments: 0,
+          }));
+          const draftItems = Array.from({ length: 48 }, (_, index) => ({
+            number: 1100 + index,
+            title: `Draft PR filler ${index + 1}`,
+            state: 'open',
+            user: { login: 'alice' },
+            html_url: `https://codeberg.org/maxking/forgejo-vscode/pulls/${1100 + index}`,
+            created_at: '2026-01-01T00:00:00Z',
+            merged: false,
+            draft: true,
+            comments: 0,
+          }));
+          const items = [...openItems, ...draftItems];
+          return new Response(JSON.stringify(items), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '51' } });
+        }
+
+        if (state === 'open' && page === '2') {
+          return new Response(JSON.stringify([{
+            number: 1051,
+            title: 'Open PR page two',
+            state: 'open',
+            user: { login: 'bob' },
+            html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/1051',
+            created_at: '2026-01-02T00:00:00Z',
+            merged: false,
+            draft: false,
+            comments: 0,
+          }]), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '51' } });
+        }
+
+        return new Response(JSON.stringify({ message: `Unexpected PR URL: ${url}` }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        });
+      };
+    });
+
+    await harness.openForgejoSidebar();
+    await evaluateInVSCode(async (vscode) => {
+      await vscode.commands.executeCommand('forgejoPullRequests.focus');
+      await vscode.commands.executeCommand('forgejo.refreshPullRequests');
+    });
+
+    await expect(workbox.locator('.monaco-list-row', { hasText: /#1000: Open PR page one 1/ }).first()).toBeVisible({ timeout: 30_000 });
+    const loadMore = workbox.locator('.monaco-list-row', { hasText: 'Load more pull requests' }).first();
+    await expect(loadMore).toBeVisible({ timeout: 10_000 });
+
+    await loadMore.click();
+    await workbox.keyboard.press('Enter');
+    await expect(workbox.locator('.monaco-list-row', { hasText: /#1051: Open PR page two/ }).first()).toBeVisible({ timeout: 30_000 });
+
+    const calls = await evaluateInVSCode(() => {
+      const globals = globalThis as typeof globalThis & { __forgejoFetchCalls?: string[] };
+      return globals.__forgejoFetchCalls ?? [];
+    });
+    expect(calls.some(url => url.includes('/pulls') && url.includes('state=open') && url.includes('page=2'))).toBe(true);
+  });
 });

@@ -178,10 +178,18 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    registerCommand('forgejo.loadMorePullRequests', (item) => prTreeProvider.loadMorePullRequests(item))
+  );
+
+  context.subscriptions.push(
     registerCommand('forgejo.refreshIssues', () => {
       issueTreeProvider.refresh();
       void vscode.window.showInformationMessage('Issues refreshed');
     })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.loadMoreIssues', (item) => issueTreeProvider.loadMoreIssues(item))
   );
 
   // Register create issue command
