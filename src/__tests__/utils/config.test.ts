@@ -105,7 +105,7 @@ describe('config', () => {
             });
         });
 
-        it('should fallback to default instance if no match found', async () => {
+        it('should use HTTP(S) git remote unauthenticated if no configured instance matches', async () => {
             mockConfig(mockInstances);
             (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://github.com', // Not in instances
@@ -117,11 +117,10 @@ describe('config', () => {
             const config = await getForgejoConfig();
 
 			expect(config).toEqual({
-				instanceUrl: 'https://codeberg.org', // Default instance
-				token: 'token1',
+				instanceUrl: 'https://github.com',
+				token: '',
 				owner: 'owner',
 				repo: 'repo',
-				instanceId: '1',
 				matchConfidence: 'default'
 			});
         });
@@ -168,7 +167,7 @@ describe('config', () => {
             });
         });
 
-        it('should fallback to first instance if no default and no match', async () => {
+        it('should use HTTP(S) git remote unauthenticated if no default and no configured instance matches', async () => {
             const noDefaultInstances = [
                 { ...mockInstances[1], isDefault: false }, // Work
                 { ...mockInstances[0], isDefault: false }  // Codeberg
@@ -185,13 +184,26 @@ describe('config', () => {
             const config = await getForgejoConfig();
 
             expect(config).toEqual({
-                instanceUrl: 'https://git.company.com', // First instance
-                token: 'token2',
+                instanceUrl: 'https://github.com',
+                token: '',
                 owner: 'owner',
                 repo: 'repo',
-                instanceId: '2',
-                matchConfidence: 'first'
+                matchConfidence: 'default'
             });
+        });
+
+        it('should return null for unmatched SSH remotes instead of using default instance', async () => {
+            mockConfig(mockInstances);
+
+            (detectGitRemote as jest.Mock).mockReturnValue({
+                remoteHost: 'unknown.example.com',
+                owner: 'owner',
+                repo: 'repo'
+            });
+
+            const config = await getForgejoConfig();
+
+            expect(config).toBeNull();
         });
 
         it('should return null if git remote detection fails (even with instances)', async () => {

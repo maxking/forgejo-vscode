@@ -45,6 +45,22 @@ async function configFromGitInfo(gitInfo: GitRemoteInfo, instances: ForgejoInsta
 				confidence = match.confidence;
 				logInfo(`Matched instance: ${selectedInstance.name} (${confidence} match)`);
 			}
+
+			if (!selectedInstance) {
+				if (gitInfo.instanceUrl) {
+					logInfo('No configured instance matched git remote; using HTTP(S) git remote for unauthenticated access');
+					return {
+						instanceUrl: normalizeUrl(gitInfo.instanceUrl),
+						token: '',
+						owner: gitInfo.owner,
+						repo: gitInfo.repo,
+						matchConfidence: 'default'
+					};
+				}
+
+				logInfo('No configured instance matched SSH git remote; cannot infer API URL safely');
+				return null;
+			}
 		}
 
 		if (!selectedInstance) {

@@ -27,6 +27,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.20
 
 - **Nested repository detection ([#22](https://codeberg.org/maxking/forgejo-vscode/issues/22)):** workspaces with nested Forgejo/Gitea repositories are now detected through VS Code's Git API and grouped by repository across Pull Requests, Issues, Actions, and Releases.
+- **Safer instance matching ([#171](https://git.araj.me/maxking/forgejo-vscode/issues/171)):** repositories whose HTTP(S) git remote does not match any configured Forgejo instance now use the remote host unauthenticated instead of falling back to an unrelated default instance.
 - **Paged PR and issue loading ([#20](https://codeberg.org/maxking/forgejo-vscode/issues/20)):** Pull request and issue trees now fetch the first page for each group, then load additional pages through explicit load-more actions so very large repositories remain responsive.
 - **More reliable PR tree actions ([#20](https://codeberg.org/maxking/forgejo-vscode/issues/20)):** pull request tree rows now use stable identities so overview and file commands continue to work after refreshes and load-more updates.
 - **Tree UI regression coverage ([#20](https://codeberg.org/maxking/forgejo-vscode/issues/20)):** VS Code Playwright tests now exercise the Pull Requests and Issues tree load-more rows with mocked API pages.
