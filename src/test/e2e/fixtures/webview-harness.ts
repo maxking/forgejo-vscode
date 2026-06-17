@@ -150,8 +150,18 @@ export class WebviewHarness {
     </nav>
 
     <section class="description-section">
-      <h2>Description</h2>
+      <div class="description-header">
+        <h2>Description</h2>
+        <button id="edit-description-btn" class="btn btn-secondary btn-small">Edit</button>
+      </div>
       <div id="pr-description" class="markdown-body"></div>
+      <div id="pr-description-editor" class="description-editor" style="display: none;">
+        <textarea id="description-textarea" class="description-textarea"></textarea>
+        <div class="description-editor-actions">
+          <button id="save-description-btn" class="btn btn-primary btn-small">Save</button>
+          <button id="cancel-description-btn" class="btn btn-secondary btn-small">Cancel</button>
+        </div>
+      </div>
     </section>
 
     <section id="ci-section" class="ci-section" style="display: none;">
@@ -267,8 +277,18 @@ export class WebviewHarness {
     </nav>
 
     <section class="description-section">
-      <h2>Description</h2>
+      <div class="description-header">
+        <h2>Description</h2>
+        <button id="edit-description-btn" class="btn btn-secondary btn-small">Edit</button>
+      </div>
       <div id="issue-description" class="markdown-body"></div>
+      <div id="issue-description-editor" class="description-editor" style="display: none;">
+        <textarea id="description-textarea" class="description-textarea"></textarea>
+        <div class="description-editor-actions">
+          <button id="save-description-btn" class="btn btn-primary btn-small">Save</button>
+          <button id="cancel-description-btn" class="btn btn-secondary btn-small">Cancel</button>
+        </div>
+      </div>
     </section>
 
     <section class="activity-section">

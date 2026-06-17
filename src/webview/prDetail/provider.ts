@@ -4,6 +4,7 @@ import { getForgejoConfigFor } from '../../utils/config';
 import { PullRequest, CommitStatus } from '../../models/pullRequest';
 import { executeCommand } from '../../commands/registry';
 import { logDebug, logInfo, logError } from '../../utils/logger';
+import { getTimelineEventName, type TimelineActivity } from '../shared/helpers';
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -45,6 +46,8 @@ export interface PRActivity {
   commit_id?: string;
   html_url?: string;
 }
+
+type PRTimelineApiActivity = Omit<PRActivity, 'type' | 'event'> & TimelineActivity;
 
 export interface PRDetailViewData {
   pr: PullRequest;
@@ -225,9 +228,13 @@ export class PRDetailWebviewProvider {
     } catch (e) { logDebug('Could not fetch commits:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);
-      // Filter out comment events to avoid duplicating entries already fetched via getIssueComments.
-      // Also, do not override `event` with `t.type` (which doesn't exist on TimelineEvent).
-      activities.push(...(timeline as PRActivity[]).filter((t) => t.event !== 'comment').map((t) => ({ ...t, type: 'timeline' as const })));
+      activities.push(...(timeline as PRTimelineApiActivity[]).flatMap((t): PRActivity[] => {
+        const event = getTimelineEventName(t);
+        if (!event || event === 'comment' || event === 'commented') {
+          return [];
+        }
+        return [{ ...t, event, type: 'timeline' as const }];
+      }));
     } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? a.submitted_at ?? a.committed_at ?? 0);
