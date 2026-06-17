@@ -146,7 +146,8 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
   }
 
   setSearchQuery(query: string | undefined): void {
-    const normalizedQuery = query?.trim() || null;
+    const trimmedQuery = query?.trim();
+    const normalizedQuery = trimmedQuery === '' ? null : (trimmedQuery ?? null);
     if (normalizedQuery === this.searchQuery) {
       return;
     }

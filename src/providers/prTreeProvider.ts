@@ -262,7 +262,8 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   }
 
   setSearchQuery(query: string | undefined): void {
-    const normalizedQuery = query?.trim() || null;
+    const trimmedQuery = query?.trim();
+    const normalizedQuery = trimmedQuery === '' ? null : (trimmedQuery ?? null);
     if (normalizedQuery === this.searchQuery) {
       return;
     }
