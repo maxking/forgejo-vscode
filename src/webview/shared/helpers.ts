@@ -66,14 +66,20 @@ export function formatTimeAgo(dateString: string | null | undefined, now?: Date)
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-interface TimelineActivity {
+export interface TimelineActivity {
   event?: string;
+  type?: string;
   label?: { name?: string };
   old_title?: string;
   new_title?: string;
   assignee?: { login?: string };
   removed_assignee?: boolean;
   milestone?: { title?: string };
+}
+
+export function getTimelineEventName(activity: TimelineActivity): string | undefined {
+  const eventName = [activity.event, activity.type].find((candidate) => typeof candidate === 'string' && candidate.length > 0);
+  return eventName;
 }
 
 // Forgejo API event names shared between issue and PR timeline views
@@ -163,17 +169,17 @@ function buildEventMap(itemType: 'issue' | 'pull request'): Record<string, strin
   return { ...resolvedShared, ...typeSpecific };
 }
 
-function enrichEventText(activity: TimelineActivity, eventText: string): string {
-  if (activity.event === 'label' && activity.label) {
+function enrichEventText(activity: TimelineActivity, eventName: string, eventText: string): string {
+  if (eventName === 'label' && activity.label) {
     return 'changed label <strong>' + escapeHtml(activity.label.name ?? '') + '</strong>';
   }
-  if (activity.event === 'change_title' && activity.old_title && activity.new_title) {
+  if (eventName === 'change_title' && activity.old_title && activity.new_title) {
     return 'changed title from <del>' + escapeHtml(activity.old_title) + '</del> to <strong>' + escapeHtml(activity.new_title) + '</strong>';
   }
-  if (activity.event === 'assignees' && activity.assignee) {
+  if (eventName === 'assignees' && activity.assignee) {
     return (activity.removed_assignee ? 'unassigned ' : 'assigned ') + '<strong>' + escapeHtml(activity.assignee.login ?? '') + '</strong>';
   }
-  if (activity.event === 'milestone' && activity.milestone) {
+  if (eventName === 'milestone' && activity.milestone) {
     return 'set milestone to <strong>' + escapeHtml(activity.milestone.title ?? '') + '</strong>';
   }
   return eventText;
@@ -186,16 +192,18 @@ const prEventMap = buildEventMap('pull request');
  * Renders a human-readable description of a timeline event for issues.
  */
 export function renderIssueTimelineEvent(activity: TimelineActivity): string {
-  if (!activity.event) return 'performed an action';
-  const eventText = issueEventMap[activity.event] ?? activity.event;
-  return enrichEventText(activity, eventText);
+  const eventName = getTimelineEventName(activity);
+  if (!eventName) return 'performed an action';
+  const eventText = issueEventMap[eventName] ?? eventName;
+  return enrichEventText(activity, eventName, eventText);
 }
 
 /**
  * Renders a human-readable description of a timeline event for pull requests.
  */
 export function renderPRTimelineEvent(activity: TimelineActivity): string {
-  if (!activity.event) return 'performed an action';
-  const eventText = prEventMap[activity.event] ?? activity.event;
-  return enrichEventText(activity, eventText);
+  const eventName = getTimelineEventName(activity);
+  if (!eventName) return 'performed an action';
+  const eventText = prEventMap[eventName] ?? eventName;
+  return enrichEventText(activity, eventName, eventText);
 }

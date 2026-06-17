@@ -3,6 +3,7 @@ import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
 import { Issue } from '../../models/issue';
 import { logDebug, logInfo, logError } from '../../utils/logger';
+import { getTimelineEventName, type TimelineActivity } from '../shared/helpers';
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -33,6 +34,8 @@ export interface IssueActivity {
   event?: string;
   html_url?: string;
 }
+
+type IssueTimelineApiActivity = Omit<IssueActivity, 'type' | 'event'> & TimelineActivity;
 
 export interface IssueDetailViewData {
   issue: Issue;
@@ -177,9 +180,13 @@ export class IssueDetailWebviewProvider {
     } catch (e) { logDebug('Could not fetch comments:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);
-      // Filter out comment events to avoid duplicating entries already fetched via getIssueComments.
-      // Also, do not override `event` with `t.type` (which doesn't exist on TimelineEvent).
-      activities.push(...(timeline as IssueActivity[]).filter((t) => t.event !== 'comment').map((t) => ({ ...t, type: 'timeline' as const })));
+      activities.push(...(timeline as IssueTimelineApiActivity[]).flatMap((t): IssueActivity[] => {
+        const event = getTimelineEventName(t);
+        if (!event || event === 'comment' || event === 'commented') {
+          return [];
+        }
+        return [{ ...t, event, type: 'timeline' as const }];
+      }));
     } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? 0);

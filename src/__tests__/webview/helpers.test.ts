@@ -1,4 +1,4 @@
-import { escapeHtml, renderMarkdown, formatTimeAgo, renderIssueTimelineEvent, renderPRTimelineEvent } from '../../webview/shared/helpers';
+import { escapeHtml, renderMarkdown, formatTimeAgo, getTimelineEventName, renderIssueTimelineEvent, renderPRTimelineEvent } from '../../webview/shared/helpers';
 
 describe('Webview Helpers', () => {
   describe('escapeHtml', () => {
@@ -189,6 +189,16 @@ describe('Webview Helpers', () => {
   });
 
   describe('renderIssueTimelineEvent', () => {
+    test('should use Forgejo timeline type when event is missing', () => {
+      expect(getTimelineEventName({ type: 'label' })).toBe('label');
+      expect(renderIssueTimelineEvent({ type: 'label', label: { name: 'problem' } })).toContain('problem');
+    });
+
+    test('should use Forgejo timeline type when event is empty', () => {
+      expect(getTimelineEventName({ event: '', type: 'label' })).toBe('label');
+      expect(renderIssueTimelineEvent({ event: '', type: 'label' })).toBe('added/removed a label');
+    });
+
     test('should return "performed an action" when event is missing', () => {
       expect(renderIssueTimelineEvent({})).toBe('performed an action');
     });
@@ -227,6 +237,11 @@ describe('Webview Helpers', () => {
   });
 
   describe('renderPRTimelineEvent', () => {
+    test('should use Forgejo timeline type when event is missing', () => {
+      expect(getTimelineEventName({ type: 'merge_pull' })).toBe('merge_pull');
+      expect(renderPRTimelineEvent({ type: 'merge_pull' })).toBe('merged this pull request');
+    });
+
     test('should return "performed an action" when event is missing', () => {
       expect(renderPRTimelineEvent({})).toBe('performed an action');
     });
