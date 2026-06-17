@@ -29,35 +29,36 @@ describe('ForgejoClient', () => {
   });
 
   describe('getPullRequestCount', () => {
-    test('should read pull request count from x-total-count header', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: { get: jest.fn(() => '123') },
-        json: async () => []
-      } as unknown as Response);
+    test('should read pull request count from page metadata', async () => {
+      const listPageSpy = jest.spyOn(client, 'listPullRequestsPage').mockResolvedValueOnce({
+        items: [],
+        page: 1,
+        limit: 1,
+        hasMore: true,
+        totalCount: 123
+      });
 
       const count = await client.getPullRequestCount('owner', 'repo', 'closed');
 
       expect(count).toBe(123);
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://git.example.com/api/v1/repos/owner/repo/pulls?state=closed&page=1&limit=1',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Accept: 'application/json',
-            Authorization: 'token test-token'
-          })
-        })
-      );
+      expect(listPageSpy).toHaveBeenCalledWith('owner', 'repo', { state: 'closed', page: 1, limit: 1 });
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    test('should return null when count header is missing', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: { get: jest.fn(() => null) },
-        json: async () => []
-      } as unknown as Response);
+    test('should return null when page metadata omits total count', async () => {
+      jest.spyOn(client, 'listPullRequestsPage').mockResolvedValueOnce({
+        items: [],
+        page: 1,
+        limit: 1,
+        hasMore: false,
+        totalCount: null
+      });
+
+      await expect(client.getPullRequestCount('owner', 'repo', 'closed')).resolves.toBeNull();
+    });
+
+    test('should return null when count probe fails', async () => {
+      jest.spyOn(client, 'listPullRequestsPage').mockRejectedValueOnce(new Error('Not Found'));
 
       await expect(client.getPullRequestCount('owner', 'repo', 'closed')).resolves.toBeNull();
     });
@@ -1256,9 +1257,15 @@ describe('ForgejoClient', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
-    test('getPullRequestsPage should fetch only the requested page', async () => {
+    test('getPullRequestsPage should delegate to the forgejo-ts page API', async () => {
       const page3 = generateMockPRs(50, 101);
-      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page3 } as unknown as Response);
+      const listPageSpy = jest.spyOn(client, 'listPullRequestsPage').mockResolvedValueOnce({
+        items: page3,
+        page: 3,
+        limit: 50,
+        hasMore: true,
+        totalCount: 151
+      });
 
       const result = await client.getPullRequestsPage('owner', 'repo', 'closed', 3, 50);
 
@@ -1266,22 +1273,32 @@ describe('ForgejoClient', () => {
       expect(result.page).toBe(3);
       expect(result.limit).toBe(50);
       expect(result.hasMore).toBe(true);
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('state=closed&page=3&limit=50'), expect.any(Object));
+      expect(listPageSpy).toHaveBeenCalledWith('owner', 'repo', { state: 'closed', page: 3, limit: 50 });
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     test('hasPullRequests should use a one-item page probe', async () => {
       const page1 = generateMockPRs(1, 1);
-      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page1 } as unknown as Response);
+      const getPageSpy = jest.spyOn(client, 'getPullRequestsPage').mockResolvedValueOnce({
+        items: page1,
+        page: 1,
+        limit: 1,
+        hasMore: true
+      });
 
       await expect(client.hasPullRequests('owner', 'repo', 'closed')).resolves.toBe(true);
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('state=closed&page=1&limit=1'), expect.any(Object));
+      expect(getPageSpy).toHaveBeenCalledWith('owner', 'repo', 'closed', 1, 1);
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     test('hasPullRequests should return false for an empty probe', async () => {
-      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as unknown as Response);
+      jest.spyOn(client, 'getPullRequestsPage').mockResolvedValueOnce({
+        items: [],
+        page: 1,
+        limit: 1,
+        hasMore: false
+      });
 
       await expect(client.hasPullRequests('owner', 'repo', 'closed')).resolves.toBe(false);
     });
@@ -1297,9 +1314,15 @@ describe('ForgejoClient', () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
-    test('getIssuesPage should fetch only the requested page and filter out PRs', async () => {
+    test('getIssuesPage should delegate to the forgejo-ts page API and filter out PRs', async () => {
       const page4 = generateMockIssueItems(50, 10, 151);
-      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page4 } as unknown as Response);
+      const listPageSpy = jest.spyOn(client, 'listIssuesPage').mockResolvedValueOnce({
+        items: page4,
+        page: 4,
+        limit: 50,
+        hasMore: true,
+        totalCount: 200
+      });
 
       const result = await client.getIssuesPage('owner', 'repo', 'open', 4, 50);
 
@@ -1308,8 +1331,8 @@ describe('ForgejoClient', () => {
       expect(result.page).toBe(4);
       expect(result.limit).toBe(50);
       expect(result.hasMore).toBe(true);
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('state=open&page=4&limit=50'), expect.any(Object));
+      expect(listPageSpy).toHaveBeenCalledWith('owner', 'repo', { state: 'open', page: 4, limit: 50 });
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     test('getWorkflowRuns should fetch multiple pages', async () => {

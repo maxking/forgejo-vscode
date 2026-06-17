@@ -68,32 +68,19 @@ export class ForgejoClient extends BaseClient {
     query?: string
   ): Promise<PullRequestPage> {
     const trimmedQuery = query?.trim();
-    if (trimmedQuery) {
-      const result = await this.searchPullRequestsPage(owner, repo, {
+    const result = trimmedQuery
+      ? await this.searchPullRequestsPage(owner, repo, {
         state,
         page,
         limit,
         query: trimmedQuery
-      });
-      return {
-        items: result.items,
-        page: result.page,
-        limit: result.limit,
-        hasMore: result.hasMore
-      };
-    }
-
-    const params = new URLSearchParams({
-      state,
-      page: String(page),
-      limit: String(limit)
-    });
-    const items = await this.rawRequest<PullRequestListItem[]>('GET', `/repos/${owner}/${repo}/pulls?${params.toString()}`);
+      })
+      : await this.listPullRequestsPage(owner, repo, { state, page, limit });
     return {
-      items,
-      page,
-      limit,
-      hasMore: items.length === limit
+      items: result.items,
+      page: result.page,
+      limit: result.limit,
+      hasMore: result.hasMore
     };
   }
 
@@ -103,24 +90,12 @@ export class ForgejoClient extends BaseClient {
   }
 
   async getPullRequestCount(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<number | null> {
-    const response = await fetch(`${this.vscodeInstanceUrl}/api/v1/repos/${owner}/${repo}/pulls?state=${state}&page=1&limit=1`, {
-      headers: {
-        Accept: 'application/json',
-        ...(this.vscodeToken ? { Authorization: `token ${this.vscodeToken}` } : {})
-      }
-    });
-
-    if (!response.ok) {
+    try {
+      const result = await this.listPullRequestsPage(owner, repo, { state, page: 1, limit: 1 });
+      return result.totalCount;
+    } catch {
       return null;
     }
-
-    const totalCount = response.headers.get('x-total-count');
-    if (!totalCount) {
-      return null;
-    }
-
-    const parsedCount = Number.parseInt(totalCount, 10);
-    return Number.isNaN(parsedCount) ? null : parsedCount;
   }
 
   async getPullRequestDetails(owner: string, repo: string, number: number): Promise<PullRequest> {
@@ -140,32 +115,17 @@ export class ForgejoClient extends BaseClient {
     query?: string
   ): Promise<IssuePage> {
     const trimmedQuery = query?.trim();
-    if (trimmedQuery) {
-      const result = await this.listIssuesPage(owner, repo, {
-        state,
-        page,
-        limit,
-        query: trimmedQuery
-      });
-      return {
-        items: result.items,
-        page: result.page,
-        limit: result.limit,
-        hasMore: result.hasMore
-      };
-    }
-
-    const params = new URLSearchParams({
+    const result = await this.listIssuesPage(owner, repo, {
       state,
-      page: String(page),
-      limit: String(limit)
-    });
-    const items = await this.rawRequest<(IssueListItem & { pull_request?: unknown })[]>('GET', `/repos/${owner}/${repo}/issues?${params.toString()}`);
-    return {
-      items: items.filter(item => !item.pull_request),
       page,
       limit,
-      hasMore: items.length === limit
+      ...(trimmedQuery ? { query: trimmedQuery } : {})
+    });
+    return {
+      items: result.items.filter(item => !item.pull_request),
+      page: result.page,
+      limit: result.limit,
+      hasMore: result.hasMore
     };
   }
 
