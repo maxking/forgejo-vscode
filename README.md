@@ -26,6 +26,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ### 0.3.20
 
+- **Pull request and issue search ([#135](https://codeberg.org/maxking/forgejo-vscode/issues/135)):** the Pull Requests and Issues views now search server-side through forgejo-ts 0.4.0 while preserving paged load-more behavior.
 - **forgejo-ts pagination wrapper:** legacy Pull Request and Issue page helpers now delegate to forgejo-ts pagination metadata instead of rebuilding those requests locally.
 - **Issue and PR timeline activity rendering ([forgejo#13020](https://codeberg.org/forgejo/forgejo/issues/13020)):** detail views now preserve Forgejo timeline action names and skip duplicate timeline comment rows instead of showing extra "performed an action" entries.
 - **Nested repository detection ([#22](https://codeberg.org/maxking/forgejo-vscode/issues/22)):** workspaces with nested Forgejo/Gitea repositories are now detected through VS Code's Git API and grouped by repository across Pull Requests, Issues, Actions, and Releases.

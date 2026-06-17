@@ -40,8 +40,10 @@ export interface CommandMap {
   'forgejo.showOutput': [];
   'forgejo.refreshPullRequests': [];
   'forgejo.refreshRepositoryPullRequests': [repositoryItem: PRRepositoryItem];
+  'forgejo.searchPullRequests': [];
   'forgejo.loadMorePullRequests': [item: PRLoadMoreItem];
   'forgejo.refreshIssues': [];
+  'forgejo.searchIssues': [];
   'forgejo.loadMoreIssues': [item: IssueLoadMoreItem];
   'forgejo.refreshActions': [];
   'forgejo.refreshReleases': [];

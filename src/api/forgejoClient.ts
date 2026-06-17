@@ -64,9 +64,18 @@ export class ForgejoClient extends BaseClient {
     repo: string,
     state: 'open' | 'closed' | 'all' = 'all',
     page = 1,
-    limit = 50
+    limit = 50,
+    query?: string
   ): Promise<PullRequestPage> {
-    const result = await this.listPullRequestsPage(owner, repo, { state, page, limit });
+    const trimmedQuery = query?.trim();
+    const result = trimmedQuery
+      ? await this.searchPullRequestsPage(owner, repo, {
+        state,
+        page,
+        limit,
+        query: trimmedQuery
+      })
+      : await this.listPullRequestsPage(owner, repo, { state, page, limit });
     return {
       items: result.items,
       page: result.page,
@@ -102,9 +111,16 @@ export class ForgejoClient extends BaseClient {
     repo: string,
     state: 'open' | 'closed' | 'all' = 'all',
     page = 1,
-    limit = 50
+    limit = 50,
+    query?: string
   ): Promise<IssuePage> {
-    const result = await this.listIssuesPage(owner, repo, { state, page, limit });
+    const trimmedQuery = query?.trim();
+    const result = await this.listIssuesPage(owner, repo, {
+      state,
+      page,
+      limit,
+      ...(trimmedQuery ? { query: trimmedQuery } : {})
+    });
     return {
       items: result.items.filter(item => !item.pull_request),
       page: result.page,

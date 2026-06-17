@@ -64,6 +64,80 @@ describe('ForgejoClient', () => {
     });
   });
 
+  describe('search pagination wrappers', () => {
+    test('getPullRequestsPage should use forgejo-ts searchPullRequestsPage for nonblank queries', async () => {
+      const pullRequest = {
+        number: 42,
+        title: 'Searchable PR',
+        state: 'open',
+        user: { login: 'alice' },
+        html_url: 'https://git.example.com/owner/repo/pulls/42',
+        created_at: '2026-01-01T00:00:00Z',
+        merged: false,
+        draft: false,
+        comments: 0
+      };
+      const searchSpy = jest.spyOn(client, 'searchPullRequestsPage').mockResolvedValue({
+        items: [pullRequest],
+        page: 2,
+        limit: 25,
+        hasMore: true,
+        totalCount: null
+      } as any);
+
+      const result = await client.getPullRequestsPage('owner', 'repo', 'open', 2, 25, '  searchable  ');
+
+      expect(searchSpy).toHaveBeenCalledWith('owner', 'repo', {
+        state: 'open',
+        page: 2,
+        limit: 25,
+        query: 'searchable'
+      });
+      expect(result).toEqual({
+        items: [pullRequest],
+        page: 2,
+        limit: 25,
+        hasMore: true
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    test('getIssuesPage should use forgejo-ts listIssuesPage for nonblank queries', async () => {
+      const issue = {
+        number: 10,
+        title: 'Searchable issue',
+        state: 'open',
+        user: { login: 'alice' },
+        html_url: 'https://git.example.com/owner/repo/issues/10',
+        created_at: '2026-01-01T00:00:00Z',
+        comments: 0
+      };
+      const searchSpy = jest.spyOn(client, 'listIssuesPage').mockResolvedValue({
+        items: [issue],
+        page: 3,
+        limit: 10,
+        hasMore: false,
+        totalCount: null
+      } as any);
+
+      const result = await client.getIssuesPage('owner', 'repo', 'closed', 3, 10, '  crash  ');
+
+      expect(searchSpy).toHaveBeenCalledWith('owner', 'repo', {
+        state: 'closed',
+        page: 3,
+        limit: 10,
+        query: 'crash'
+      });
+      expect(result).toEqual({
+        items: [issue],
+        page: 3,
+        limit: 10,
+        hasMore: false
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getPullRequestFiles', () => {
     test('should fetch pull request files successfully', async () => {
       mockFetch.mockResolvedValueOnce({

@@ -178,6 +178,21 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    registerCommand('forgejo.searchPullRequests', async () => {
+      const query = await vscode.window.showInputBox({
+        title: 'Search Pull Requests',
+        prompt: 'Search pull request titles and descriptions. Leave blank to clear search.',
+        value: prTreeProvider.getSearchQuery() ?? ''
+      });
+      if (query === undefined) {
+        return;
+      }
+
+      prTreeProvider.setSearchQuery(query);
+    })
+  );
+
+  context.subscriptions.push(
     registerCommand('forgejo.loadMorePullRequests', (item) => prTreeProvider.loadMorePullRequests(item))
   );
 
@@ -185,6 +200,21 @@ export async function activate(context: vscode.ExtensionContext) {
     registerCommand('forgejo.refreshIssues', () => {
       issueTreeProvider.refresh();
       void vscode.window.showInformationMessage('Issues refreshed');
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.searchIssues', async () => {
+      const query = await vscode.window.showInputBox({
+        title: 'Search Issues',
+        prompt: 'Search issue titles and descriptions. Leave blank to clear search.',
+        value: issueTreeProvider.getSearchQuery() ?? ''
+      });
+      if (query === undefined) {
+        return;
+      }
+
+      issueTreeProvider.setSearchQuery(query);
     })
   );
 
