@@ -35,6 +35,13 @@ describe('PRTreeProvider', () => {
     comments: 5
   };
 
+  const prPage = (items: PullRequestListItem[], pageNumber = 1, hasMore = false, limit = 50) => ({
+    items,
+    page: pageNumber,
+    limit,
+    hasMore
+  });
+
   beforeEach(() => {
     // Create mock client
     mockClient = {
@@ -817,6 +824,66 @@ describe('PRTreeProvider', () => {
 
       expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(1, 'test-owner', 'test-repo', 'open', 1, 50);
       expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(2, 'test-owner', 'test-repo', 'open', 2, 50);
+      expect(loadedItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([2, 4]);
+      expect(loadedItems.some(item => item instanceof PRLoadMoreItem)).toBe(false);
+    });
+
+    test('should pass the active search query when fetching PR groups', async () => {
+      const searchedPR: PullRequestListItem = { ...mockPR, number: 5, title: 'Fix searched bug', state: 'open', draft: false };
+      provider.setSearchQuery('  searched bug  ');
+      mockClient.getPullRequestsPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, query?: string) => {
+        if (state === 'closed') {
+          return Promise.resolve(prPage([], pageNumber, false, limit));
+        }
+        return Promise.resolve(prPage([searchedPR], pageNumber, false, limit));
+      });
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as any).label === 'Open');
+      const openItems = await provider.getChildren(openGroup);
+
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50, 'searched bug');
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'closed', 1, 1, 'searched bug');
+      expect(openItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([5]);
+      expect((openGroup as vscode.TreeItem).id).toBe('pr-group/https%3A%2F%2Fgit.example.com/test-owner/test-repo/open/searched%20bug');
+      expect(mockClient.hasPullRequests).not.toHaveBeenCalled();
+    });
+
+    test('should fall back to unfiltered PR listing for blank search queries', async () => {
+      provider.setSearchQuery('   ');
+      mockClient.getPullRequestsPage.mockResolvedValue(prPage([mockPR]));
+      mockClient.hasPullRequests.mockResolvedValue(false);
+
+      await provider.getChildren();
+
+      expect(provider.getSearchQuery()).toBeNull();
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50);
+      expect(mockClient.getPullRequestsPage).not.toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50, expect.any(String));
+    });
+
+    test('should load more PR search results with the active query', async () => {
+      const firstOpenPR: PullRequestListItem = { ...mockPR, number: 2, title: 'Search result one', state: 'open', draft: false };
+      const secondOpenPR: PullRequestListItem = { ...mockPR, number: 4, title: 'Search result two', state: 'open', draft: false };
+      provider.setSearchQuery('search term');
+      mockClient.getPullRequestsPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, query?: string) => {
+        if (state === 'closed') {
+          return Promise.resolve(prPage([], pageNumber, false, limit));
+        }
+        return Promise.resolve(pageNumber === 1
+          ? prPage([firstOpenPR], 1, true, limit)
+          : prPage([secondOpenPR], 2, false, limit));
+      });
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as any).label === 'Open');
+      const initialItems = await provider.getChildren(openGroup);
+      const loadMoreItem = initialItems.find(item => item instanceof PRLoadMoreItem) as PRLoadMoreItem;
+
+      await provider.loadMorePullRequests(loadMoreItem);
+      const loadedItems = await provider.getChildren(openGroup);
+
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50, 'search term');
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 2, 50, 'search term');
       expect(loadedItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([2, 4]);
       expect(loadedItems.some(item => item instanceof PRLoadMoreItem)).toBe(false);
     });

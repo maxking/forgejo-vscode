@@ -64,8 +64,25 @@ export class ForgejoClient extends BaseClient {
     repo: string,
     state: 'open' | 'closed' | 'all' = 'all',
     page = 1,
-    limit = 50
+    limit = 50,
+    query?: string
   ): Promise<PullRequestPage> {
+    const trimmedQuery = query?.trim();
+    if (trimmedQuery) {
+      const result = await this.searchPullRequestsPage(owner, repo, {
+        state,
+        page,
+        limit,
+        query: trimmedQuery
+      });
+      return {
+        items: result.items,
+        page: result.page,
+        limit: result.limit,
+        hasMore: result.hasMore
+      };
+    }
+
     const params = new URLSearchParams({
       state,
       page: String(page),
@@ -119,8 +136,25 @@ export class ForgejoClient extends BaseClient {
     repo: string,
     state: 'open' | 'closed' | 'all' = 'all',
     page = 1,
-    limit = 50
+    limit = 50,
+    query?: string
   ): Promise<IssuePage> {
+    const trimmedQuery = query?.trim();
+    if (trimmedQuery) {
+      const result = await this.listIssuesPage(owner, repo, {
+        state,
+        page,
+        limit,
+        query: trimmedQuery
+      });
+      return {
+        items: result.items,
+        page: result.page,
+        limit: result.limit,
+        hasMore: result.hasMore
+      };
+    }
+
     const params = new URLSearchParams({
       state,
       page: String(page),

@@ -348,6 +348,74 @@ describe('IssueTreeProvider', () => {
       expect(loadedItems.filter(item => item instanceof IssueTreeItem).map(item => (item as IssueTreeItem).issue.number)).toEqual([10, 11]);
       expect(loadedItems.some(item => item instanceof IssueLoadMoreItem)).toBe(false);
     });
+
+    test('should pass the active search query when fetching issue groups', async () => {
+      const searchedIssue: IssueListItem = {
+        ...mockOpenIssue,
+        number: 12,
+        title: 'Fix searched issue',
+        html_url: 'https://git.example.com/test-owner/test-repo/issues/12'
+      };
+      provider.setSearchQuery('  searched issue  ');
+      mockClient.getIssuesPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, query?: string) => {
+        if (state === 'closed') {
+          return Promise.resolve(page([], pageNumber, false));
+        }
+        return Promise.resolve({ ...page([searchedIssue], pageNumber, false), limit });
+      });
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as vscode.TreeItem).label === 'Open');
+      const issueItems = await provider.getChildren(openGroup);
+
+      expect(mockClient.getIssuesPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50, 'searched issue');
+      expect(mockClient.getIssuesPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'closed', 1, 50, 'searched issue');
+      expect(issueItems.filter(item => item instanceof IssueTreeItem).map(item => (item as IssueTreeItem).issue.number)).toEqual([12]);
+      expect((openGroup as vscode.TreeItem).id).toBe('issue-group/https%3A%2F%2Fgit.example.com/test-owner/test-repo/open/searched%20issue');
+    });
+
+    test('should fall back to unfiltered issue listing for blank search queries', async () => {
+      provider.setSearchQuery('   ');
+      mockIssuePages([mockOpenIssue], []);
+
+      await provider.getChildren();
+
+      expect(provider.getSearchQuery()).toBeNull();
+      expect(mockClient.getIssuesPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50);
+      expect(mockClient.getIssuesPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'closed', 1, 50);
+      expect(mockClient.getIssuesPage).not.toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50, expect.any(String));
+    });
+
+    test('should load more issue search results with the active query', async () => {
+      const secondIssue: IssueListItem = {
+        ...mockOpenIssue,
+        number: 11,
+        title: 'Second search issue',
+        html_url: 'https://git.example.com/test-owner/test-repo/issues/11'
+      };
+      provider.setSearchQuery('login');
+      mockClient.getIssuesPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, query?: string) => {
+        if (state === 'closed') {
+          return Promise.resolve({ ...page([], pageNumber, false), limit });
+        }
+        return Promise.resolve(pageNumber === 1
+          ? { ...page([mockOpenIssue], 1, true), limit }
+          : { ...page([secondIssue], 2, false), limit });
+      });
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as vscode.TreeItem).label === 'Open');
+      const initialItems = await provider.getChildren(openGroup);
+      const loadMoreItem = initialItems.find(item => item instanceof IssueLoadMoreItem) as IssueLoadMoreItem;
+
+      await provider.loadMoreIssues(loadMoreItem);
+      const loadedItems = await provider.getChildren(openGroup);
+
+      expect(mockClient.getIssuesPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 1, 50, 'login');
+      expect(mockClient.getIssuesPage).toHaveBeenCalledWith('test-owner', 'test-repo', 'open', 2, 50, 'login');
+      expect(loadedItems.filter(item => item instanceof IssueTreeItem).map(item => (item as IssueTreeItem).issue.number)).toEqual([10, 11]);
+      expect(loadedItems.some(item => item instanceof IssueLoadMoreItem)).toBe(false);
+    });
   });
 
   describe('IssueTreeProvider - getTreeItem', () => {

@@ -72,7 +72,8 @@ export class IssueLoadMoreItem extends vscode.TreeItem {
       config.instanceUrl,
       config.owner,
       config.repo,
-      group.kind
+      group.kind,
+      group.id ?? ''
     ].map(treeIdPart).join('/');
     this.command = {
       command: 'forgejo.loadMoreIssues',
@@ -128,6 +129,7 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
   private openIssuePages = new Map<string, IssuePageCache>();
   private closedIssuePages = new Map<string, IssuePageCache>();
   private error: string | null = null;
+  private searchQuery: string | null = null;
 
   constructor() {
     this.refresh();
@@ -137,6 +139,20 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
     this.openIssuePages.clear();
     this.closedIssuePages.clear();
     this._onDidChangeTreeData.fire();
+  }
+
+  getSearchQuery(): string | null {
+    return this.searchQuery;
+  }
+
+  setSearchQuery(query: string | undefined): void {
+    const normalizedQuery = query?.trim() || null;
+    if (normalizedQuery === this.searchQuery) {
+      return;
+    }
+
+    this.searchQuery = normalizedQuery;
+    this.refresh();
   }
 
   async loadMoreIssues(item: IssueLoadMoreItem): Promise<void> {
@@ -192,17 +208,21 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
   }
 
   private configKey(config: ForgejoConfig): string {
-    return `${config.instanceUrl}/${config.owner}/${config.repo}`;
+    return `${config.instanceUrl}/${config.owner}/${config.repo}?search=${encodeURIComponent(this.searchQuery ?? '')}`;
   }
 
   private groupId(config: ForgejoConfig, group: IssueGroupItem): string {
-    return [
+    const parts = [
       'issue-group',
       config.instanceUrl,
       config.owner,
       config.repo,
       group.kind
-    ].map(treeIdPart).join('/');
+    ];
+    if (this.searchQuery) {
+      parts.push(this.searchQuery);
+    }
+    return parts.map(treeIdPart).join('/');
   }
 
   private async getGroupsForConfig(config: ForgejoConfig): Promise<IssueTreeElement[]> {
@@ -304,7 +324,9 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
     console.log(`[Forgejo] Fetching ${state} issues page ${page}...`);
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const issues = await client.getIssuesPage(config.owner, config.repo, state, page, ISSUE_PAGE_SIZE);
+      const issues = this.searchQuery
+        ? await client.getIssuesPage(config.owner, config.repo, state, page, ISSUE_PAGE_SIZE, this.searchQuery)
+        : await client.getIssuesPage(config.owner, config.repo, state, page, ISSUE_PAGE_SIZE);
       this.error = null;
       console.log(`[Forgejo] Fetched ${issues.items.length} ${state} issues from page ${page}`);
       return issues;

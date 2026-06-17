@@ -132,9 +132,19 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "forgejo.searchPullRequests",
+        "title": "Forgejo: Search Pull Requests",
+        "icon": "$(search)"
+      },
+      {
         "command": "forgejo.refreshIssues",
         "title": "Forgejo: Refresh Issues",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.searchIssues",
+        "title": "Forgejo: Search Issues",
+        "icon": "$(search)"
       },
       {
         "command": "forgejo.configureInstanceUrl",
@@ -270,9 +280,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "forgejo.manageInstances",
+          "command": "forgejo.searchPullRequests",
           "when": "view == forgejoPullRequests",
           "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.manageInstances",
+          "when": "view == forgejoPullRequests",
+          "group": "navigation@3"
         },
         {
           "command": "forgejo.createIssue",
@@ -285,9 +300,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "forgejo.manageInstances",
+          "command": "forgejo.searchIssues",
           "when": "view == forgejoIssues",
           "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.manageInstances",
+          "when": "view == forgejoIssues",
+          "group": "navigation@3"
         },
         {
           "command": "forgejo.refreshActions",
@@ -534,6 +554,6 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "forgejo-ts": "^0.3.2"
+    "forgejo-ts": "^0.4.0"
   }
 }

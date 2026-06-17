@@ -26,6 +26,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ### 0.3.20
 
+- **Pull request and issue search ([#135](https://codeberg.org/maxking/forgejo-vscode/issues/135)):** the Pull Requests and Issues views now search server-side through forgejo-ts 0.4.0 while preserving paged load-more behavior.
 - **Nested repository detection ([#22](https://codeberg.org/maxking/forgejo-vscode/issues/22)):** workspaces with nested Forgejo/Gitea repositories are now detected through VS Code's Git API and grouped by repository across Pull Requests, Issues, Actions, and Releases.
 - **Safer instance matching ([#171](https://git.araj.me/maxking/forgejo-vscode/issues/171)):** repositories whose HTTP(S) git remote does not match any configured Forgejo instance now use the remote host unauthenticated instead of falling back to an unrelated default instance.
 - **Paged PR and issue loading ([#20](https://codeberg.org/maxking/forgejo-vscode/issues/20)):** Pull request and issue trees now fetch the first page for each group, then load additional pages through explicit load-more actions so very large repositories remain responsive.

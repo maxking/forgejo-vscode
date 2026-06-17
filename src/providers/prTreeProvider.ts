@@ -82,7 +82,8 @@ export class PRLoadMoreItem extends vscode.TreeItem {
       config.instanceUrl,
       config.owner,
       config.repo,
-      group.kind
+      group.kind,
+      group.id ?? ''
     ].map(treeIdPart).join('/');
     this.command = {
       command: 'forgejo.loadMorePullRequests',
@@ -235,6 +236,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   private closedPullRequestPages = new Map<string, PullRequestPageCache>();
   private hasClosedPullRequests = new Map<string, boolean | null>();
   private error: string | null = null;
+  private searchQuery: string | null = null;
 
   constructor() {
     this.refresh();
@@ -253,6 +255,20 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     this.closedPullRequestPages.delete(key);
     this.hasClosedPullRequests.delete(key);
     this._onDidChangeTreeData.fire(repositoryItem);
+  }
+
+  getSearchQuery(): string | null {
+    return this.searchQuery;
+  }
+
+  setSearchQuery(query: string | undefined): void {
+    const normalizedQuery = query?.trim() || null;
+    if (normalizedQuery === this.searchQuery) {
+      return;
+    }
+
+    this.searchQuery = normalizedQuery;
+    this.refresh();
   }
 
   async loadMorePullRequests(item: PRLoadMoreItem): Promise<void> {
@@ -387,17 +403,21 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   }
 
   private configKey(config: ForgejoConfig): string {
-    return `${config.instanceUrl}/${config.owner}/${config.repo}`;
+    return `${config.instanceUrl}/${config.owner}/${config.repo}?search=${encodeURIComponent(this.searchQuery ?? '')}`;
   }
 
   private groupId(config: ForgejoConfig, group: PRGroupItem): string {
-    return [
+    const parts = [
       'pr-group',
       config.instanceUrl,
       config.owner,
       config.repo,
       group.kind
-    ].map(treeIdPart).join('/');
+    ];
+    if (this.searchQuery) {
+      parts.push(this.searchQuery);
+    }
+    return parts.map(treeIdPart).join('/');
   }
 
   private async getGroupsForConfig(config: ForgejoConfig): Promise<PRTreeElement[]> {
@@ -522,7 +542,9 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const pullRequests = await client.getPullRequestsPage(config.owner, config.repo, state, page, PULL_REQUEST_PAGE_SIZE);
+      const pullRequests = this.searchQuery
+        ? await client.getPullRequestsPage(config.owner, config.repo, state, page, PULL_REQUEST_PAGE_SIZE, this.searchQuery)
+        : await client.getPullRequestsPage(config.owner, config.repo, state, page, PULL_REQUEST_PAGE_SIZE);
       this.error = null;
       console.log(`[Forgejo] Fetched ${pullRequests.items.length} ${state} pull requests from page ${page}`);
       return pullRequests;
@@ -541,7 +563,9 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const hasClosed = await client.hasPullRequests(config.owner, config.repo, 'closed');
+      const hasClosed = this.searchQuery
+        ? (await client.getPullRequestsPage(config.owner, config.repo, 'closed', 1, 1, this.searchQuery)).items.length > 0
+        : await client.hasPullRequests(config.owner, config.repo, 'closed');
       this.hasClosedPullRequests.set(key, hasClosed);
       return hasClosed;
     } catch (error) {
