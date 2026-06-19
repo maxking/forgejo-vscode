@@ -8,6 +8,8 @@ export interface ForgejoInstance {
 	name: string;
 	/** Base URL of the Forgejo instance */
 	instanceUrl: string;
+	/** Optional SSH port to use when cloning repositories from this instance */
+	sshPort?: number;
 	/** Personal access token for authentication (hydrated from SecretStorage at runtime) */
 	token?: string;
 	/** Forgejo username of the authenticated account */

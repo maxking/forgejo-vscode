@@ -73,6 +73,26 @@ describe('instanceManager', () => {
       );
     });
 
+    it('should show configured SSH ports in quickpick descriptions', async () => {
+      const instances = [
+        { id: '1', name: 'Work', instanceUrl: 'https://git.work.com', token: 'tok', sshPort: 2222 }
+      ];
+      mockGetAllInstances.mockResolvedValue(instances);
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValue(undefined);
+
+      await manageInstances();
+
+      expect(vscode.window.showQuickPick).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: '$(server) Work',
+            description: 'https://git.work.com (SSH port 2222)'
+          })
+        ]),
+        expect.any(Object)
+      );
+    });
+
     it('should do nothing when user cancels quickpick', async () => {
       mockGetAllInstances.mockResolvedValue([]);
       (vscode.window.showQuickPick as jest.Mock).mockResolvedValue(undefined);
@@ -246,6 +266,93 @@ describe('instanceManager', () => {
       (vscode.window.showQuickPick as jest.Mock)
         .mockResolvedValueOnce({ instanceId: '1' })
         .mockResolvedValueOnce({ action: 'edit' })
+        .mockResolvedValueOnce(undefined);
+
+      (vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce(undefined);
+
+      await manageInstances();
+
+      expect(mockUpdateInstance).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('showInstanceActions - edit SSH port', () => {
+    it('should update SSH port when a valid port is entered', async () => {
+      const instance = { id: '1', name: 'Test', instanceUrl: 'https://test.com', token: 'tok', isDefault: false };
+      mockGetAllInstances.mockResolvedValue([instance]);
+      mockGetInstanceById.mockResolvedValue(instance);
+      mockUpdateInstance.mockResolvedValue(undefined);
+
+      (vscode.window.showQuickPick as jest.Mock)
+        .mockResolvedValueOnce({ instanceId: '1' })
+        .mockResolvedValueOnce({ action: 'editSshPort' })
+        .mockResolvedValueOnce(undefined);
+
+      (vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce(' 2222 ');
+
+      await manageInstances();
+
+      expect(mockUpdateInstance).toHaveBeenCalledWith(
+        expect.objectContaining({ id: '1', sshPort: 2222 })
+      );
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        'SSH port for Test set to 2222'
+      );
+    });
+
+    it('should clear SSH port when input is blank', async () => {
+      const instance = { id: '1', name: 'Test', instanceUrl: 'https://test.com', token: 'tok', isDefault: false, sshPort: 2222 };
+      mockGetAllInstances.mockResolvedValue([instance]);
+      mockGetInstanceById.mockResolvedValue(instance);
+      mockUpdateInstance.mockResolvedValue(undefined);
+
+      (vscode.window.showQuickPick as jest.Mock)
+        .mockResolvedValueOnce({ instanceId: '1' })
+        .mockResolvedValueOnce({ action: 'editSshPort' })
+        .mockResolvedValueOnce(undefined);
+
+      (vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce('   ');
+
+      await manageInstances();
+
+      const updatedInstance = mockUpdateInstance.mock.calls[0][0];
+      expect(updatedInstance).not.toHaveProperty('sshPort');
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        'SSH port cleared for Test'
+      );
+    });
+
+    it('should validate SSH port edits', async () => {
+      const instance = { id: '1', name: 'Test', instanceUrl: 'https://test.com', token: 'tok', isDefault: false };
+      mockGetAllInstances.mockResolvedValue([instance]);
+      mockGetInstanceById.mockResolvedValue(instance);
+      mockUpdateInstance.mockResolvedValue(undefined);
+
+      (vscode.window.showQuickPick as jest.Mock)
+        .mockResolvedValueOnce({ instanceId: '1' })
+        .mockResolvedValueOnce({ action: 'editSshPort' })
+        .mockResolvedValueOnce(undefined);
+
+      (vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce('');
+
+      await manageInstances();
+
+      const portPromptOptions = (vscode.window.showInputBox as jest.Mock).mock.calls[0][0];
+      expect(portPromptOptions.validateInput('')).toBeUndefined();
+      expect(portPromptOptions.validateInput('22')).toBeUndefined();
+      expect(portPromptOptions.validateInput('0')).toContain('between 1 and 65535');
+      expect(portPromptOptions.validateInput('65536')).toContain('between 1 and 65535');
+      expect(portPromptOptions.validateInput('22.5')).toContain('between 1 and 65535');
+    });
+
+    it('should do nothing when user cancels SSH port input', async () => {
+      const instance = { id: '1', name: 'Test', instanceUrl: 'https://test.com', token: 'tok', isDefault: false };
+      mockGetAllInstances.mockResolvedValue([instance]);
+      mockGetInstanceById.mockResolvedValue(instance);
+
+      (vscode.window.showQuickPick as jest.Mock)
+        .mockResolvedValueOnce({ instanceId: '1' })
+        .mockResolvedValueOnce({ action: 'editSshPort' })
         .mockResolvedValueOnce(undefined);
 
       (vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce(undefined);

@@ -46,7 +46,7 @@ export async function manageInstances(): Promise<void> {
 			} as InstanceQuickPickItem,
 			...validInstances.map(i => ({
 				label: `${i.isDefault ? '$(star-full)' : '$(server)'} ${i.name}`,
-				description: i.instanceUrl,
+				description: i.sshPort ? `${i.instanceUrl} (SSH port ${String(i.sshPort)})` : i.instanceUrl,
 				detail: getConnectionStatus(i),
 				instanceId: i.id
 			}))
@@ -113,7 +113,7 @@ async function showInstanceActions(instanceId: string): Promise<void> {
 	}
 
 	interface ActionQuickPickItem extends vscode.QuickPickItem {
-		action: 'test' | 'default' | 'edit' | 'remove' | 'back';
+		action: 'test' | 'default' | 'edit' | 'editSshPort' | 'remove' | 'back';
 	}
 
 	const actions: ActionQuickPickItem[] = [
@@ -135,6 +135,11 @@ async function showInstanceActions(instanceId: string): Promise<void> {
 			label: '$(edit) Edit Token',
 			description: 'Update the personal access token',
 			action: 'edit'
+		},
+		{
+			label: '$(remote) Edit SSH Port',
+			description: 'Set or clear the SSH port used for clone URLs',
+			action: 'editSshPort'
 		}
 	];
 
@@ -175,6 +180,10 @@ async function showInstanceActions(instanceId: string): Promise<void> {
 			break;
 		case 'edit':
 			await handleEditToken(instanceId);
+			await showInstanceActions(instanceId);
+			break;
+		case 'editSshPort':
+			await handleEditSshPort(instanceId);
 			await showInstanceActions(instanceId);
 			break;
 		case 'remove':
@@ -296,6 +305,44 @@ async function handleEditToken(instanceId: string): Promise<void> {
 }
 
 /**
+ * Handles editing an instance's SSH clone port
+ */
+async function handleEditSshPort(instanceId: string): Promise<void> {
+	const instance = await getInstanceById(instanceId);
+	if (!instance) {
+		return;
+	}
+
+	const sshPortInput = await vscode.window.showInputBox({
+		prompt: `Enter SSH port for ${instance.name} clone URLs (leave blank for default port 22)`,
+		placeHolder: '22',
+		value: instance.sshPort ? String(instance.sshPort) : '',
+		ignoreFocusOut: true,
+		validateInput: validateSshPortInput
+	});
+
+	if (sshPortInput === undefined) {
+		return;
+	}
+
+	const sshPort = parseSshPortInput(sshPortInput);
+	const updatedInstance = { ...instance };
+	if (sshPort === undefined) {
+		delete updatedInstance.sshPort;
+	} else {
+		updatedInstance.sshPort = sshPort;
+	}
+
+	await updateInstance(updatedInstance);
+	void vscode.window.showInformationMessage(
+		sshPort === undefined
+			? `SSH port cleared for ${instance.name}`
+			: `SSH port for ${instance.name} set to ${String(sshPort)}`
+	);
+	console.log(`[Forgejo] Updated SSH port for: ${instance.name}`);
+}
+
+/**
  * Handles removing an instance
  */
 async function handleRemoveInstance(instanceId: string): Promise<void> {
@@ -320,4 +367,27 @@ async function handleRemoveInstance(instanceId: string): Promise<void> {
 		`$(trash) Removed instance: ${instance.name}`
 	);
 	console.log(`[Forgejo] Removed instance: ${instance.name}`);
+}
+
+function parseSshPortInput(value: string | undefined): number | undefined {
+	const trimmed = value?.trim();
+	if (!trimmed) {
+		return undefined;
+	}
+
+	return Number(trimmed);
+}
+
+function validateSshPortInput(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	if (!trimmed) {
+		return undefined;
+	}
+
+	const port = Number(trimmed);
+	if (!Number.isInteger(port) || port < 1 || port > 65535) {
+		return 'SSH port must be a whole number between 1 and 65535';
+	}
+
+	return undefined;
 }
