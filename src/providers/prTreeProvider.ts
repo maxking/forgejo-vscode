@@ -525,7 +525,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     }
 
     const promise = this.fetchPullRequestsPageUncached(config, state, cache.nextPage).then(page => {
-      cache.pullRequests.push(...page.items);
+      this.appendUniquePullRequests(cache, page.items);
       cache.nextPage = page.page + 1;
       cache.hasMore = page.hasMore;
       return cache;
@@ -535,6 +535,17 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       return await promise;
     } finally {
       cache.inFlightPagePromise = undefined;
+    }
+  }
+
+  private appendUniquePullRequests(cache: PullRequestPageCache, pullRequests: PullRequestListItem[]): void {
+    const seenNumbers = new Set(cache.pullRequests.map(pr => pr.number));
+    for (const pullRequest of pullRequests) {
+      if (seenNumbers.has(pullRequest.number)) {
+        continue;
+      }
+      seenNumbers.add(pullRequest.number);
+      cache.pullRequests.push(pullRequest);
     }
   }
 

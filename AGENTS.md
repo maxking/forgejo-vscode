@@ -25,6 +25,7 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - When auto-detecting from a Git remote, never fall back to a configured default instance if the detected remote host does not match; use an HTTP(S) remote host unauthenticated or return no config for unmatched SSH remotes.
 - Every change should add a README News entry under the current version and link to the public Codeberg issue or PR when one exists; user-facing releases should also bump `package.json`/`package-lock.json` together.
 - Avoid unbounded pull request and issue fetches in tree providers; page Open/Draft/Merged/Closed PR groups and issue groups behind initial render, expansion, or explicit load-more actions.
+- Deduplicate paged tree-provider API results before rendering stable `TreeItem.id` values; overlapping pages from large repositories must not register duplicate visible items.
 - For tree-view pagination changes, add VS Code Playwright coverage that opens the contributed view, interacts with visible tree rows, and uses mocked API pages so the UI behavior is deterministic.
 - Forgejo timeline API rows use `type` for the action name, while detail webviews use `type` as a local activity discriminator; normalize the API action into `event` before assigning local activity types, and filter timeline comments when comments are fetched separately.
 

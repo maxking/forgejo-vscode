@@ -828,6 +828,37 @@ describe('PRTreeProvider', () => {
       expect(loadedItems.some(item => item instanceof PRLoadMoreItem)).toBe(false);
     });
 
+    test('should not render duplicate PR tree item ids when paged results overlap', async () => {
+      const firstOpenPR: PullRequestListItem = { ...mockPR, number: 13116, state: 'open', draft: false };
+      const secondOpenPR: PullRequestListItem = { ...mockPR, number: 13117, state: 'open', draft: false };
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce({
+          items: [firstOpenPR],
+          page: 1,
+          limit: 50,
+          hasMore: true
+        })
+        .mockResolvedValueOnce({
+          items: [firstOpenPR, secondOpenPR],
+          page: 2,
+          limit: 50,
+          hasMore: false
+        });
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(group => (group as any).label === 'Open');
+      const initialItems = await provider.getChildren(openGroup);
+      const loadMoreItem = initialItems.find(item => item instanceof PRLoadMoreItem) as PRLoadMoreItem;
+
+      await provider.loadMorePullRequests(loadMoreItem);
+      const loadedItems = await provider.getChildren(openGroup);
+      const prItems = loadedItems.filter(item => item instanceof PRTreeItem) as PRTreeItem[];
+      const prItemIds = prItems.map(item => item.id);
+
+      expect(prItems.map(item => item.pr.number)).toEqual([13116, 13117]);
+      expect(new Set(prItemIds).size).toBe(prItemIds.length);
+    });
+
     test('should pass the active search query when fetching PR groups', async () => {
       const searchedPR: PullRequestListItem = { ...mockPR, number: 5, title: 'Fix searched bug', state: 'open', draft: false };
       provider.setSearchQuery('  searched bug  ');
