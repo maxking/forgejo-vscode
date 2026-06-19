@@ -27,6 +27,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.21
 
 - Development version after the 0.3.20 release.
+- **Built-in query views ([#136](https://git.araj.me/maxking/forgejo-vscode/issues/136)):** Pull Request and Issue views now include "My Queries" groups for assigned, created, and mentioned items, plus PRs waiting for your review.
 - **Duplicate PR tree row fix:** paged pull request results are now deduplicated before rendering so overlapping API pages cannot register the same tree item id twice.
 - **Richer pull request activity details:** PR detail timelines now normalize Forgejo commit payloads before rendering, so commit authors, timestamps, messages, branch actions, merge commits, and commit references show useful context instead of "Unknown" or empty commit rows.
 

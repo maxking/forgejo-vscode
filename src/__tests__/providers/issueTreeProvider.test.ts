@@ -62,7 +62,8 @@ describe('IssueTreeProvider', () => {
 
   beforeEach(() => {
     mockClient = {
-      getIssuesPage: jest.fn()
+      getIssuesPage: jest.fn(),
+      getAuthenticatedUserLogin: jest.fn()
     } as any;
 
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
@@ -73,6 +74,7 @@ describe('IssueTreeProvider', () => {
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);
 
     mockIssuePages([], []);
+    mockClient.getAuthenticatedUserLogin.mockResolvedValue('alice');
     provider = new IssueTreeProvider();
 
     jest.clearAllMocks();
@@ -165,8 +167,9 @@ describe('IssueTreeProvider', () => {
       mockIssuePages([], []);
       const children = await provider.getChildren();
 
-      expect(children).toHaveLength(1);
-      const msg = children[0] as vscode.TreeItem;
+      expect(children).toHaveLength(2);
+      expect((children[0] as vscode.TreeItem).label).toBe('My Queries');
+      const msg = children[1] as vscode.TreeItem;
       expect(msg.label).toBe('No issues found');
       expect(msg.contextValue).toBe('info');
       expect((msg.iconPath as vscode.ThemeIcon).id).toBe('info');
@@ -177,8 +180,7 @@ describe('IssueTreeProvider', () => {
       mockIssuePages([mockOpenIssue], []);
       const children = await provider.getChildren();
 
-      expect(children).toHaveLength(1);
-      const group = children[0] as vscode.TreeItem;
+      const group = children.find(child => (child as vscode.TreeItem).label === 'Open') as vscode.TreeItem;
       expect(group.label).toBe('Open');
       expect(group.description).toBe('1');
     });
@@ -188,8 +190,7 @@ describe('IssueTreeProvider', () => {
       mockIssuePages([], [mockClosedIssue]);
       const children = await provider.getChildren();
 
-      expect(children).toHaveLength(1);
-      const group = children[0] as vscode.TreeItem;
+      const group = children.find(child => (child as vscode.TreeItem).label === 'Closed') as vscode.TreeItem;
       expect(group.label).toBe('Closed');
       expect(group.description).toBe('1');
     });
@@ -199,18 +200,18 @@ describe('IssueTreeProvider', () => {
       mockIssuePages([mockOpenIssue], [mockClosedIssue]);
       const children = await provider.getChildren();
 
-      expect(children).toHaveLength(2);
-      expect((children[0] as vscode.TreeItem).label).toBe('Open');
-      expect((children[1] as vscode.TreeItem).label).toBe('Closed');
+      expect(children.map(child => (child as vscode.TreeItem).label)).toEqual(['My Queries', 'Open', 'Closed']);
     });
 
     test('should set Open group as Expanded and Closed group as Collapsed', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
       mockIssuePages([mockOpenIssue], [mockClosedIssue]);
       const children = await provider.getChildren();
+      const openGroup = children.find(child => (child as vscode.TreeItem).label === 'Open') as vscode.TreeItem;
+      const closedGroup = children.find(child => (child as vscode.TreeItem).label === 'Closed') as vscode.TreeItem;
 
-      expect(children[0].collapsibleState).toBe(vscode.TreeItemCollapsibleState.Expanded);
-      expect(children[1].collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
+      expect(openGroup.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Expanded);
+      expect(closedGroup.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
     });
 
     test('should return IssueTreeItems as children of group', async () => {
@@ -219,10 +220,10 @@ describe('IssueTreeProvider', () => {
 
       // Get root groups
       const groups = await provider.getChildren();
-      expect(groups).toHaveLength(1);
+      const openGroup = groups.find(group => (group as vscode.TreeItem).label === 'Open');
 
       // Get children of Open group
-      const issueItems = await provider.getChildren(groups[0]);
+      const issueItems = await provider.getChildren(openGroup);
       expect(issueItems).toHaveLength(1);
 
       const issueItem = issueItems[0] as IssueTreeItem;
@@ -257,9 +258,9 @@ describe('IssueTreeProvider', () => {
       mockIssuePages([mockOpenIssue], []);
 
       const initialGroups = await provider.getChildren();
-      expect(initialGroups).toHaveLength(1);
-      expect((initialGroups[0] as vscode.TreeItem).label).toBe('Open');
-      expect((initialGroups[0] as vscode.TreeItem).description).toBe('1');
+      const initialOpenGroup = initialGroups.find(group => (group as vscode.TreeItem).label === 'Open') as vscode.TreeItem;
+      expect(initialOpenGroup.label).toBe('Open');
+      expect(initialOpenGroup.description).toBe('1');
 
       // New issue added (simulates server state after createIssue)
       const mockNewIssue: IssueListItem = {
@@ -278,11 +279,11 @@ describe('IssueTreeProvider', () => {
 
       // Next getChildren call should return fresh data with the new issue
       const updatedGroups = await provider.getChildren();
-      expect(updatedGroups).toHaveLength(1);
-      expect((updatedGroups[0] as vscode.TreeItem).label).toBe('Open');
-      expect((updatedGroups[0] as vscode.TreeItem).description).toBe('2');
+      const updatedOpenGroup = updatedGroups.find(group => (group as vscode.TreeItem).label === 'Open');
+      expect((updatedOpenGroup as vscode.TreeItem).label).toBe('Open');
+      expect((updatedOpenGroup as vscode.TreeItem).description).toBe('2');
 
-      const issueItems = await provider.getChildren(updatedGroups[0]);
+      const issueItems = await provider.getChildren(updatedOpenGroup);
       expect(issueItems).toHaveLength(2);
       const labels = issueItems.map(item => (item as vscode.TreeItem).label as string);
       expect(labels).toContain('#11: New issue after refresh');
@@ -349,6 +350,77 @@ describe('IssueTreeProvider', () => {
       expect(loadedItems.some(item => item instanceof IssueLoadMoreItem)).toBe(false);
     });
 
+    test('should expose built-in query groups without fetching them at the root', async () => {
+      mockIssuePages([], []);
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as vscode.TreeItem).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+
+      expect(queryGroups.map(group => String((group as vscode.TreeItem).label))).toEqual([
+        'Assigned to me',
+        'Created by me',
+        'Mentioned me'
+      ]);
+      expect(mockClient.getAuthenticatedUserLogin).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['Assigned to me', { assignedBy: 'alice' }],
+      ['Created by me', { createdBy: 'alice' }],
+      ['Mentioned me', { mentionedBy: 'alice' }]
+    ])('should fetch issue query group "%s" for the authenticated user', async (label, expectedOptions) => {
+      const queryIssue: IssueListItem = { ...mockOpenIssue, number: 77, title: `${label} issue` };
+      mockClient.getIssuesPage
+        .mockResolvedValueOnce(page([]))
+        .mockResolvedValueOnce(page([]))
+        .mockResolvedValueOnce(page([queryIssue]));
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as vscode.TreeItem).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const queryGroup = queryGroups.find(group => (group as vscode.TreeItem).label === label);
+      const queryItems = await provider.getChildren(queryGroup);
+
+      expect(mockClient.getAuthenticatedUserLogin).toHaveBeenCalledTimes(1);
+      expect(mockClient.getIssuesPage).toHaveBeenLastCalledWith('test-owner', 'test-repo', 'open', 1, 50, expectedOptions);
+      expect(queryItems.filter(item => item instanceof IssueTreeItem).map(item => (item as IssueTreeItem).issue.number)).toEqual([77]);
+    });
+
+    test('should include active search text when fetching issue query groups', async () => {
+      const queryIssue: IssueListItem = { ...mockOpenIssue, number: 78, title: 'Assigned search result' };
+      provider.setSearchQuery('  bug  ');
+      mockClient.getIssuesPage
+        .mockResolvedValueOnce(page([]))
+        .mockResolvedValueOnce(page([]))
+        .mockResolvedValueOnce(page([queryIssue]));
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as vscode.TreeItem).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const assignedGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Assigned to me');
+      await provider.getChildren(assignedGroup);
+
+      expect(mockClient.getIssuesPage).toHaveBeenLastCalledWith('test-owner', 'test-repo', 'open', 1, 50, {
+        query: 'bug',
+        assignedBy: 'alice'
+      });
+    });
+
+    test('should explain that issue query groups require authentication when no token is configured', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, token: '', label: 'test-owner/test-repo' }]);
+      mockIssuePages([], []);
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as vscode.TreeItem).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const assignedGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Assigned to me');
+      const queryItems = await provider.getChildren(assignedGroup);
+
+      expect((queryItems[0] as vscode.TreeItem).label).toBe('Configure an authentication token to use issue query views.');
+      expect(mockClient.getAuthenticatedUserLogin).not.toHaveBeenCalled();
+    });
+
     test('should pass the active search query when fetching issue groups', async () => {
       const searchedIssue: IssueListItem = {
         ...mockOpenIssue,
@@ -357,7 +429,7 @@ describe('IssueTreeProvider', () => {
         html_url: 'https://git.example.com/test-owner/test-repo/issues/12'
       };
       provider.setSearchQuery('  searched issue  ');
-      mockClient.getIssuesPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, query?: string) => {
+      mockClient.getIssuesPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, _queryOrOptions?: unknown) => {
         if (state === 'closed') {
           return Promise.resolve(page([], pageNumber, false));
         }
@@ -394,7 +466,7 @@ describe('IssueTreeProvider', () => {
         html_url: 'https://git.example.com/test-owner/test-repo/issues/11'
       };
       provider.setSearchQuery('login');
-      mockClient.getIssuesPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, query?: string) => {
+      mockClient.getIssuesPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, _queryOrOptions?: unknown) => {
         if (state === 'closed') {
           return Promise.resolve({ ...page([], pageNumber, false), limit });
         }

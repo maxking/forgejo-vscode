@@ -30,6 +30,49 @@ export interface IssuePage {
   hasMore: boolean;
 }
 
+export interface ForgejoItemQueryOptions {
+  query?: string;
+  createdBy?: string;
+  assignedBy?: string;
+  mentionedBy?: string;
+  reviewRequestedBy?: string;
+}
+
+interface ForgejoUserResponse {
+  login?: string;
+  username?: string;
+}
+
+function trimmedValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeQueryOptions(queryOrOptions?: string | ForgejoItemQueryOptions): ForgejoItemQueryOptions {
+  if (typeof queryOrOptions === 'string') {
+    return { query: trimmedValue(queryOrOptions) };
+  }
+
+  return {
+    ...queryOrOptions,
+    query: trimmedValue(queryOrOptions?.query),
+    createdBy: trimmedValue(queryOrOptions?.createdBy),
+    assignedBy: trimmedValue(queryOrOptions?.assignedBy),
+    mentionedBy: trimmedValue(queryOrOptions?.mentionedBy),
+    reviewRequestedBy: trimmedValue(queryOrOptions?.reviewRequestedBy)
+  };
+}
+
+function hasPullRequestIssueSearchFilter(options: ForgejoItemQueryOptions): boolean {
+  return Boolean(options.createdBy ?? options.assignedBy ?? options.mentionedBy ?? options.reviewRequestedBy);
+}
+
+function appendQueryParam(params: URLSearchParams, key: string, value: string | undefined): void {
+  if (value) {
+    params.set(key, value);
+  }
+}
+
 export class ForgejoClient extends BaseClient {
   constructor(
     private readonly vscodeInstanceUrl: string,
@@ -65,15 +108,17 @@ export class ForgejoClient extends BaseClient {
     state: 'open' | 'closed' | 'all' = 'all',
     page = 1,
     limit = 50,
-    query?: string
+    queryOrOptions?: string | ForgejoItemQueryOptions
   ): Promise<PullRequestPage> {
-    const trimmedQuery = query?.trim();
-    const result = trimmedQuery
+    const options = normalizeQueryOptions(queryOrOptions);
+    const result = hasPullRequestIssueSearchFilter(options)
+      ? await this.searchPullRequestsByIssueFiltersPage(owner, repo, state, page, limit, options)
+      : options.query
       ? await this.searchPullRequestsPage(owner, repo, {
         state,
         page,
         limit,
-        query: trimmedQuery
+        query: options.query
       })
       : await this.listPullRequestsPage(owner, repo, { state, page, limit });
     return {
@@ -112,14 +157,17 @@ export class ForgejoClient extends BaseClient {
     state: 'open' | 'closed' | 'all' = 'all',
     page = 1,
     limit = 50,
-    query?: string
+    queryOrOptions?: string | ForgejoItemQueryOptions
   ): Promise<IssuePage> {
-    const trimmedQuery = query?.trim();
+    const options = normalizeQueryOptions(queryOrOptions);
     const result = await this.listIssuesPage(owner, repo, {
       state,
       page,
       limit,
-      ...(trimmedQuery ? { query: trimmedQuery } : {})
+      ...(options.query ? { query: options.query } : {}),
+      ...(options.createdBy ? { createdBy: options.createdBy } : {}),
+      ...(options.assignedBy ? { assignedBy: options.assignedBy } : {}),
+      ...(options.mentionedBy ? { mentionedBy: options.mentionedBy } : {})
     });
     return {
       items: result.items.filter(item => !item.pull_request),
@@ -151,5 +199,46 @@ export class ForgejoClient extends BaseClient {
 
   async updateIssueBody(owner: string, repo: string, number: number, body: string): Promise<Issue> {
     return this.updateIssue(owner, repo, number, { body });
+  }
+
+  async getAuthenticatedUserLogin(): Promise<string | null> {
+    const user = await this.rawRequest<ForgejoUserResponse>('GET', '/user');
+    return trimmedValue(user.login) ?? trimmedValue(user.username) ?? null;
+  }
+
+  private async searchPullRequestsByIssueFiltersPage(
+    owner: string,
+    repo: string,
+    state: 'open' | 'closed' | 'all',
+    page: number,
+    limit: number,
+    options: ForgejoItemQueryOptions
+  ): Promise<PullRequestPage> {
+    const params = new URLSearchParams({
+      state,
+      type: 'pulls'
+    });
+    appendQueryParam(params, 'q', options.query);
+    appendQueryParam(params, 'created_by', options.createdBy);
+    appendQueryParam(params, 'assigned_by', options.assignedBy);
+    appendQueryParam(params, 'mentioned_by', options.mentionedBy);
+    appendQueryParam(params, 'review_requested_by', options.reviewRequestedBy);
+    params.set('page', String(page));
+    params.set('limit', String(limit));
+
+    const matches = await this.rawRequest<IssueListItem[]>('GET', `/repos/${owner}/${repo}/issues?${params.toString()}`);
+    const pullRequestNumbers = matches
+      .filter(item => item.pull_request)
+      .map(item => item.number);
+    const items = await Promise.all(
+      pullRequestNumbers.map(number => this.getPullRequest(owner, repo, number))
+    );
+
+    return {
+      items,
+      page,
+      limit,
+      hasMore: matches.length === limit
+    };
   }
 }

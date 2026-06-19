@@ -49,7 +49,8 @@ describe('PRTreeProvider', () => {
       getPullRequestsPage: jest.fn(),
       hasPullRequests: jest.fn(),
       getPullRequestFiles: jest.fn(),
-      getPullRequestRefs: jest.fn()
+      getPullRequestRefs: jest.fn(),
+      getAuthenticatedUserLogin: jest.fn()
     } as any;
 
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
@@ -73,6 +74,7 @@ describe('PRTreeProvider', () => {
       hasMore: false
     });
     mockClient.hasPullRequests.mockResolvedValue(false);
+    mockClient.getAuthenticatedUserLogin.mockResolvedValue('alice');
     provider = new PRTreeProvider();
 
     jest.clearAllMocks();
@@ -463,6 +465,81 @@ describe('PRTreeProvider', () => {
       expect((draftItems[0] as PRTreeItem).pr).toEqual(draftPR);
     });
 
+    test('should expose built-in query groups without fetching them at the root', async () => {
+      mockClient.getPullRequestsPage.mockResolvedValue(prPage([]));
+      mockClient.hasPullRequests.mockResolvedValue(false);
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as any).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+
+      expect(queryGroups.map(group => String((group as vscode.TreeItem).label))).toEqual([
+        'Assigned to me',
+        'Waiting for my review',
+        'Created by me',
+        'Mentioned me'
+      ]);
+      expect(mockClient.getAuthenticatedUserLogin).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['Assigned to me', { assignedBy: 'alice' }],
+      ['Waiting for my review', { reviewRequestedBy: 'alice' }],
+      ['Created by me', { createdBy: 'alice' }],
+      ['Mentioned me', { mentionedBy: 'alice' }]
+    ])('should fetch PR query group "%s" for the authenticated user', async (label, expectedOptions) => {
+      const queryPR: PullRequestListItem = { ...mockPR, number: 77, title: `${label} PR` };
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce(prPage([]))
+        .mockResolvedValueOnce(prPage([queryPR]));
+      mockClient.hasPullRequests.mockResolvedValue(false);
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as any).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const queryGroup = queryGroups.find(group => (group as vscode.TreeItem).label === label);
+      const queryItems = await provider.getChildren(queryGroup);
+
+      expect(mockClient.getAuthenticatedUserLogin).toHaveBeenCalledTimes(1);
+      expect(mockClient.getPullRequestsPage).toHaveBeenLastCalledWith('test-owner', 'test-repo', 'open', 1, 50, expectedOptions);
+      expect(queryItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([77]);
+    });
+
+    test('should include active search text when fetching PR query groups', async () => {
+      const queryPR: PullRequestListItem = { ...mockPR, number: 78, title: 'Assigned search result' };
+      provider.setSearchQuery('  bug  ');
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce(prPage([]))
+        .mockResolvedValueOnce(prPage([]))
+        .mockResolvedValueOnce(prPage([queryPR]));
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as any).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const assignedGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Assigned to me');
+      await provider.getChildren(assignedGroup);
+
+      expect(mockClient.getPullRequestsPage).toHaveBeenLastCalledWith('test-owner', 'test-repo', 'open', 1, 50, {
+        query: 'bug',
+        assignedBy: 'alice'
+      });
+    });
+
+    test('should explain that PR query groups require authentication when no token is configured', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, token: '', label: 'test-owner/test-repo' }]);
+      mockClient.getPullRequestsPage.mockResolvedValue(prPage([]));
+      mockClient.hasPullRequests.mockResolvedValue(false);
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as any).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const assignedGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Assigned to me');
+      const queryItems = await provider.getChildren(assignedGroup);
+
+      expect((queryItems[0] as vscode.TreeItem).label).toBe('Configure an authentication token to use pull request query views.');
+      expect(mockClient.getAuthenticatedUserLogin).not.toHaveBeenCalled();
+    });
+
     test('should include lazy Merged and Closed groups without fetching closed PRs initially', async () => {
       mockClient.getPullRequestsPage.mockResolvedValue({
         items: [mockPR],
@@ -515,7 +592,7 @@ describe('PRTreeProvider', () => {
 
       const children = await provider.getChildren();
 
-      expect(children.map(child => (child as any).label)).toEqual(['Merged', 'Closed']);
+      expect(children.map(child => (child as any).label)).toEqual(['My Queries', 'Merged', 'Closed']);
     });
 
     test('should not show lazy historical groups when no closed pull requests exist', async () => {
@@ -529,9 +606,10 @@ describe('PRTreeProvider', () => {
 
       const children = await provider.getChildren();
 
-      expect(children.length).toBe(1);
-      expect((children[0] as any).message).toBe('No pull requests found');
-      expect((children[0] as any).isError).toBe(false);
+      expect(children.length).toBe(2);
+      expect((children[0] as any).label).toBe('My Queries');
+      expect((children[1] as any).message).toBe('No pull requests found');
+      expect((children[1] as any).isError).toBe(false);
     });
 
     test('should return error message on fetch failure', async () => {
@@ -862,7 +940,7 @@ describe('PRTreeProvider', () => {
     test('should pass the active search query when fetching PR groups', async () => {
       const searchedPR: PullRequestListItem = { ...mockPR, number: 5, title: 'Fix searched bug', state: 'open', draft: false };
       provider.setSearchQuery('  searched bug  ');
-      mockClient.getPullRequestsPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, query?: string) => {
+      mockClient.getPullRequestsPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, _queryOrOptions?: unknown) => {
         if (state === 'closed') {
           return Promise.resolve(prPage([], pageNumber, false, limit));
         }
@@ -896,7 +974,7 @@ describe('PRTreeProvider', () => {
       const firstOpenPR: PullRequestListItem = { ...mockPR, number: 2, title: 'Search result one', state: 'open', draft: false };
       const secondOpenPR: PullRequestListItem = { ...mockPR, number: 4, title: 'Search result two', state: 'open', draft: false };
       provider.setSearchQuery('search term');
-      mockClient.getPullRequestsPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, query?: string) => {
+      mockClient.getPullRequestsPage.mockImplementation((_owner, _repo, state, pageNumber = 1, limit = 50, _queryOrOptions?: unknown) => {
         if (state === 'closed') {
           return Promise.resolve(prPage([], pageNumber, false, limit));
         }
