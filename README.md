@@ -27,10 +27,10 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.21
 
 - Development version after the 0.3.20 release.
+- **Duplicate PR tree row fix:** paged pull request results are now deduplicated before rendering so overlapping API pages cannot register the same tree item id twice.
 
 ### 0.3.20
 
-- **Duplicate PR tree row fix:** paged pull request results are now deduplicated before rendering so overlapping API pages cannot register the same tree item id twice.
 - **Pull request and issue search ([#135](https://codeberg.org/maxking/forgejo-vscode/issues/135)):** the Pull Requests and Issues views now search server-side through forgejo-ts 0.4.0 while preserving paged load-more behavior.
 - **forgejo-ts pagination wrapper:** legacy Pull Request and Issue page helpers now delegate to forgejo-ts pagination metadata instead of rebuilding those requests locally.
 - **Issue and PR timeline activity rendering ([forgejo#13020](https://codeberg.org/forgejo/forgejo/issues/13020)):** detail views now preserve Forgejo timeline action names and skip duplicate timeline comment rows instead of showing extra "performed an action" entries.
