@@ -174,6 +174,10 @@ export async function startOnboarding(): Promise<boolean> {
 		ignoreFocusOut: true,
 		validateInput: validateSshPortInput
 	});
+	if (sshPortInput === undefined) {
+		logInfo('Onboarding cancelled by user at step 4 (SSH port)');
+		return false;
+	}
 	const sshPort = parseSshPortInput(sshPortInput);
 
 	// Step 7: Save instance

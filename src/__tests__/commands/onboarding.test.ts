@@ -98,7 +98,8 @@ describe('onboarding', () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://codeberg.org')
         .mockResolvedValueOnce('test-token')
-        .mockResolvedValueOnce('My Codeberg');
+        .mockResolvedValueOnce('My Codeberg')
+        .mockResolvedValueOnce('');
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
@@ -143,6 +144,23 @@ describe('onboarding', () => {
       );
     });
 
+    it('should return false when user cancels optional SSH port input', async () => {
+      (vscode.window.showInputBox as jest.Mock)
+        .mockResolvedValueOnce('https://git.example.com')
+        .mockResolvedValueOnce('test-token')
+        .mockResolvedValueOnce('My Forgejo')
+        .mockResolvedValueOnce(undefined);
+
+      (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
+      (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
+      mockTestInstanceConnection.mockResolvedValue(true);
+
+      const result = await runOnboarding();
+
+      expect(result).toBe(false);
+      expect(mockAddInstance).not.toHaveBeenCalled();
+    });
+
     it('should validate optional SSH port input', async () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://git.example.com')
@@ -170,7 +188,8 @@ describe('onboarding', () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://codeberg.org')
         .mockResolvedValueOnce('test-token')
-        .mockResolvedValueOnce('Codeberg');
+        .mockResolvedValueOnce('Codeberg')
+        .mockResolvedValueOnce('');
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
@@ -191,7 +210,8 @@ describe('onboarding', () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://codeberg.org')
         .mockResolvedValueOnce('bad-token')
-        .mockResolvedValueOnce('Codeberg');
+        .mockResolvedValueOnce('Codeberg')
+        .mockResolvedValueOnce('');
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
@@ -245,7 +265,8 @@ describe('onboarding', () => {
         .mockResolvedValueOnce('bad-token')              // 1st: Token
         .mockResolvedValueOnce('https://codeberg.org')  // 2nd: URL (retry)
         .mockResolvedValueOnce('good-token')             // 2nd: Token
-        .mockResolvedValueOnce('Codeberg');              // 2nd: Name
+        .mockResolvedValueOnce('Codeberg')               // 2nd: Name
+        .mockResolvedValueOnce('');                      // 2nd: SSH port
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
@@ -273,7 +294,8 @@ describe('onboarding', () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://codeberg.org')
         .mockResolvedValueOnce('test-token')
-        .mockResolvedValueOnce('Codeberg');
+        .mockResolvedValueOnce('Codeberg')
+        .mockResolvedValueOnce('');
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
@@ -294,7 +316,8 @@ describe('onboarding', () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://codeberg.org')
         .mockResolvedValueOnce('bad-token')
-        .mockResolvedValueOnce('Codeberg');
+        .mockResolvedValueOnce('Codeberg')
+        .mockResolvedValueOnce('');
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
@@ -313,7 +336,8 @@ describe('onboarding', () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://codeberg.org')
         .mockResolvedValueOnce('  test-token  ')
-        .mockResolvedValueOnce('Codeberg');
+        .mockResolvedValueOnce('Codeberg')
+        .mockResolvedValueOnce('');
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
@@ -332,7 +356,8 @@ describe('onboarding', () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://codeberg.org')
         .mockResolvedValueOnce('test-token')
-        .mockResolvedValueOnce('  My Instance  ');
+        .mockResolvedValueOnce('  My Instance  ')
+        .mockResolvedValueOnce('');
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());

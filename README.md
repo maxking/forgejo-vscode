@@ -130,9 +130,10 @@ Authentication is **optional for public repositories** but required for private 
 2. Type **"Forgejo: Add Instance"**
 3. Enter your instance URL (e.g., `https://codeberg.org`)
 4. Paste your token when prompted
-5. Enter a friendly name (e.g., "Codeberg")
-6. Enter an SSH port if your self-hosted instance does not use port 22, or leave it blank
-7. The extension tests the connection and saves the instance
+5. The extension tests the connection
+6. Enter a friendly name (e.g., "Codeberg")
+7. Enter an SSH port if your self-hosted instance does not use port 22, or leave it blank
+8. The extension saves the instance
 
 **Option B: Using Settings UI**
 
