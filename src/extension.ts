@@ -8,6 +8,7 @@ import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './provid
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
 import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
+import { IssueCreateWebviewProvider } from './webview/issueCreate/provider';
 import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
 import { ForgejoCommentController } from './providers/prCommentController';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
@@ -224,7 +225,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register create issue command
   context.subscriptions.push(
-    registerCommand('forgejo.createIssue', () => createIssueCommand(issueTreeProvider))
+    registerCommand('forgejo.createIssue', () => createIssueCommand(issueCreateWebviewProvider))
   );
 
   // Register create pull request command
@@ -772,6 +773,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create Issue detail webview provider
   const issueDetailWebviewProvider = new IssueDetailWebviewProvider(context.extensionUri);
+
+  // Create Issue creation webview provider
+  const issueCreateWebviewProvider = new IssueCreateWebviewProvider(context.extensionUri, issueTreeProvider);
 
   // Create Action detail webview provider
   const actionDetailWebviewProvider = new ActionDetailWebviewProvider(context.extensionUri);

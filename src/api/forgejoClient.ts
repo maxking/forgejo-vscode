@@ -16,6 +16,13 @@ import {
 } from 'forgejo-ts';
 import { vscodeLogger } from '../utils/forgejoLoggerAdapter';
 
+export interface CreateIssueOptions {
+  labels?: number[];
+  assignees?: string[];
+  milestone?: number;
+  due_date?: string;
+}
+
 export interface PullRequestPage {
   items: PullRequestListItem[];
   page: number;
@@ -234,6 +241,19 @@ export class ForgejoClient extends BaseClient {
 
   async getIssueDetails(owner: string, repo: string, number: number): Promise<Issue> {
     return this.getIssue(owner, repo, number);
+  }
+
+  async createIssue(owner: string, repo: string, title: string, body?: string, options?: CreateIssueOptions): Promise<Issue> {
+    const payload: Record<string, unknown> = {
+      title,
+      ...(body ? { body } : {}),
+      ...(options?.labels?.length ? { labels: options.labels } : {}),
+      ...(options?.assignees?.length ? { assignees: options.assignees } : {}),
+      ...(options?.milestone !== undefined ? { milestone: options.milestone } : {}),
+      ...(options?.due_date ? { due_date: options.due_date } : {})
+    };
+
+    return this.rawRequest<Issue>('POST', `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`, payload);
   }
 
   async getWorkflowRuns(owner: string, repo: string, status?: string): Promise<ActionTasksResponse> {
