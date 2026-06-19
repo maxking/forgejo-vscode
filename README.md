@@ -206,7 +206,16 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 | `forgejo.debug` | `false` | Enable debug logging |
 | `forgejo.showFileStatusNotifications` | `true` | Show notifications for added/deleted files |
 
-Per-instance entries in `forgejo.instances` also support `sshPort` for self-hosted servers whose SSH service does not listen on port 22.
+Per-instance entries in `forgejo.instances` also support `sshPort` for self-hosted servers whose SSH service does not listen on port 22:
+
+```json
+{
+  "id": "my-forgejo",
+  "name": "My Forgejo",
+  "instanceUrl": "https://git.example.com",
+  "sshPort": 2222
+}
+```
 
 ## Troubleshooting
 

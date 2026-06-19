@@ -20,7 +20,7 @@ export async function startOnboarding(): Promise<boolean> {
 	// Step 1: Get instance URL
 	logInfo('Step 1: Prompting for instance URL...');
 	const instanceUrl = await vscode.window.showInputBox({
-		prompt: 'Step 1 of 2: Enter your Forgejo instance URL',
+		prompt: 'Step 1 of 4: Enter your Forgejo instance URL',
 		placeHolder: 'https://codeberg.org',
 		ignoreFocusOut: true,
 		validateInput: (value) => {
@@ -67,7 +67,7 @@ export async function startOnboarding(): Promise<boolean> {
 	// Step 3: Get token from user
 	logInfo('Prompting for token...');
 	const token = await vscode.window.showInputBox({
-		prompt: 'Step 2 of 2: Paste your personal access token (grant "repo" permissions)',
+		prompt: 'Step 2 of 4: Paste your personal access token (grant "repo" permissions)',
 		placeHolder: 'Paste your token here',
 		password: true,
 		ignoreFocusOut: true, // Keep input box open even when VS Code loses focus
@@ -149,7 +149,7 @@ export async function startOnboarding(): Promise<boolean> {
 	const defaultName = getDefaultInstanceName(normalizedUrl);
 	logInfo('Prompting for instance name, suggesting:', defaultName);
 	const name = await vscode.window.showInputBox({
-		prompt: 'Give this instance a name',
+		prompt: 'Step 3 of 4: Give this instance a name',
 		value: defaultName,
 		ignoreFocusOut: true,
 		validateInput: (value) => {
@@ -167,13 +167,23 @@ export async function startOnboarding(): Promise<boolean> {
 
 	logInfo('Instance name received:', name.trim());
 
-	// Step 6: Save instance
+	// Step 6: Ask for optional SSH port
+	const sshPortInput = await vscode.window.showInputBox({
+		prompt: 'Step 4 of 4: SSH port for clone URLs (optional)',
+		placeHolder: '22',
+		ignoreFocusOut: true,
+		validateInput: validateSshPortInput
+	});
+	const sshPort = parseSshPortInput(sshPortInput);
+
+	// Step 7: Save instance
 	const instance: ForgejoInstance = {
 		id: tempInstance.id,
 		name: name.trim(),
 		instanceUrl: normalizedUrl,
 		token: token.trim(),
 		username,
+		...(sshPort !== undefined ? { sshPort } : {}),
 		lastConnectionTest: tempInstance.lastConnectionTest
 	};
 
@@ -222,4 +232,27 @@ export async function startOnboarding(): Promise<boolean> {
 		});
 		return false;
 	}
+}
+
+function parseSshPortInput(value: string | undefined): number | undefined {
+	const trimmed = value?.trim();
+	if (!trimmed) {
+		return undefined;
+	}
+
+	return Number(trimmed);
+}
+
+function validateSshPortInput(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	if (!trimmed) {
+		return undefined;
+	}
+
+	const port = Number(trimmed);
+	if (!Number.isInteger(port) || port < 1 || port > 65535) {
+		return 'SSH port must be a whole number between 1 and 65535';
+	}
+
+	return undefined;
 }

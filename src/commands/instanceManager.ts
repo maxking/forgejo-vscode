@@ -46,7 +46,7 @@ export async function manageInstances(): Promise<void> {
 			} as InstanceQuickPickItem,
 			...validInstances.map(i => ({
 				label: `${i.isDefault ? '$(star-full)' : '$(server)'} ${i.name}`,
-				description: i.instanceUrl,
+				description: i.sshPort ? `${i.instanceUrl} (SSH port ${String(i.sshPort)})` : i.instanceUrl,
 				detail: getConnectionStatus(i),
 				instanceId: i.id
 			}))

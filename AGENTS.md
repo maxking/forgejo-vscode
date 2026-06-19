@@ -23,6 +23,7 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - When extending custom URI schemes, make optional path segments self-identifying or versioned; do not infer new URI formats from segment count when legacy file paths can contain arbitrary nested segments.
 - Skip VS Code Git extension repository discovery when there are no workspace folders so no-config command/provider paths do not wait on repository discovery timeouts.
 - When auto-detecting from a Git remote, never fall back to a configured default instance if the detected remote host does not match; use an HTTP(S) remote host unauthenticated or return no config for unmatched SSH remotes.
+- When adding fields to `ForgejoInstance` or `forgejo.instances`, update the package schema, onboarding/manage-instance UX, README configuration docs, and focused tests together.
 - Every change should add a README News entry under the current version and link to the public Codeberg issue or PR when one exists; user-facing releases should also bump `package.json`/`package-lock.json` together.
 - Avoid unbounded pull request and issue fetches in tree providers; page Open/Draft/Merged/Closed PR groups and issue groups behind initial render, expansion, or explicit load-more actions.
 - Deduplicate paged tree-provider API results before rendering stable `TreeItem.id` values; overlapping pages from large repositories must not register duplicate visible items.

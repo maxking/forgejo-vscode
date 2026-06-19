@@ -119,6 +119,53 @@ describe('onboarding', () => {
       );
     });
 
+    it('should save optional SSH port when configured', async () => {
+      (vscode.window.showInputBox as jest.Mock)
+        .mockResolvedValueOnce('https://git.example.com')
+        .mockResolvedValueOnce('test-token')
+        .mockResolvedValueOnce('My Forgejo')
+        .mockResolvedValueOnce(' 2222 ');
+
+      (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
+      (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
+      mockTestInstanceConnection.mockResolvedValue(true);
+      mockAddInstance.mockResolvedValue(undefined);
+      (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
+
+      const result = await runOnboarding();
+
+      expect(result).toBe(true);
+      expect(mockAddInstance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          instanceUrl: 'https://git.example.com',
+          sshPort: 2222
+        })
+      );
+    });
+
+    it('should validate optional SSH port input', async () => {
+      (vscode.window.showInputBox as jest.Mock)
+        .mockResolvedValueOnce('https://git.example.com')
+        .mockResolvedValueOnce('test-token')
+        .mockResolvedValueOnce('My Forgejo')
+        .mockResolvedValueOnce('');
+
+      (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
+      (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
+      mockTestInstanceConnection.mockResolvedValue(true);
+      mockAddInstance.mockResolvedValue(undefined);
+      (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
+
+      await runOnboarding();
+
+      const portPromptOptions = (vscode.window.showInputBox as jest.Mock).mock.calls[3][0];
+      expect(portPromptOptions.validateInput('')).toBeUndefined();
+      expect(portPromptOptions.validateInput('22')).toBeUndefined();
+      expect(portPromptOptions.validateInput('0')).toContain('between 1 and 65535');
+      expect(portPromptOptions.validateInput('65536')).toContain('between 1 and 65535');
+      expect(portPromptOptions.validateInput('22.5')).toContain('between 1 and 65535');
+    });
+
     it('should show success message when connection test passes', async () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://codeberg.org')

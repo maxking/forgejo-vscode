@@ -461,7 +461,7 @@
                 "type": "string"
               },
               "sshPort": {
-                "type": "number",
+                "type": "integer",
                 "minimum": 1,
                 "maximum": 65535,
                 "description": "Optional SSH port to use for clone URLs from this instance"

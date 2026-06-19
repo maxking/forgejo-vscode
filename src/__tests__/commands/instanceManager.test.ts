@@ -73,6 +73,26 @@ describe('instanceManager', () => {
       );
     });
 
+    it('should show configured SSH ports in quickpick descriptions', async () => {
+      const instances = [
+        { id: '1', name: 'Work', instanceUrl: 'https://git.work.com', token: 'tok', sshPort: 2222 }
+      ];
+      mockGetAllInstances.mockResolvedValue(instances);
+      (vscode.window.showQuickPick as jest.Mock).mockResolvedValue(undefined);
+
+      await manageInstances();
+
+      expect(vscode.window.showQuickPick).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: '$(server) Work',
+            description: 'https://git.work.com (SSH port 2222)'
+          })
+        ]),
+        expect.any(Object)
+      );
+    });
+
     it('should do nothing when user cancels quickpick', async () => {
       mockGetAllInstances.mockResolvedValue([]);
       (vscode.window.showQuickPick as jest.Mock).mockResolvedValue(undefined);
