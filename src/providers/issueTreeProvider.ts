@@ -43,26 +43,30 @@ function isIssueQueryKind(kind: IssueGroupKind): kind is IssueQueryKind {
   return kind === 'assigned' || kind === 'created' || kind === 'mentioned';
 }
 
+function issueItemIdParts(instanceUrl: string | undefined, owner: string, repo: string, issueNumber: number, treeContext?: string): (string | number | undefined)[] {
+  const parts: (string | number | undefined)[] = ['issue', instanceUrl ?? '', owner, repo];
+  if (treeContext) {
+    parts.push(treeContext);
+  }
+  parts.push(issueNumber);
+  return parts;
+}
+
 export class IssueTreeItem extends vscode.TreeItem {
   constructor(
     public readonly issue: IssueListItem,
     public readonly htmlUrl: string,
     public readonly owner: string,
     public readonly repo: string,
-    public readonly instanceUrl?: string
+    public readonly instanceUrl?: string,
+    public readonly treeContext?: string
   ) {
     super(`#${issue.number}: ${issue.title}`, vscode.TreeItemCollapsibleState.None);
 
     this.tooltip = `${issue.title}\nby ${issue.user.login}\nState: ${issue.state}\nComments: ${issue.comments}\n\nClick to view details`;
     this.description = `by ${issue.user.login}`;
     this.contextValue = 'issue';
-    this.id = [
-      'issue',
-      instanceUrl ?? '',
-      owner,
-      repo,
-      issue.number
-    ].map(treeIdPart).join('/');
+    this.id = issueItemIdParts(instanceUrl, owner, repo, issue.number, treeContext).map(treeIdPart).join('/');
 
     if (issue.state === 'closed') {
       this.iconPath = new vscode.ThemeIcon('issue-closed', new vscode.ThemeColor('gitDecoration.deletedResourceForeground'));
@@ -254,7 +258,7 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
         const children: IssueTreeElement[] = issues.length === 0
           ? [new IssueMessageItem(`No ${this.emptyDescriptionForGroup(element)} issues found`, false)]
           : issues.map(issue =>
-            new IssueTreeItem(issue, issue.html_url, config.owner, config.repo, config.instanceUrl)
+            new IssueTreeItem(issue, issue.html_url, config.owner, config.repo, config.instanceUrl, element.kind)
           );
         if (this.canLoadMoreIssues(element, config)) {
           children.push(new IssueLoadMoreItem(element, config));

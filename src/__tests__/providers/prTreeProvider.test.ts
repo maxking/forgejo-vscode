@@ -230,14 +230,26 @@ describe('PRTreeProvider', () => {
       expect(prItem.tooltip).toContain('testuser');
     });
 
+    test('should include group context in provider-rendered PR item ids', () => {
+      const openPrItem = new PRTreeItem(mockPR, mockPR.html_url, 'owner', 'repo', mockConfig, 'open');
+      const assignedPrItem = new PRTreeItem(mockPR, mockPR.html_url, 'owner', 'repo', mockConfig, 'assigned');
+
+      expect(openPrItem.id).toBe('pr/https%3A%2F%2Fgit.example.com/owner/repo/open/42');
+      expect(assignedPrItem.id).toBe('pr/https%3A%2F%2Fgit.example.com/owner/repo/assigned/42');
+    });
+
     test('should create stable ids for command-bearing PR child items', () => {
       const overviewItem = new PROverviewItem(mockPR, 'owner', 'repo', 'https://git.example.com');
       const fileItem = new PRFileItem(mockModifiedFile, mockPR, 'owner', 'repo', 'main', 'feature', 'https://git.example.com');
+      const assignedOverviewItem = new PROverviewItem(mockPR, 'owner', 'repo', 'https://git.example.com', 'assigned');
+      const assignedFileItem = new PRFileItem(mockModifiedFile, mockPR, 'owner', 'repo', 'main', 'feature', 'https://git.example.com', 'assigned');
 
       expect(overviewItem.id).toBe('pr-overview/https%3A%2F%2Fgit.example.com/owner/repo/42');
       expect(overviewItem.command?.command).toBe('forgejo.showPrDetails');
       expect(fileItem.id).toBe(`pr-file/https%3A%2F%2Fgit.example.com/owner/repo/42/${encodeURIComponent(mockModifiedFile.filename)}`);
       expect(fileItem.command?.command).toBe('forgejo.showPrFileDiff');
+      expect(assignedOverviewItem.id).toBe('pr-overview/https%3A%2F%2Fgit.example.com/owner/repo/assigned/42');
+      expect(assignedFileItem.id).toBe(`pr-file/https%3A%2F%2Fgit.example.com/owner/repo/assigned/42/${encodeURIComponent(mockModifiedFile.filename)}`);
     });
 
     test('should include repository identity in repository item ids', () => {
@@ -503,6 +515,28 @@ describe('PRTreeProvider', () => {
       expect(mockClient.getAuthenticatedUserLogin).toHaveBeenCalledTimes(1);
       expect(mockClient.getPullRequestsPage).toHaveBeenLastCalledWith('test-owner', 'test-repo', 'open', 1, 50, expectedOptions);
       expect(queryItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([77]);
+    });
+
+    test('should render different ids when the same PR appears in Open and Assigned to me', async () => {
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce(prPage([mockPR]))
+        .mockResolvedValueOnce(prPage([mockPR]));
+      mockClient.hasPullRequests.mockResolvedValue(false);
+
+      const children = await provider.getChildren();
+      const openGroup = children.find(child => (child as any).label === 'Open');
+      const openItems = await provider.getChildren(openGroup);
+      const queryRoot = children.find(child => (child as any).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const assignedGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Assigned to me');
+      const assignedItems = await provider.getChildren(assignedGroup);
+      const openPrItem = openItems.find(item => item instanceof PRTreeItem) as PRTreeItem;
+      const assignedPrItem = assignedItems.find(item => item instanceof PRTreeItem) as PRTreeItem;
+
+      expect(openPrItem.pr.number).toBe(assignedPrItem.pr.number);
+      expect(openPrItem.id).toBe('pr/https%3A%2F%2Fgit.example.com/test-owner/test-repo/open/42');
+      expect(assignedPrItem.id).toBe('pr/https%3A%2F%2Fgit.example.com/test-owner/test-repo/assigned/42');
+      expect(openPrItem.id).not.toBe(assignedPrItem.id);
     });
 
     test('should include active search text when fetching PR query groups', async () => {

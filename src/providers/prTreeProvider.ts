@@ -50,6 +50,15 @@ function isPRQueryKind(kind: PRGroupKind): kind is PRQueryKind {
   return kind === 'assigned' || kind === 'review' || kind === 'created' || kind === 'mentioned';
 }
 
+function itemIdParts(prefix: string, instanceUrl: string | undefined, owner: string, repo: string, itemNumber: number, treeContext?: string): (string | number | undefined)[] {
+  const parts: (string | number | undefined)[] = [prefix, instanceUrl ?? '', owner, repo];
+  if (treeContext) {
+    parts.push(treeContext);
+  }
+  parts.push(itemNumber);
+  return parts;
+}
+
 export class PRTreeItem extends vscode.TreeItem {
   public files?: PullRequestFile[];
   public filesError?: string;
@@ -61,20 +70,15 @@ export class PRTreeItem extends vscode.TreeItem {
     public readonly htmlUrl: string,
     public readonly owner: string,
     public readonly repo: string,
-    public readonly config?: ForgejoConfig
+    public readonly config?: ForgejoConfig,
+    public readonly treeContext?: string
   ) {
     super(`#${pr.number}: ${pr.title}`, vscode.TreeItemCollapsibleState.Collapsed);
 
     this.tooltip = `${pr.title}\nby ${pr.user.login}\nState: ${pr.state}${pr.merged ? ' (merged)' : ''}${pr.draft ? ' (draft)' : ''}`;
     this.description = `by ${pr.user.login}`;
     this.contextValue = 'pullRequest';
-    this.id = [
-      'pr',
-      config?.instanceUrl ?? '',
-      owner,
-      repo,
-      pr.number
-    ].map(treeIdPart).join('/');
+    this.id = itemIdParts('pr', config?.instanceUrl, owner, repo, pr.number, treeContext).map(treeIdPart).join('/');
 
     // Set icon based on state
     if (pr.merged) {
@@ -191,7 +195,8 @@ export class PRFileItem extends vscode.TreeItem {
     public readonly repo: string,
     public readonly baseRef: string,
     public readonly headRef: string,
-    public readonly instanceUrl?: string
+    public readonly instanceUrl?: string,
+    public readonly treeContext?: string
   ) {
     super(file.filename, vscode.TreeItemCollapsibleState.None);
 
@@ -199,11 +204,7 @@ export class PRFileItem extends vscode.TreeItem {
     this.tooltip = `${file.filename}\nStatus: ${file.status}\n+${file.additions} -${file.deletions}`;
     this.contextValue = 'prFile';
     this.id = [
-      'pr-file',
-      instanceUrl ?? '',
-      owner,
-      repo,
-      pr.number,
+      ...itemIdParts('pr-file', instanceUrl, owner, repo, pr.number, treeContext),
       file.filename
     ].map(treeIdPart).join('/');
 
@@ -255,18 +256,13 @@ export class PROverviewItem extends vscode.TreeItem {
     public readonly pr: PullRequestListItem,
     public readonly owner: string,
     public readonly repo: string,
-    public readonly instanceUrl?: string
+    public readonly instanceUrl?: string,
+    public readonly treeContext?: string
   ) {
     super('Overview', vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon('info');
     this.contextValue = 'prOverview';
-    this.id = [
-      'pr-overview',
-      instanceUrl ?? '',
-      owner,
-      repo,
-      pr.number
-    ].map(treeIdPart).join('/');
+    this.id = itemIdParts('pr-overview', instanceUrl, owner, repo, pr.number, treeContext).map(treeIdPart).join('/');
     this.command = {
       command: 'forgejo.showPrDetails',
       title: 'Show PR Details',
@@ -390,7 +386,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
           }
           return children;
         }
-        const children: PRTreeElement[] = pullRequests.map(pr => new PRTreeItem(pr, pr.html_url, config.owner, config.repo, config));
+        const children: PRTreeElement[] = pullRequests.map(pr => new PRTreeItem(pr, pr.html_url, config.owner, config.repo, config, element.kind));
         if (this.canLoadMorePullRequests(element, config)) {
           children.push(new PRLoadMoreItem(element, config));
         }
@@ -415,14 +411,14 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
    */
   private async getPRFiles(prItem: PRTreeItem): Promise<PRTreeElement[]> {
     // Create overview item (always shown first)
-    const overviewItem = new PROverviewItem(prItem.pr, prItem.owner, prItem.repo, prItem.config?.instanceUrl);
+    const overviewItem = new PROverviewItem(prItem.pr, prItem.owner, prItem.repo, prItem.config?.instanceUrl, prItem.treeContext);
 
     // Return cached files if available
     if (prItem.files && prItem.baseRef && prItem.headRef) {
       const baseRef = prItem.baseRef;
       const headRef = prItem.headRef;
       const fileItems = prItem.files.map(file =>
-        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef, prItem.config?.instanceUrl)
+        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef, prItem.config?.instanceUrl, prItem.treeContext)
       );
       return [overviewItem, ...fileItems];
     }
@@ -464,7 +460,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const sortedFiles = files.sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status));
 
       const fileItems = sortedFiles.map(file =>
-        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head, config.instanceUrl)
+        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head, config.instanceUrl, prItem.treeContext)
       );
       return [overviewItem, ...fileItems];
     } catch (error) {

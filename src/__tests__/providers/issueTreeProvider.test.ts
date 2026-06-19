@@ -105,6 +105,14 @@ describe('IssueTreeProvider', () => {
       expect(item.contextValue).toBe('issue');
     });
 
+    test('should include group context in provider-rendered issue item ids', () => {
+      const openItem = new IssueTreeItem(mockOpenIssue, mockOpenIssue.html_url, 'test-owner', 'test-repo', 'https://git.example.com', 'open');
+      const assignedItem = new IssueTreeItem(mockOpenIssue, mockOpenIssue.html_url, 'test-owner', 'test-repo', 'https://git.example.com', 'assigned');
+
+      expect(openItem.id).toBe('issue/https%3A%2F%2Fgit.example.com/test-owner/test-repo/open/10');
+      expect(assignedItem.id).toBe('issue/https%3A%2F%2Fgit.example.com/test-owner/test-repo/assigned/10');
+    });
+
     test('should set open icon for open issues', () => {
       const item = new IssueTreeItem(mockOpenIssue, mockOpenIssue.html_url, 'test-owner', 'test-repo');
       expect(item.iconPath).toBeInstanceOf(vscode.ThemeIcon);
@@ -385,6 +393,28 @@ describe('IssueTreeProvider', () => {
       expect(mockClient.getAuthenticatedUserLogin).toHaveBeenCalledTimes(1);
       expect(mockClient.getIssuesPage).toHaveBeenLastCalledWith('test-owner', 'test-repo', 'open', 1, 50, expectedOptions);
       expect(queryItems.filter(item => item instanceof IssueTreeItem).map(item => (item as IssueTreeItem).issue.number)).toEqual([77]);
+    });
+
+    test('should render different ids when the same issue appears in Open and Assigned to me', async () => {
+      mockClient.getIssuesPage
+        .mockResolvedValueOnce(page([mockOpenIssue]))
+        .mockResolvedValueOnce(page([]))
+        .mockResolvedValueOnce(page([mockOpenIssue]));
+
+      const children = await provider.getChildren();
+      const openGroup = children.find(child => (child as vscode.TreeItem).label === 'Open');
+      const openItems = await provider.getChildren(openGroup);
+      const queryRoot = children.find(child => (child as vscode.TreeItem).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const assignedGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Assigned to me');
+      const assignedItems = await provider.getChildren(assignedGroup);
+      const openIssueItem = openItems.find(item => item instanceof IssueTreeItem) as IssueTreeItem;
+      const assignedIssueItem = assignedItems.find(item => item instanceof IssueTreeItem) as IssueTreeItem;
+
+      expect(openIssueItem.issue.number).toBe(assignedIssueItem.issue.number);
+      expect(openIssueItem.id).toBe('issue/https%3A%2F%2Fgit.example.com/test-owner/test-repo/open/10');
+      expect(assignedIssueItem.id).toBe('issue/https%3A%2F%2Fgit.example.com/test-owner/test-repo/assigned/10');
+      expect(openIssueItem.id).not.toBe(assignedIssueItem.id);
     });
 
     test('should include active search text when fetching issue query groups', async () => {
