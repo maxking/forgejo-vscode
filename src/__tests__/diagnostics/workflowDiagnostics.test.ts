@@ -25,7 +25,6 @@ describe('workflowDiagnostics', () => {
         fileMatch: [
           '.forgejo/workflows/*.{yml,yaml}',
           '.gitea/workflows/*.{yml,yaml}',
-          '.github/workflows/*.{yml,yaml}',
         ],
         url: './out/diagnostics/schemas/forgejo-workflow.schema.json',
       }),
