@@ -158,12 +158,18 @@ class IssueRepositoryItem extends vscode.TreeItem {
 class IssueMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
-    public readonly isError = false
+    public readonly isError = false,
+    public readonly idContext?: string
   ) {
     super(message, vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(isError ? 'error' : 'info');
     this.contextValue = isError ? 'error' : 'info';
-    this.id = `issue-message/${treeIdPart(isError ? 'error' : 'info')}/${treeIdPart(message)}`;
+    this.id = [
+      'issue-message',
+      isError ? 'error' : 'info',
+      idContext ?? '',
+      message
+    ].map(treeIdPart).join('/');
   }
 }
 
@@ -250,13 +256,13 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
       try {
         const unavailableMessage = await this.queryUnavailableMessage(element, config);
         if (unavailableMessage) {
-          return [new IssueMessageItem(unavailableMessage, false)];
+          return [new IssueMessageItem(unavailableMessage, false, element.id ?? element.kind)];
         }
 
         const issues = await this.getIssuesForGroup(element, config);
         element.description = this.groupDescription(element, config, issues.length);
         const children: IssueTreeElement[] = issues.length === 0
-          ? [new IssueMessageItem(`No ${this.emptyDescriptionForGroup(element)} issues found`, false)]
+          ? [new IssueMessageItem(`No ${this.emptyDescriptionForGroup(element)} issues found`, false, element.id ?? element.kind)]
           : issues.map(issue =>
             new IssueTreeItem(issue, issue.html_url, config.owner, config.repo, config.instanceUrl, element.kind)
           );
@@ -266,7 +272,7 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
         return children;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to fetch issues';
-        return [new IssueMessageItem(message, true)];
+        return [new IssueMessageItem(message, true, element.id ?? element.kind)];
       }
     } else if (element instanceof IssueMessageItem || element instanceof IssueLoadMoreItem) {
       return [];

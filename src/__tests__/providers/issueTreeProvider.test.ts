@@ -451,6 +451,24 @@ describe('IssueTreeProvider', () => {
       expect(mockClient.getAuthenticatedUserLogin).not.toHaveBeenCalled();
     });
 
+    test('should use distinct ids for repeated issue query authentication messages', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, token: '', label: 'test-owner/test-repo' }]);
+      mockIssuePages([], []);
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as vscode.TreeItem).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const assignedGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Assigned to me');
+      const createdGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Created by me');
+      const assignedItems = await provider.getChildren(assignedGroup);
+      const createdItems = await provider.getChildren(createdGroup);
+      const assignedMessage = assignedItems[0] as vscode.TreeItem;
+      const createdMessage = createdItems[0] as vscode.TreeItem;
+
+      expect(assignedMessage.label).toBe(createdMessage.label);
+      expect(assignedMessage.id).not.toBe(createdMessage.id);
+    });
+
     test('should pass the active search query when fetching issue groups', async () => {
       const searchedIssue: IssueListItem = {
         ...mockOpenIssue,

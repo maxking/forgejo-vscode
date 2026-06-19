@@ -186,8 +186,8 @@ Issue state groups use the Forgejo issue list API:
 
 | Section | Query | Client-side filter |
 | --- | --- | --- |
-| Open | `/repos/{owner}/{repo}/issues?state=open&page={page}&limit=50` | Excludes rows with `pull_request`. |
-| Closed | `/repos/{owner}/{repo}/issues?state=closed&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Open | `/repos/{owner}/{repo}/issues?state=open&type=issues&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Closed | `/repos/{owner}/{repo}/issues?state=closed&type=issues&page={page}&limit=50` | Excludes rows with `pull_request`. |
 
 When Issue search text is active, state groups add `q={search}` to the same issue-list query.
 
@@ -195,9 +195,9 @@ Issue **My Queries** groups use `state=open` issue filters:
 
 | Section | Query | Client-side filter |
 | --- | --- | --- |
-| Assigned to me | `/repos/{owner}/{repo}/issues?state=open&assigned_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
-| Created by me | `/repos/{owner}/{repo}/issues?state=open&created_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
-| Mentioned me | `/repos/{owner}/{repo}/issues?state=open&mentioned_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Assigned to me | `/repos/{owner}/{repo}/issues?state=open&type=issues&assigned_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Created by me | `/repos/{owner}/{repo}/issues?state=open&type=issues&created_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Mentioned me | `/repos/{owner}/{repo}/issues?state=open&type=issues&mentioned_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
 
 When the tree search box has text, **My Queries** groups also add `q={search}` to the query shown in the table.
 

@@ -175,12 +175,18 @@ export class PRRepositoryItem extends vscode.TreeItem {
 class PRMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
-    public readonly isError = false
+    public readonly isError = false,
+    public readonly idContext?: string
   ) {
     super(message, vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(isError ? 'error' : 'info');
     this.contextValue = isError ? 'error' : 'info';
-    this.id = `pr-message/${treeIdPart(isError ? 'error' : 'info')}/${treeIdPart(message)}`;
+    this.id = [
+      'pr-message',
+      isError ? 'error' : 'info',
+      idContext ?? '',
+      message
+    ].map(treeIdPart).join('/');
   }
 }
 
@@ -374,13 +380,13 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       try {
         const unavailableMessage = await this.queryUnavailableMessage(element, config);
         if (unavailableMessage) {
-          return [new PRMessageItem(unavailableMessage, false)];
+          return [new PRMessageItem(unavailableMessage, false, element.id ?? element.kind)];
         }
 
         const pullRequests = await this.getPullRequestsForGroup(element, config);
         element.description = this.groupDescription(element, config, pullRequests.length);
         if (pullRequests.length === 0) {
-          const children: PRTreeElement[] = [new PRMessageItem(`No ${this.emptyDescriptionForGroup(element)} pull requests found`, false)];
+          const children: PRTreeElement[] = [new PRMessageItem(`No ${this.emptyDescriptionForGroup(element)} pull requests found`, false, element.id ?? element.kind)];
           if (this.canLoadMorePullRequests(element, config)) {
             children.push(new PRLoadMoreItem(element, config));
           }
@@ -393,7 +399,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
         return children;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to fetch pull requests';
-        return [new PRMessageItem(message, true)];
+        return [new PRMessageItem(message, true, element.id ?? element.kind)];
       }
     } else if (element instanceof PRTreeItem) {
       // Fetch and show files for this PR
@@ -425,14 +431,14 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
     // Return error if previous fetch failed
     if (prItem.filesError) {
-      return [overviewItem, new PRMessageItem(prItem.filesError, true)];
+      return [overviewItem, new PRMessageItem(prItem.filesError, true, prItem.id)];
     }
 
     // Fetch files from API
     try {
       const config = prItem.config ?? await getForgejoConfigFor(prItem.owner, prItem.repo) ?? await getForgejoConfig();
       if (!config) {
-        return [overviewItem, new PRMessageItem('Configuration not available', true)];
+        return [overviewItem, new PRMessageItem('Configuration not available', true, prItem.id)];
       }
       const client = new ForgejoClient(config.instanceUrl, config.token);
       console.log(`[Forgejo] Fetching files for PR #${prItem.pr.number}...`);
@@ -451,7 +457,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       console.log(`[Forgejo] Fetched ${files.length} files for PR #${prItem.pr.number}`);
 
       if (files.length === 0) {
-        return [overviewItem, new PRMessageItem('No files changed', false)];
+        return [overviewItem, new PRMessageItem('No files changed', false, prItem.id)];
       }
 
       // Sort files: added, modified, renamed, removed
@@ -467,7 +473,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const errorMsg = error instanceof Error ? error.message : 'Failed to fetch files';
       prItem.filesError = errorMsg;
       console.error(`[Forgejo] Error fetching files for PR #${prItem.pr.number}:`, error);
-      return [overviewItem, new PRMessageItem(errorMsg, true)];
+      return [overviewItem, new PRMessageItem(errorMsg, true, prItem.id)];
     }
   }
 

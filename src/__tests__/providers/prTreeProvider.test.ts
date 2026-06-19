@@ -574,6 +574,25 @@ describe('PRTreeProvider', () => {
       expect(mockClient.getAuthenticatedUserLogin).not.toHaveBeenCalled();
     });
 
+    test('should use distinct ids for repeated PR query authentication messages', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, token: '', label: 'test-owner/test-repo' }]);
+      mockClient.getPullRequestsPage.mockResolvedValue(prPage([]));
+      mockClient.hasPullRequests.mockResolvedValue(false);
+
+      const children = await provider.getChildren();
+      const queryRoot = children.find(child => (child as any).label === 'My Queries');
+      const queryGroups = await provider.getChildren(queryRoot);
+      const assignedGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Assigned to me');
+      const createdGroup = queryGroups.find(group => (group as vscode.TreeItem).label === 'Created by me');
+      const assignedItems = await provider.getChildren(assignedGroup);
+      const createdItems = await provider.getChildren(createdGroup);
+      const assignedMessage = assignedItems[0] as vscode.TreeItem;
+      const createdMessage = createdItems[0] as vscode.TreeItem;
+
+      expect(assignedMessage.label).toBe(createdMessage.label);
+      expect(assignedMessage.id).not.toBe(createdMessage.id);
+    });
+
     test('should include lazy Merged and Closed groups without fetching closed PRs initially', async () => {
       mockClient.getPullRequestsPage.mockResolvedValue({
         items: [mockPR],
