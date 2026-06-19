@@ -208,6 +208,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "forgejo.createIssueForRepository",
+        "title": "Create Issue",
+        "icon": "$(add)"
+      },
+      {
         "command": "forgejo.refreshActions",
         "title": "Forgejo: Refresh Actions",
         "icon": "$(refresh)"
@@ -295,7 +300,7 @@
         },
         {
           "command": "forgejo.createIssue",
-          "when": "view == forgejoIssues",
+          "when": "view == forgejoIssues && !forgejo.multipleRepositories",
           "group": "navigation@0"
         },
         {
@@ -374,6 +379,11 @@
           "command": "forgejo.openPrFileInBrowser",
           "when": "viewItem == prFile",
           "group": "navigation"
+        },
+        {
+          "command": "forgejo.createIssueForRepository",
+          "when": "viewItem == forgejoIssueRepository",
+          "group": "inline@0"
         },
         {
           "command": "forgejo.showIssueDetails",

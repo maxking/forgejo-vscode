@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
-import { getForgejoConfig } from '../utils/config';
+import { ForgejoConfig, getForgejoConfig } from '../utils/config';
 import { IssueCreateWebviewProvider } from '../webview/issueCreate/provider';
 
 /**
  * Handles the forgejo.createIssue command.
  * Extracted from extension.ts for unit testability.
  */
-export async function createIssueCommand(issueCreateWebviewProvider: IssueCreateWebviewProvider): Promise<void> {
-	const config = await getForgejoConfig();
+export async function createIssueCommand(
+	issueCreateWebviewProvider: IssueCreateWebviewProvider,
+	repositoryConfig?: ForgejoConfig
+): Promise<void> {
+	const config = repositoryConfig ?? await getForgejoConfig();
 	if (!config) {
 		void vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
 		return;

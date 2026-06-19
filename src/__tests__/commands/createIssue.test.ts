@@ -51,4 +51,28 @@ describe('createIssueCommand', () => {
     expect(mockIssueCreateProvider.showCreateIssue).toHaveBeenCalledWith(mockConfig);
     expect(vscode.window.showInputBox).not.toHaveBeenCalled();
   });
+
+  it('uses the repository config when invoked from a repository row', async () => {
+    const repositoryConfig = {
+      ...mockConfig,
+      owner: 'repo-owner',
+      repo: 'repo-name',
+      rootPath: '/workspace/repo'
+    };
+
+    await createIssueCommand(mockIssueCreateProvider as any, repositoryConfig);
+
+    expect(mockGetForgejoConfig).not.toHaveBeenCalled();
+    expect(mockIssueCreateProvider.showCreateIssue).toHaveBeenCalledWith(repositoryConfig);
+  });
+
+  it('validates the repository config token when invoked from a repository row', async () => {
+    await createIssueCommand(mockIssueCreateProvider as any, { ...mockConfig, token: undefined } as any);
+
+    expect(mockGetForgejoConfig).not.toHaveBeenCalled();
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+      'A Forgejo token is required to create issues. Please configure your token first.'
+    );
+    expect(mockIssueCreateProvider.showCreateIssue).not.toHaveBeenCalled();
+  });
 });

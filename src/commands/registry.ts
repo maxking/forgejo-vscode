@@ -17,7 +17,7 @@ import * as vscode from 'vscode';
 import type { PullRequestListItem, PullRequestFile } from '../models/pullRequest';
 import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
-import type { IssueLoadMoreItem, IssueTreeItem } from '../providers/issueTreeProvider';
+import type { IssueLoadMoreItem, IssueRepositoryItem, IssueTreeItem } from '../providers/issueTreeProvider';
 import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem, PRLoadMoreItem } from '../providers/prTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
 
@@ -51,6 +51,7 @@ export interface CommandMap {
   'forgejo.setAuthToken': [];
   'forgejo.selectRemote': [];
   'forgejo.createIssue': [];
+  'forgejo.createIssueForRepository': [repositoryItem: IssueRepositoryItem];
   'forgejo.createPullRequest': [];
   'forgejo.createPullRequestForRepository': [repositoryItem: PRRepositoryItem];
   'forgejo.createRelease': [];

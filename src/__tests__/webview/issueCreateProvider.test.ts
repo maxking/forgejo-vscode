@@ -48,6 +48,7 @@ describe('IssueCreateWebviewProvider', () => {
     (provider as any)._panels.set('https://git.example.com/test-owner/test-repo', {
       config: mockConfig,
       isReady: true,
+      isSubmitting: false,
       panel
     });
   });
@@ -78,7 +79,57 @@ describe('IssueCreateWebviewProvider', () => {
       title: 'Created issue',
       url: mockIssue.html_url
     });
+    await Promise.resolve();
     expect(vscode.env.openExternal).toHaveBeenCalledWith(vscode.Uri.parse(mockIssue.html_url));
+  });
+
+  it('re-enables the form before waiting for the success notification action', async () => {
+    let resolveNotification: (value: string | undefined) => void = () => undefined;
+    (vscode.window.showInformationMessage as jest.Mock).mockReturnValueOnce(new Promise(resolve => {
+      resolveNotification = resolve;
+    }));
+
+    await (provider as any)._createIssue({
+      title: 'New issue'
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'created',
+      number: 42,
+      title: 'Created issue',
+      url: mockIssue.html_url
+    });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'submitting', show: false });
+    expect(vscode.env.openExternal).not.toHaveBeenCalled();
+
+    resolveNotification('Open in Browser');
+    await Promise.resolve();
+
+    expect(vscode.env.openExternal).toHaveBeenCalledWith(vscode.Uri.parse(mockIssue.html_url));
+  });
+
+  it('ignores duplicate create messages while a panel submission is in flight', async () => {
+    let resolveCreate: (value: typeof mockIssue) => void = () => undefined;
+    createIssue.mockReturnValue(new Promise(resolve => {
+      resolveCreate = resolve;
+    }));
+
+    const firstSubmit = (provider as any)._handleMessage(
+      { type: 'createIssue', data: { title: 'Duplicate guard' } },
+      'https://git.example.com/test-owner/test-repo'
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await (provider as any)._handleMessage(
+      { type: 'createIssue', data: { title: 'Duplicate guard' } },
+      'https://git.example.com/test-owner/test-repo'
+    );
+
+    expect(createIssue).toHaveBeenCalledTimes(1);
+
+    resolveCreate(mockIssue);
+    await firstSubmit;
   });
 
   it('omits empty optional fields from the create issue request', async () => {

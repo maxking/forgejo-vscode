@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { PRTreeProvider, PRTreeItem, PROverviewItem } from './providers/prTreeProvider';
-import { IssueTreeProvider, IssueTreeItem } from './providers/issueTreeProvider';
+import { IssueTreeProvider, IssueTreeItem, IssueRepositoryItem } from './providers/issueTreeProvider';
 import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from './providers/actionsTreeProvider';
 import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
 import { WorkflowRunListItem, WorkflowJob } from './models/action';
@@ -226,6 +226,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register create issue command
   context.subscriptions.push(
     registerCommand('forgejo.createIssue', () => createIssueCommand(issueCreateWebviewProvider))
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.createIssueForRepository', (repositoryItem) => createIssueCommand(issueCreateWebviewProvider, repositoryItem.config))
   );
 
   // Register create pull request command

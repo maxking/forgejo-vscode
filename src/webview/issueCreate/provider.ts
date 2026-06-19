@@ -27,6 +27,7 @@ interface PanelState {
   panel: vscode.WebviewPanel;
   config: ForgejoConfig;
   isReady: boolean;
+  isSubmitting: boolean;
 }
 
 export class IssueCreateWebviewProvider {
@@ -67,7 +68,8 @@ export class IssueCreateWebviewProvider {
     const state: PanelState = {
       panel,
       config,
-      isReady: false
+      isReady: false,
+      isSubmitting: false
     };
     this._panels.set(panelKey, state);
 
@@ -107,6 +109,7 @@ export class IssueCreateWebviewProvider {
   private async _createIssue(data: CreateIssueFormPayload, panelKey?: string): Promise<void> {
     const state = this._getState(panelKey);
     if (!state) return;
+    if (state.isSubmitting) return;
 
     const title = data.title.trim();
     if (!title) {
@@ -114,6 +117,7 @@ export class IssueCreateWebviewProvider {
       return;
     }
 
+    state.isSubmitting = true;
     this._post({ type: 'submitting', show: true }, panelKey);
 
     try {
@@ -138,21 +142,24 @@ export class IssueCreateWebviewProvider {
         title: issue.title,
         url: issue.html_url
       }, panelKey);
+      state.isSubmitting = false;
+      this._post({ type: 'submitting', show: false }, panelKey);
 
-      const action = await vscode.window.showInformationMessage(
+      void Promise.resolve(vscode.window.showInformationMessage(
         `Issue #${issue.number} created successfully!`,
         'Open in Browser'
-      );
-      if (action === 'Open in Browser') {
-        void vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
-      }
+      )).then((action) => {
+        if (action === 'Open in Browser') {
+          void vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
+        }
+      });
     } catch (error) {
+      state.isSubmitting = false;
+      this._post({ type: 'submitting', show: false }, panelKey);
       logError('Error creating issue:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
       this._post({ type: 'error', message: `Failed to create issue: ${message}` }, panelKey);
       void vscode.window.showErrorMessage(`Failed to create issue: ${message}`);
-    } finally {
-      this._post({ type: 'submitting', show: false }, panelKey);
     }
   }
 

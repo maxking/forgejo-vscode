@@ -138,12 +138,12 @@ class IssueQueryRootItem extends vscode.TreeItem {
   }
 }
 
-class IssueRepositoryItem extends vscode.TreeItem {
+export class IssueRepositoryItem extends vscode.TreeItem {
   constructor(public readonly config: ForgejoRepositoryConfig) {
     super(config.label, vscode.TreeItemCollapsibleState.Collapsed);
     this.description = config.rootPath;
     this.tooltip = config.rootPath ? `${config.label}\n${config.rootPath}` : config.label;
-    this.contextValue = 'forgejoRepository';
+    this.contextValue = 'forgejoIssueRepository';
     this.iconPath = new vscode.ThemeIcon('repo');
     this.id = [
       'issue-repository',
@@ -235,6 +235,7 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
   async getChildren(element?: IssueTreeElement): Promise<IssueTreeElement[]> {
     if (!element) {
       const configs = await getForgejoRepositoryConfigs();
+      void vscode.commands.executeCommand('setContext', 'forgejo.multipleRepositories', configs.length > 1);
       if (configs.length === 0) {
         return [new IssueMessageItem('No Forgejo configuration found. Please configure instance URL or open a git repository.', true)];
       }

@@ -1,5 +1,6 @@
 (function() {
   const vscode = acquireVsCodeApi();
+  let isSubmitting = false;
 
   const form = document.getElementById('create-issue-form');
   const titleInput = document.getElementById('title');
@@ -22,6 +23,9 @@
   function setupEventListeners() {
     form.addEventListener('submit', event => {
       event.preventDefault();
+      if (isSubmitting) {
+        return;
+      }
       clearMessages();
 
       const title = titleInput.value.trim();
@@ -43,6 +47,7 @@
         return;
       }
 
+      setSubmitting(true);
       vscode.postMessage({
         type: 'createIssue',
         data: {
@@ -117,6 +122,7 @@
   }
 
   function setSubmitting(show) {
+    isSubmitting = show;
     submitBtn.disabled = show;
     submitBtn.textContent = show ? 'Creating...' : 'Create Issue';
     titleInput.disabled = show;
