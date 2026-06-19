@@ -31,6 +31,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ### 0.3.20
 
+- **Richer pull request activity details:** PR detail timelines now normalize Forgejo commit payloads before rendering, so commit authors, timestamps, messages, branch actions, merge commits, and commit references show useful context instead of "Unknown" or empty commit rows.
 - **Pull request and issue search ([#135](https://codeberg.org/maxking/forgejo-vscode/issues/135)):** the Pull Requests and Issues views now search server-side through forgejo-ts 0.4.0 while preserving paged load-more behavior.
 - **forgejo-ts pagination wrapper:** legacy Pull Request and Issue page helpers now delegate to forgejo-ts pagination metadata instead of rebuilding those requests locally.
 - **Issue and PR timeline activity rendering ([forgejo#13020](https://codeberg.org/forgejo/forgejo/issues/13020)):** detail views now preserve Forgejo timeline action names and skip duplicate timeline comment rows instead of showing extra "performed an action" entries.

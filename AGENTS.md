@@ -28,6 +28,7 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 - Deduplicate paged tree-provider API results before rendering stable `TreeItem.id` values; overlapping pages from large repositories must not register duplicate visible items.
 - For tree-view pagination changes, add VS Code Playwright coverage that opens the contributed view, interacts with visible tree rows, and uses mocked API pages so the UI behavior is deterministic.
 - Forgejo timeline API rows use `type` for the action name, while detail webviews use `type` as a local activity discriminator; normalize the API action into `event` before assigning local activity types, and filter timeline comments when comments are fetched separately.
+- Detail webviews should receive normalized activity view models rather than raw API rows; flatten nested Forgejo commit fields such as `commit.message`, `commit.author.date`, and `author.login` before rendering.
 
 ## Landing the Plane (Session Completion)
 

@@ -492,13 +492,14 @@
 
   function renderActivity(activity, owner, repo) {
     const timeAgo = formatTimeAgo(activity.created_at || activity.submitted_at || activity.committed_at);
-    const userAvatar = activity.user ? activity.user.avatar_url : '';
-    const userLogin = activity.user ? activity.user.login : 'Unknown';
+    const userAvatar = activity.user && typeof activity.user === 'object' ? activity.user.avatar_url : '';
+    const userLogin = getActivityUserLogin(activity);
+    const escapedUserAvatar = escapeHtml(userAvatar || '');
 
     if (activity.type === 'comment') {
       return `
         <div class="activity-item">
-          <img class="activity-avatar" src="${userAvatar}" alt="" onerror="this.style.display='none'">
+          <img class="activity-avatar" src="${escapedUserAvatar}" alt="" onerror="this.style.display='none'">
           <div class="activity-content">
             <div class="activity-header">
               <span class="activity-user">${escapeHtml(userLogin)}</span>
@@ -517,7 +518,7 @@
       const reviewState = activity.state ? activity.state.toLowerCase().replace(/_/g, ' ') : 'commented';
       return `
         <div class="activity-item activity-review ${reviewClass}">
-          <img class="activity-avatar" src="${userAvatar}" alt="" onerror="this.style.display='none'">
+          <img class="activity-avatar" src="${escapedUserAvatar}" alt="" onerror="this.style.display='none'">
           <div class="activity-content">
             <div class="activity-header">
               <span class="activity-user">${escapeHtml(userLogin)}</span>
@@ -531,39 +532,128 @@
     }
 
     if (activity.type === 'commit') {
+      const commitSummary = renderCommitSummary(activity);
       return `
-        <div class="activity-item">
-          <img class="activity-avatar" src="${userAvatar}" alt="" onerror="this.style.display='none'">
+        <div class="activity-item activity-commit-item">
+          <img class="activity-avatar" src="${escapedUserAvatar}" alt="" onerror="this.style.display='none'">
           <div class="activity-content">
             <div class="activity-header">
               <span class="activity-user">${escapeHtml(userLogin)}</span>
               <span class="activity-action">committed</span>
               <span class="activity-time">${timeAgo}</span>
             </div>
-            ${activity.sha ? `
-              <div class="activity-commit">
-                <span class="activity-commit-sha">${escapeHtml(activity.sha.substring(0, 7))}</span>
-                <span class="activity-commit-message">${escapeHtml(activity.message || 'No commit message')}</span>
-              </div>
-            ` : ''}
+            ${commitSummary}
           </div>
         </div>
       `;
     }
 
     if (activity.type === 'timeline') {
+      const timelineDetails = renderTimelineDetails(activity);
       return `
         <div class="activity-item">
-          <img class="activity-avatar" src="${userAvatar}" alt="" onerror="this.style.display='none'">
+          <img class="activity-avatar" src="${escapedUserAvatar}" alt="" onerror="this.style.display='none'">
           <div class="activity-content">
             <div class="activity-header">
               <span class="activity-user">${escapeHtml(userLogin)}</span>
-              <span class="activity-event">${renderTimelineEvent(activity)}</span>
+              <span class="activity-action">${renderTimelineEvent(activity)}</span>
               <span class="activity-time">${timeAgo}</span>
             </div>
+            ${timelineDetails}
           </div>
         </div>
       `;
+    }
+
+    return '';
+  }
+
+  function getActivityUserLogin(activity) {
+    if (!activity.user) return 'Someone';
+    if (typeof activity.user === 'string') return activity.user;
+    return activity.user.login || 'Someone';
+  }
+
+  function firstNonEmpty() {
+    for (var i = 0; i < arguments.length; i++) {
+      var value = arguments[i];
+      if (value === undefined || value === null) continue;
+      var text = String(value).trim();
+      if (text.length > 0) return text;
+    }
+    return '';
+  }
+
+  function firstLine(text) {
+    return firstNonEmpty(text).split(/\r?\n/)[0].trim();
+  }
+
+  function getActivityBranch(activity) {
+    return firstNonEmpty(
+      activity.branch,
+      activity.branch_name,
+      activity.ref,
+      activity.ref_name,
+      activity.head_branch,
+      activity.head && activity.head.ref,
+      activity.pull_head && activity.pull_head.ref
+    );
+  }
+
+  function getActivityCommitSha(activity) {
+    return firstNonEmpty(
+      activity.sha,
+      activity.commit_sha,
+      activity.commit_id,
+      activity.merge_commit_sha,
+      activity.commit && activity.commit.sha,
+      activity.commit && activity.commit.id
+    );
+  }
+
+  function getActivityCommitMessage(activity) {
+    return firstLine(firstNonEmpty(
+      activity.message,
+      activity.commit_message,
+      activity.commit_title,
+      activity.title,
+      activity.commit && activity.commit.message,
+      activity.commit && activity.commit.title
+    ));
+  }
+
+  function shortSha(sha) {
+    return firstNonEmpty(sha).substring(0, 7);
+  }
+
+  function renderCommitSummary(activity) {
+    const sha = getActivityCommitSha(activity);
+    const title = getActivityCommitMessage(activity);
+    const url = activity.html_url || activity.url || activity.commit_url || '';
+    const safeUrl = url ? sanitizeUrl(url) : '';
+
+    if (!sha && !title) return '';
+
+    const shaText = shortSha(sha);
+    const shaMarkup = shaText
+      ? (safeUrl
+        ? `<a class="activity-commit-sha" href="${escapeHtml(safeUrl)}">${escapeHtml(shaText)}</a>`
+        : `<span class="activity-commit-sha">${escapeHtml(shaText)}</span>`)
+      : '';
+    const titleMarkup = title ? `<span class="activity-commit-message">${escapeHtml(title)}</span>` : '';
+
+    return `
+      <div class="activity-commit">
+        ${shaMarkup}
+        ${titleMarkup}
+      </div>
+    `;
+  }
+
+  function renderTimelineDetails(activity) {
+    if (activity.event === 'pull_push' || activity.event === 'merge_pull' || activity.event === 'commit_ref') {
+      const commitSummary = renderCommitSummary(activity);
+      return commitSummary ? `<div class="activity-event-details">${commitSummary}</div>` : '';
     }
 
     return '';
@@ -638,6 +728,8 @@
     };
 
     var eventText = events[activity.event] || activity.event;
+    var branchName = getActivityBranch(activity);
+    var commitSha = getActivityCommitSha(activity);
 
     // Enhance with contextual details when available
     if (activity.event === 'label' && activity.label) {
@@ -651,6 +743,24 @@
     }
     if (activity.event === 'milestone' && activity.milestone) {
       eventText = 'set milestone to <strong>' + escapeHtml(activity.milestone.title || '') + '</strong>';
+    }
+    if (activity.event === 'delete_branch' && branchName) {
+      eventText = 'deleted branch <strong>' + escapeHtml(branchName) + '</strong>';
+    }
+    if (activity.event === 'pull_push' && branchName) {
+      eventText = 'pushed commits to <strong>' + escapeHtml(branchName) + '</strong>';
+    }
+    if (activity.event === 'merge_pull') {
+      if (branchName) {
+        eventText = 'merged this pull request into <strong>' + escapeHtml(branchName) + '</strong>';
+      } else if (commitSha) {
+        eventText = 'merged this pull request with commit <strong>' + escapeHtml(shortSha(commitSha)) + '</strong>';
+      }
+    }
+    if (activity.event === 'commit_ref') {
+      eventText = commitSha
+        ? 'referenced this pull request from commit <strong>' + escapeHtml(shortSha(commitSha)) + '</strong>'
+        : 'referenced this pull request from a commit';
     }
 
     return eventText;

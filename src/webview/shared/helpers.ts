@@ -75,6 +75,25 @@ export interface TimelineActivity {
   assignee?: { login?: string };
   removed_assignee?: boolean;
   milestone?: { title?: string };
+  ref?: string;
+  branch?: string;
+  old_ref?: string;
+  new_ref?: string;
+  old_branch?: string;
+  new_branch?: string;
+  commit_id?: string;
+  commit_sha?: string;
+  old_commit_id?: string;
+  new_commit_id?: string;
+  commit_url?: string;
+  commit_message?: string;
+  commit?: {
+    id?: string;
+    sha?: string;
+    url?: string;
+    html_url?: string;
+    message?: string;
+  };
 }
 
 export function getTimelineEventName(activity: TimelineActivity): string | undefined {
