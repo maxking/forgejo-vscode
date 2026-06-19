@@ -3,6 +3,7 @@ import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
 import { PullRequest, CommitStatus } from '../../models/pullRequest';
 import { executeCommand } from '../../commands/registry';
+import { openWorkflowFileForCIStatus, viewCIStatusLogs } from '../../commands/ciNavigation';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 import { getTimelineEventName, type TimelineActivity } from '../shared/helpers';
 
@@ -18,7 +19,9 @@ export type WebviewMessage =
   | { type: 'viewCommit'; sha: string }
   | { type: 'viewFile'; filename: string }
   | { type: 'updateBody'; body: string }
-  | { type: 'openCIStatus'; url: string };
+  | { type: 'openCIStatus'; url: string }
+  | { type: 'viewCIStatusLogs'; status: CommitStatus }
+  | { type: 'openCIWorkflowFile'; status: CommitStatus };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
@@ -116,6 +119,7 @@ export interface PRDetailViewData {
   statuses: CommitStatus[];
   owner: string;
   repo: string;
+  instanceUrl?: string;
 }
 
 interface PanelState {
@@ -225,7 +229,7 @@ export class PRDetailWebviewProvider {
       const statuses = Array.from(latestByContext.values());
       logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length, raw: allStatuses.length });
 
-      state.pendingData = { pr: prDetails, activities, statuses, owner, repo };
+      state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl };
       logInfo('pendingData set, isReady:', state.isReady);
 
       if (state.isReady) {
@@ -335,6 +339,12 @@ export class PRDetailWebviewProvider {
         if (message.url) {
           await this._openCIStatus(message.url, owner, repo, instanceUrl);
         }
+        break;
+      case 'viewCIStatusLogs':
+        await viewCIStatusLogs({ status: message.status, owner, repo, instanceUrl });
+        break;
+      case 'openCIWorkflowFile':
+        await openWorkflowFileForCIStatus({ status: message.status, owner, repo, instanceUrl });
         break;
       case 'viewCommit': break;
       case 'viewFile': break;

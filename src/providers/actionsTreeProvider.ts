@@ -60,6 +60,10 @@ function getStatusIcon(status: string): vscode.ThemeIcon {
   }
 }
 
+function isFailedStatus(status: string): boolean {
+  return status === 'failure' || status === 'error';
+}
+
 /**
  * Represents a grouped workflow run (parent of jobs).
  * Jobs come from the /actions/tasks endpoint data, no lazy-loading needed.
@@ -84,7 +88,7 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
     this.tooltip = hasJobs ?
       `Workflow: ${firstJob.workflow_id}\nBranch: ${firstJob.head_branch}\nCommit: ${firstJob.head_sha}\nTrigger: ${firstJob.event}\n${firstJob.display_title}\nJobs: ${jobs.length}`
       : `Workflow: #${runNumber}\nJobs: ${jobs.length}`;
-    this.contextValue = 'workflowRun';
+    this.contextValue = jobs.some(job => isFailedStatus(job.status)) ? 'workflowRunFailed' : 'workflowRun';
 
     // Icon based on aggregate status
     this.iconPath = this.getAggregateStatusIcon(jobs);
@@ -136,10 +140,18 @@ export class JobTreeItem extends vscode.TreeItem {
 
     this.description = job.status;
     this.tooltip = `Job: ${job.name}\nStatus: ${job.status}\nRun: #${job.run_number}\nJob ID: ${job.id}`;
-    this.contextValue = 'workflowJob';
+    this.contextValue = isFailedStatus(job.status) ? 'workflowJobFailed' : 'workflowJob';
 
     // Set icon based on status
     this.iconPath = getStatusIcon(job.status);
+
+    if (isFailedStatus(job.status)) {
+      this.command = {
+        command: 'forgejo.viewActionLogs',
+        title: 'View Logs',
+        arguments: [this]
+      };
+    }
   }
 
   get jobRef(): WorkflowJobRef {

@@ -36,6 +36,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - **Duplicate PR tree row fix:** paged pull request results are now deduplicated before rendering so overlapping API pages cannot register the same tree item id twice.
 - **Richer pull request activity details:** PR detail timelines now normalize Forgejo commit payloads before rendering, so commit authors, timestamps, messages, branch actions, merge commits, and commit references show useful context instead of "Unknown" or empty commit rows.
 - **Custom SSH clone ports ([#26](https://codeberg.org/maxking/forgejo-vscode/issues/26)):** configured instances can now set `sshPort` so VS Code's Forgejo clone picker uses the right SSH port for self-hosted servers.
+- **Workflow validation and failed CI navigation ([#191](https://git.araj.me/maxking/forgejo-vscode/issues/191)):** Forgejo-compatible workflow files now get local diagnostics, and failed CI rows link directly to logs and matching workflow files.
 
 ### 0.3.20
 
@@ -230,6 +231,24 @@ Right-click on a PR for options:
 3. Expand a run to see individual jobs and steps
 4. Click a step to view its logs in the editor
 5. Right-click a run or job to re-run the workflow
+
+### Maintaining Workflow Validation
+
+Workflow diagnostics use the schema bundled by Forgejo runner, the same Actions parser Forgejo calls through `act/model.ReadWorkflow` and `act/jobparser.Parse`. The vendored schema lives at `src/diagnostics/schemas/forgejo-workflow.schema.json`.
+
+To refresh the schema from the currently documented runner version:
+
+```bash
+npm run update:workflow-schema
+```
+
+To bump to a specific Forgejo runner version:
+
+```bash
+FORGEJO_RUNNER_VERSION=v12.11.1 npm run update:workflow-schema
+```
+
+After updating, run `npm run lint`, `npm run compile`, and `npm run test:unit -- workflowDiagnostics`.
 
 ### Commands
 

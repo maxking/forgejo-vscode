@@ -242,6 +242,21 @@
     });
 
     ciStatusList.addEventListener('click', (e) => {
+      const action = e.target.closest('[data-ci-action]');
+      if (action && currentData && currentData.statuses) {
+        e.stopPropagation();
+        const status = currentData.statuses[Number(action.dataset.statusIndex)];
+        if (!status) {
+          return;
+        }
+        if (action.dataset.ciAction === 'logs') {
+          vscode.postMessage({ type: 'viewCIStatusLogs', status });
+        } else if (action.dataset.ciAction === 'workflow') {
+          vscode.postMessage({ type: 'openCIWorkflowFile', status });
+        }
+        return;
+      }
+
       const item = e.target.closest('.ci-status-item');
       if (item && item.dataset.targetUrl) {
         vscode.postMessage({ type: 'openCIStatus', url: item.dataset.targetUrl });
@@ -409,16 +424,24 @@
       console.log('[Forgejo Webview] CI statuses:', statuses.length);
       ciSection.style.display = 'block';
       ciSection.classList.add('active');
-      ciStatusList.innerHTML = statuses.map(status => {
+      ciStatusList.innerHTML = statuses.map((status, index) => {
         const statusClass = status.status || 'pending';
         const statusIcon = statusIconForStatus(statusClass);
         const timeAgo = formatTimeAgo(status.updated_at || status.created_at);
+        const isFailed = statusClass === 'failure' || statusClass === 'error';
+        const statusActions = isFailed ? `
+            <span class="ci-status-actions">
+              <button class="ci-status-action" type="button" data-ci-action="logs" data-status-index="${index}" title="View failed job logs">Logs</button>
+              <button class="ci-status-action" type="button" data-ci-action="workflow" data-status-index="${index}" title="Open matching workflow file">Workflow</button>
+            </span>
+        ` : '';
         return `
           <div class="ci-status-item ${statusClass}" data-target-url="${escapeHtml(status.target_url || '')}">
             <span class="ci-status-icon">${statusIcon}</span>
             <span class="ci-status-context">${escapeHtml(status.context || 'Unknown')}</span>
             <span class="ci-status-description">${escapeHtml(status.description || '')}</span>
             <span class="ci-status-time">${timeAgo}</span>
+            ${statusActions}
             ${status.target_url ? '<span class="ci-status-link-icon" title="View CI details">&#x2197;</span>' : ''}
           </div>
         `;
