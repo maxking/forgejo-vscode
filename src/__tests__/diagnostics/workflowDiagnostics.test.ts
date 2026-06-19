@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import packageJson from '../../../package.json';
 import { isWorkflowFilePath, validateWorkflowText } from '../../diagnostics/workflowDiagnostics';
 import workflowSchema from '../../diagnostics/schemas/forgejo-workflow.schema.json';
 
@@ -16,6 +17,19 @@ describe('workflowDiagnostics', () => {
     expect(workflowSchema.version).toBe('workflow-v1.0');
     expect(workflowSchema.definitions['workflow-root']).toBeDefined();
     expect(workflowSchema.definitions['workflow-root'].mapping.properties['enable-openid-connect']).toBe('workflow-enable-openid-connect');
+  });
+
+  test('contributes the Forgejo schema to YAML language tooling', () => {
+    expect(packageJson.contributes.yamlValidation).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fileMatch: [
+          '.forgejo/workflows/*.{yml,yaml}',
+          '.gitea/workflows/*.{yml,yaml}',
+          '.github/workflows/*.{yml,yaml}',
+        ],
+        url: './out/diagnostics/schemas/forgejo-workflow.schema.json',
+      }),
+    ]));
   });
 
   test('accepts a basic workflow with one job', () => {
