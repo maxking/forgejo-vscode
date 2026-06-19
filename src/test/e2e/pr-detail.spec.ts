@@ -307,7 +307,10 @@ test.describe('PR Detail Webview', () => {
     await page.locator('#comment-input').fill('Great work!');
     await page.locator('#submit-comment-btn').click();
 
-    // Comment input should be hidden and cleared
+    // Extension reports success after it handles the addComment request.
+    await harness.postMessage({ type: 'actionComplete', action: 'addComment', success: true });
+
+    // Comment input should be hidden and cleared after completion.
     await expect(page.locator('#comment-input-container')).toBeHidden();
     await expect(page.locator('#comment-input')).toHaveValue('');
 
@@ -449,5 +452,73 @@ test.describe('PR Detail Webview', () => {
     const timeline = page.locator('#activity-timeline');
     await expect(timeline.locator('.activity-commit-sha')).toHaveText('abc1234');
     await expect(timeline.locator('.activity-commit-message')).toHaveText('Fix the thing');
+  });
+
+  test('renders timeline events and normalized commits with contextual details', async ({ page }) => {
+    const data = createMockPRData();
+    data.activities = [
+      {
+        type: 'timeline',
+        id: 1,
+        event: 'pull_push',
+        created_at: '2025-01-15T09:00:00Z',
+        user: { login: 'maxking-bot' },
+        branch: 'feature/pagination',
+        sha: '2ac4bf19de45',
+        message: 'Use forgejo-ts pagination wrappers',
+      },
+      {
+        type: 'commit',
+        id: 2,
+        committed_at: '2025-01-15T09:05:00Z',
+        user: { login: 'maxking-bot' },
+        sha: '817a50b98fca',
+        message: 'Use forgejo-ts pagination wrappers\n\nKeep API paging bounded in tree providers.',
+        html_url: 'https://git.example.com/owner/repo/commit/817a50b98fca',
+      },
+      {
+        type: 'timeline',
+        id: 3,
+        event: 'merge_pull',
+        created_at: '2025-01-15T09:20:00Z',
+        user: { login: 'maxking-bot' },
+        branch: 'main',
+        commit_sha: '3f456d8c1020',
+        commit_message: 'Merge pull request #42 from feature/pagination',
+      },
+      {
+        type: 'timeline',
+        id: 4,
+        event: 'delete_branch',
+        created_at: '2025-01-15T09:25:00Z',
+        user: { login: 'maxking-bot' },
+        branch: 'feature/pagination',
+      },
+      {
+        type: 'timeline',
+        id: 5,
+        event: 'commit_ref',
+        created_at: '2025-01-15T09:30:00Z',
+        user: { login: 'maxking-bot' },
+        sha: '9d25f38b4561',
+        message: 'Reference pagination wrapper cleanup',
+      },
+    ];
+    await harness.sendPRUpdate(data);
+
+    const timeline = page.locator('#activity-timeline');
+    await expect(timeline.locator('.activity-item')).toHaveCount(5);
+    await expect(timeline).toContainText('maxking-bot pushed commits to feature/pagination');
+    await expect(timeline).toContainText('2ac4bf1');
+    await expect(timeline).toContainText('817a50b');
+    await expect(timeline).toContainText('Use forgejo-ts pagination wrappers');
+    await expect(timeline).toContainText('maxking-bot merged this pull request into main');
+    await expect(timeline).toContainText('3f456d8');
+    await expect(timeline).toContainText('Merge pull request #42 from feature/pagination');
+    await expect(timeline).toContainText('maxking-bot deleted branch feature/pagination');
+    await expect(timeline).toContainText('maxking-bot referenced this pull request from commit 9d25f38');
+    await expect(timeline).toContainText('Reference pagination wrapper cleanup');
+    await expect(timeline).not.toContainText('Unknown');
+    await expect(timeline).not.toContainText('No commit message');
   });
 });

@@ -30,7 +30,7 @@ export type ExtensionMessage =
 
 export interface PRActivity {
   type: 'comment' | 'review' | 'commit' | 'timeline';
-  id: number;
+  id?: number;
   created_at?: string;
   submitted_at?: string;
   committed_at?: string;
@@ -44,10 +44,71 @@ export interface PRActivity {
   message?: string;
   event?: string;
   commit_id?: string;
+  commit_sha?: string;
+  commit_url?: string;
+  commit_message?: string;
+  ref?: string;
+  branch?: string;
+  old_ref?: string;
+  new_ref?: string;
+  old_branch?: string;
+  new_branch?: string;
   html_url?: string;
 }
 
 type PRTimelineApiActivity = Omit<PRActivity, 'type' | 'event'> & TimelineActivity;
+
+interface PRCommitApiActivity {
+  id?: number;
+  sha?: string;
+  message?: string;
+  committed_at?: string;
+  created_at?: string;
+  html_url?: string;
+  url?: string;
+  user?: {
+    login?: string;
+    avatar_url?: string;
+  } | null;
+  author?: {
+    login?: string;
+    avatar_url?: string;
+  } | null;
+  committer?: {
+    login?: string;
+    avatar_url?: string;
+  } | null;
+  commit?: {
+    message?: string;
+    author?: {
+      name?: string;
+      email?: string;
+      date?: string;
+    } | null;
+  } | null;
+}
+
+function normalizeCommitActivity(commit: PRCommitApiActivity): PRActivity {
+  const author = commit.author ?? commit.user ?? commit.committer;
+  const fallbackAuthor = commit.commit?.author;
+  const login = author?.login ?? fallbackAuthor?.name ?? fallbackAuthor?.email;
+  const message = commit.commit?.message ?? commit.message;
+
+  return {
+    type: 'commit',
+    id: commit.id,
+    sha: commit.sha,
+    message: message?.split('\n')[0] ?? commit.message,
+    committed_at: commit.commit?.author?.date ?? commit.committed_at ?? commit.created_at,
+    user: login
+      ? {
+          login,
+          avatar_url: author?.avatar_url
+        }
+      : undefined,
+    html_url: commit.html_url ?? commit.url
+  };
+}
 
 export interface PRDetailViewData {
   pr: PullRequest;
@@ -224,7 +285,7 @@ export class PRDetailWebviewProvider {
     } catch (e) { logDebug('Could not fetch reviews:', e); }
     try {
       const commits = await client.getPullRequestCommits(owner, repo, number);
-      activities.push(...(commits as unknown as PRActivity[]).map((c) => ({ ...c, type: 'commit' as const })));
+      activities.push(...(commits as PRCommitApiActivity[]).map(normalizeCommitActivity));
     } catch (e) { logDebug('Could not fetch commits:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);

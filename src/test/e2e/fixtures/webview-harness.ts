@@ -506,7 +506,13 @@ export interface PRDetailData {
     state?: string;
     sha?: string;
     message?: string;
+    html_url?: string;
     event?: string;
+    branch?: string;
+    ref?: string;
+    commit_sha?: string;
+    commit_message?: string;
+    title?: string;
   }>;
   statuses: Array<{
     status: string;

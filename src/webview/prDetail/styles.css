@@ -415,10 +415,12 @@ section h2 {
   padding: 12px;
   border-radius: 6px;
   background-color: var(--vscode-editor-background);
+  border: 1px solid transparent;
 }
 
 .activity-item:hover {
   background-color: var(--vscode-editor-inactiveSelectionBackground);
+  border-color: var(--vscode-panel-border);
 }
 
 .activity-avatar {
@@ -473,17 +475,29 @@ section h2 {
   background-color: var(--vscode-editor-inactiveSelectionBackground);
   border-radius: 4px;
   margin-top: 8px;
+  border: 1px solid var(--vscode-panel-border);
+  min-width: 0;
 }
 
 .activity-commit-sha {
   font-family: var(--vscode-editor-font-family);
   color: var(--vscode-textLink-foreground);
   font-size: 0.9em;
+  flex-shrink: 0;
+  text-decoration: none;
 }
 
 .activity-commit-message {
   color: var(--vscode-foreground);
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-event-details {
+  margin-top: 4px;
 }
 
 .activity-event {
