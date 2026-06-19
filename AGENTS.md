@@ -4,6 +4,23 @@
 
 ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or pattern reveals a recurring repo-specific coding issue or best practice. Keep additions focused on durable, codebase-specific patterns rather than general or evolving AI capability guidance.
 
+## Remote Repository Workflow
+
+Use the `fj` CLI for interacting with Forgejo remotes instead of GitHub-style tooling. This project has two Forgejo repositories:
+
+- Public/open-source repository: Codeberg (`codeberg.org`)
+- Self-hosted repository: `git.araj.me`
+
+Before running repo, issue, or pull request commands, identify the target remote/host from the current branch and task context. Prefer `fj` commands with an explicit remote or host so actions land on the intended repository:
+
+- Inspect repository metadata with `fj repo view -R <remote>` or `fj -H <host> repo view <owner/repo>`.
+- Search, view, and browse issues with `fj issue search -R <remote>`, `fj issue view -R <remote> <number>`, and `fj issue browse -R <remote> <number>`.
+- Create and inspect pull requests with `fj pr create`, `fj pr view`, `fj pr status`, and `fj pr browse`; pass `-R <remote>` when operating from a local checkout and `--repo <owner/repo>` when creating a PR for a specific repository.
+- Use `git.araj.me` for pull request creation, inspection, and follow-up by default. Do not open pull requests on Codeberg unless the user explicitly asks for a public Codeberg PR.
+- Use Codeberg only for public repository or issue references when a task explicitly mentions the open-source/public project.
+
+Always open regular pull requests by default. Do not create draft PRs unless the user explicitly asks for a draft; with `fj pr create`, avoid a `WIP: ` title prefix unless a draft PR is requested.
+
 ## Repo-Specific Coding Guidance
 
 - Prefer `ForgejoClient`/`forgejo-ts` methods, especially `rawRequest()`, over ad-hoc `fetch` calls so timeout, logging, auth headers, and proxy behavior stay consistent.
