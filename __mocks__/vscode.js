@@ -68,6 +68,10 @@ class Uri {
     return new Uri('file', '', path, '', '');
   }
 
+  static joinPath(base, ...paths) {
+    return Uri.file([base.path, ...paths].join('/'));
+  }
+
   with(change) {
     return new Uri(
       change.scheme ?? this.scheme,
@@ -110,6 +114,17 @@ const TreeItemCollapsibleState = {
   None: 0,
   Collapsed: 1,
   Expanded: 2
+};
+
+const ViewColumn = {
+  One: 1
+};
+
+const ColorThemeKind = {
+  Light: 1,
+  Dark: 2,
+  HighContrast: 3,
+  HighContrastLight: 4
 };
 
 const ConfigurationTarget = {
@@ -185,6 +200,8 @@ const window = {
   showInputBox: jest.fn(),
   showQuickPick: jest.fn(),
   createTreeView: jest.fn(),
+  createWebviewPanel: jest.fn(),
+  activeColorTheme: { kind: ColorThemeKind.Dark },
   createOutputChannel: jest.fn().mockImplementation(() => ({
     append: jest.fn(),
     appendLine: jest.fn(),
@@ -238,5 +255,7 @@ module.exports = {
   window,
   workspace,
   commands,
-  env
+  env,
+  ViewColumn,
+  ColorThemeKind
 };

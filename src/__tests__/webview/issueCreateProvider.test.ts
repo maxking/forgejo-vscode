@@ -32,6 +32,7 @@ describe('IssueCreateWebviewProvider', () => {
   let postMessage: jest.Mock;
   let refresh: jest.Mock;
   let createIssue: jest.Mock;
+  let panel: { webview: { postMessage: jest.Mock } };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -41,13 +42,14 @@ describe('IssueCreateWebviewProvider', () => {
     MockForgejoClient.mockImplementation(() => ({ createIssue } as any));
     mockGetForgejoConfigFor.mockResolvedValue(mockConfig);
     provider = new IssueCreateWebviewProvider(vscode.Uri.file('/extension'), { refresh } as any);
-    (provider as any)._panelState = {
+    panel = {
+      webview: { postMessage }
+    };
+    (provider as any)._panels.set('https://git.example.com/test-owner/test-repo', {
       config: mockConfig,
       isReady: true,
-      panel: {
-        webview: { postMessage }
-      }
-    };
+      panel
+    });
   });
 
   it('creates an issue with the rich form payload, refreshes the tree, and offers browser opening', async () => {
@@ -108,5 +110,49 @@ describe('IssueCreateWebviewProvider', () => {
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
       'Failed to create issue: A Forgejo token is required to create issues. Please configure your token first.'
     );
+  });
+
+  it('opens a separate panel when the create issue config changes to another repository', () => {
+    const panels: Array<{
+      webview: {
+        html: string;
+        asWebviewUri: jest.Mock;
+        onDidReceiveMessage: jest.Mock;
+        postMessage: jest.Mock;
+      };
+      reveal: jest.Mock;
+      onDidDispose: jest.Mock;
+    }> = [];
+
+    (vscode.window as any).createWebviewPanel = jest.fn(() => {
+      const nextPanel = {
+        webview: {
+          html: '',
+          asWebviewUri: jest.fn((uri: vscode.Uri) => uri),
+          onDidReceiveMessage: jest.fn(),
+          postMessage: jest.fn()
+        },
+        reveal: jest.fn(),
+        onDidDispose: jest.fn()
+      };
+      panels.push(nextPanel);
+      return nextPanel;
+    });
+
+    provider = new IssueCreateWebviewProvider(vscode.Uri.file('/extension'), { refresh } as any);
+    provider.showCreateIssue(mockConfig);
+    provider.showCreateIssue({
+      ...mockConfig,
+      instanceUrl: 'https://git.other.example.com',
+      owner: 'other-owner',
+      repo: 'other-repo'
+    });
+
+    expect(vscode.window.createWebviewPanel).toHaveBeenCalledTimes(2);
+    expect(panels[0].webview.html).toContain('test-owner/test-repo');
+    expect(panels[0].webview.html).not.toContain('other-owner/other-repo');
+    expect(panels[1].webview.html).toContain('other-owner/other-repo');
+    expect(panels[1].webview.html).not.toContain('test-owner/test-repo');
+    expect((provider as any)._panels.size).toBe(2);
   });
 });

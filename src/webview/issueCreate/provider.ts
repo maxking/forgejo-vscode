@@ -31,7 +31,7 @@ interface PanelState {
 
 export class IssueCreateWebviewProvider {
   public static readonly viewType = 'forgejo.issueCreate';
-  private _panelState: PanelState | undefined;
+  private _panels = new Map<string, PanelState>();
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -45,10 +45,11 @@ export class IssueCreateWebviewProvider {
       instanceUrl: config.instanceUrl
     });
 
-    if (this._panelState) {
-      this._panelState.config = config;
-      this._panelState.panel.reveal(vscode.ViewColumn.One);
-      this._sendTheme();
+    const panelKey = this._getPanelKey(config);
+    const existingState = this._panels.get(panelKey);
+    if (existingState) {
+      existingState.panel.reveal(vscode.ViewColumn.One);
+      this._sendTheme(panelKey);
       return;
     }
 
@@ -63,53 +64,57 @@ export class IssueCreateWebviewProvider {
       }
     );
 
-    this._panelState = {
+    const state: PanelState = {
       panel,
       config,
       isReady: false
     };
+    this._panels.set(panelKey, state);
 
-    panel.webview.html = this._getHtmlForWebview(panel.webview);
+    panel.webview.html = this._getHtmlForWebview(panel.webview, config);
     panel.webview.onDidReceiveMessage(
       (message: unknown) => {
-        void this._handleMessage(message as WebviewMessage);
+        void this._handleMessage(message as WebviewMessage, panelKey);
       },
       undefined,
       []
     );
 
     panel.onDidDispose(() => {
-      this._panelState = undefined;
+      this._panels.delete(panelKey);
     }, undefined, []);
   }
 
-  private async _handleMessage(message: WebviewMessage): Promise<void> {
+  private async _handleMessage(message: WebviewMessage, panelKey: string): Promise<void> {
     logDebug('Received create issue webview message:', message.type);
 
     switch (message.type) {
       case 'ready':
-        if (this._panelState) {
-          this._panelState.isReady = true;
-          this._sendTheme();
+        {
+          const state = this._panels.get(panelKey);
+          if (state) {
+            state.isReady = true;
+            this._sendTheme(panelKey);
+          }
         }
         break;
       case 'createIssue':
-        await this._createIssue(message.data);
+        await this._createIssue(message.data, panelKey);
         break;
     }
   }
 
-  private async _createIssue(data: CreateIssueFormPayload): Promise<void> {
-    const state = this._panelState;
+  private async _createIssue(data: CreateIssueFormPayload, panelKey?: string): Promise<void> {
+    const state = this._getState(panelKey);
     if (!state) return;
 
     const title = data.title.trim();
     if (!title) {
-      this._post({ type: 'error', message: 'Title is required.' });
+      this._post({ type: 'error', message: 'Title is required.' }, panelKey);
       return;
     }
 
-    this._post({ type: 'submitting', show: true });
+    this._post({ type: 'submitting', show: true }, panelKey);
 
     try {
       const config = await getForgejoConfigFor(state.config.owner, state.config.repo, state.config.instanceUrl);
@@ -132,7 +137,7 @@ export class IssueCreateWebviewProvider {
         number: issue.number,
         title: issue.title,
         url: issue.html_url
-      });
+      }, panelKey);
 
       const action = await vscode.window.showInformationMessage(
         `Issue #${issue.number} created successfully!`,
@@ -144,10 +149,10 @@ export class IssueCreateWebviewProvider {
     } catch (error) {
       logError('Error creating issue:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
-      this._post({ type: 'error', message: `Failed to create issue: ${message}` });
+      this._post({ type: 'error', message: `Failed to create issue: ${message}` }, panelKey);
       void vscode.window.showErrorMessage(`Failed to create issue: ${message}`);
     } finally {
-      this._post({ type: 'submitting', show: false });
+      this._post({ type: 'submitting', show: false }, panelKey);
     }
   }
 
@@ -160,14 +165,28 @@ export class IssueCreateWebviewProvider {
     };
   }
 
-  private _sendTheme(): void {
-    this._post({ type: 'theme', theme: this._getThemeName(vscode.window.activeColorTheme.kind) });
+  private _sendTheme(panelKey: string): void {
+    this._post({ type: 'theme', theme: this._getThemeName(vscode.window.activeColorTheme.kind) }, panelKey);
   }
 
-  private _post(message: ExtensionMessage): void {
-    const panel = this._panelState?.panel;
-    if (!panel) return;
-    void panel.webview.postMessage(message);
+  private _post(message: ExtensionMessage, panelKey?: string): void {
+    const state = this._getState(panelKey);
+    if (!state) return;
+    void state.panel.webview.postMessage(message);
+  }
+
+  private _getState(panelKey?: string): PanelState | undefined {
+    if (panelKey) {
+      return this._panels.get(panelKey);
+    }
+    if (this._panels.size === 1) {
+      return Array.from(this._panels.values())[0];
+    }
+    return undefined;
+  }
+
+  private _getPanelKey(config: ForgejoConfig): string {
+    return `${config.instanceUrl}/${config.owner}/${config.repo}`;
   }
 
   private _getThemeName(kind: vscode.ColorThemeKind): 'light' | 'dark' | 'high-contrast' {
@@ -179,7 +198,7 @@ export class IssueCreateWebviewProvider {
     }
   }
 
-  private _getHtmlForWebview(webview: vscode.Webview): string {
+  private _getHtmlForWebview(webview: vscode.Webview, config: ForgejoConfig): string {
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'issueCreate', 'styles.css'));
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'issueCreate', 'index.js'));
     const nonce = this._getNonce();
@@ -197,7 +216,7 @@ export class IssueCreateWebviewProvider {
   <main class="create-issue-page">
     <header class="page-header">
       <div>
-        <p class="repo-name">${this._escapeHtml(this._panelState?.config.owner ?? '')}/${this._escapeHtml(this._panelState?.config.repo ?? '')}</p>
+        <p class="repo-name">${this._escapeHtml(config.owner)}/${this._escapeHtml(config.repo)}</p>
         <h1>Create Issue</h1>
       </div>
     </header>
