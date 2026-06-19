@@ -16,7 +16,8 @@ Before running repo, issue, or pull request commands, identify the target remote
 - Inspect repository metadata with `fj repo view -R <remote>` or `fj -H <host> repo view <owner/repo>`.
 - Search, view, and browse issues with `fj issue search -R <remote>`, `fj issue view -R <remote> <number>`, and `fj issue browse -R <remote> <number>`.
 - Create and inspect pull requests with `fj pr create`, `fj pr view`, `fj pr status`, and `fj pr browse`; pass `-R <remote>` when operating from a local checkout and `--repo <owner/repo>` when creating a PR for a specific repository.
-- Use Codeberg for public issue/PR references by default when a task mentions the open-source project, and use `git.araj.me` when the task refers to private/self-hosted work.
+- Use `git.araj.me` for pull request creation, inspection, and follow-up by default. Do not open pull requests on Codeberg unless the user explicitly asks for a public Codeberg PR.
+- Use Codeberg only for public repository or issue references when a task explicitly mentions the open-source/public project.
 
 Always open regular pull requests by default. Do not create draft PRs unless the user explicitly asks for a draft; with `fj pr create`, avoid a `WIP: ` title prefix unless a draft PR is requested.
 
