@@ -29,6 +29,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - Development version after the 0.3.20 release.
 - **Duplicate PR tree row fix:** paged pull request results are now deduplicated before rendering so overlapping API pages cannot register the same tree item id twice.
 - **Richer pull request activity details:** PR detail timelines now normalize Forgejo commit payloads before rendering, so commit authors, timestamps, messages, branch actions, merge commits, and commit references show useful context instead of "Unknown" or empty commit rows.
+- **Custom SSH clone ports ([#26](https://codeberg.org/maxking/forgejo-vscode/issues/26)):** configured instances can now set `sshPort` so VS Code's Forgejo clone picker uses the right SSH port for self-hosted servers.
 
 ### 0.3.20
 
@@ -204,6 +205,8 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 | `forgejo.preferredRemote` | `""` | Preferred git remote name (default: auto-detect, falls back to origin) |
 | `forgejo.debug` | `false` | Enable debug logging |
 | `forgejo.showFileStatusNotifications` | `true` | Show notifications for added/deleted files |
+
+Per-instance entries in `forgejo.instances` also support `sshPort` for self-hosted servers whose SSH service does not listen on port 22.
 
 ## Troubleshooting
 

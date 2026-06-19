@@ -460,6 +460,12 @@
               "instanceUrl": {
                 "type": "string"
               },
+              "sshPort": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 65535,
+                "description": "Optional SSH port to use for clone URLs from this instance"
+              },
               "token": {
                 "type": "string",
                 "deprecationMessage": "Tokens are now stored securely in the OS keychain via VS Code SecretStorage. Any token here will be migrated automatically."
