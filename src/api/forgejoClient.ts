@@ -30,6 +30,102 @@ export interface IssuePage {
   hasMore: boolean;
 }
 
+export interface ForgejoItemQueryOptions {
+  query?: string;
+  createdBy?: string;
+  assignedBy?: string;
+  mentionedBy?: string;
+  reviewRequestedBy?: string;
+}
+
+interface ForgejoUserResponse {
+  login?: string;
+  username?: string;
+}
+
+interface ForgejoIssueSearchItem extends IssueListItem {
+  repository?: {
+    full_name?: string;
+    name?: string;
+    owner?: {
+      login?: string;
+      username?: string;
+    };
+  };
+  repository_url?: string;
+}
+
+const PULL_REQUEST_DETAIL_BATCH_SIZE = 5;
+
+function trimmedValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeQueryOptions(queryOrOptions?: string | ForgejoItemQueryOptions): ForgejoItemQueryOptions {
+  if (typeof queryOrOptions === 'string') {
+    return { query: trimmedValue(queryOrOptions) };
+  }
+
+  return {
+    ...queryOrOptions,
+    query: trimmedValue(queryOrOptions?.query),
+    createdBy: trimmedValue(queryOrOptions?.createdBy),
+    assignedBy: trimmedValue(queryOrOptions?.assignedBy),
+    mentionedBy: trimmedValue(queryOrOptions?.mentionedBy),
+    reviewRequestedBy: trimmedValue(queryOrOptions?.reviewRequestedBy)
+  };
+}
+
+function hasRepositoryIssueSearchFilter(options: ForgejoItemQueryOptions): boolean {
+  return Boolean(options.createdBy ?? options.assignedBy ?? options.mentionedBy);
+}
+
+function appendQueryParam(params: URLSearchParams, key: string, value: string | undefined): void {
+  if (value) {
+    params.set(key, value);
+  }
+}
+
+async function mapInBatches<T, U>(
+  items: T[],
+  batchSize: number,
+  mapper: (item: T) => Promise<U>
+): Promise<U[]> {
+  const results: U[] = [];
+  for (let index = 0; index < items.length; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    results.push(...await Promise.all(batch.map(mapper)));
+  }
+  return results;
+}
+
+function matchesRepositoryPath(value: string | undefined, owner: string, repo: string): boolean {
+  return value?.toLowerCase() === `${owner}/${repo}`.toLowerCase();
+}
+
+function issueSearchItemMatchesRepository(item: ForgejoIssueSearchItem, owner: string, repo: string): boolean {
+  if (matchesRepositoryPath(item.repository?.full_name, owner, repo)) {
+    return true;
+  }
+
+  if (
+    item.repository?.name?.toLowerCase() === repo.toLowerCase()
+    && (item.repository.owner?.login?.toLowerCase() === owner.toLowerCase()
+      || item.repository.owner?.username?.toLowerCase() === owner.toLowerCase())
+  ) {
+    return true;
+  }
+
+  const repositoryApiPath = `/repos/${owner}/${repo}`.toLowerCase();
+  if (item.repository_url?.toLowerCase().endsWith(repositoryApiPath)) {
+    return true;
+  }
+
+  const pullRequestApiPath = `/repos/${owner}/${repo}/pulls/`.toLowerCase();
+  return item.pull_request?.url.toLowerCase().includes(pullRequestApiPath) ?? false;
+}
+
 export class ForgejoClient extends BaseClient {
   constructor(
     private readonly vscodeInstanceUrl: string,
@@ -65,15 +161,19 @@ export class ForgejoClient extends BaseClient {
     state: 'open' | 'closed' | 'all' = 'all',
     page = 1,
     limit = 50,
-    query?: string
+    queryOrOptions?: string | ForgejoItemQueryOptions
   ): Promise<PullRequestPage> {
-    const trimmedQuery = query?.trim();
-    const result = trimmedQuery
+    const options = normalizeQueryOptions(queryOrOptions);
+    const result = options.reviewRequestedBy
+      ? await this.searchReviewRequestedPullRequestsPage(owner, repo, state, page, limit, options)
+      : hasRepositoryIssueSearchFilter(options)
+      ? await this.searchPullRequestsByIssueFiltersPage(owner, repo, state, page, limit, options)
+      : options.query
       ? await this.searchPullRequestsPage(owner, repo, {
         state,
         page,
         limit,
-        query: trimmedQuery
+        query: options.query
       })
       : await this.listPullRequestsPage(owner, repo, { state, page, limit });
     return {
@@ -112,14 +212,17 @@ export class ForgejoClient extends BaseClient {
     state: 'open' | 'closed' | 'all' = 'all',
     page = 1,
     limit = 50,
-    query?: string
+    queryOrOptions?: string | ForgejoItemQueryOptions
   ): Promise<IssuePage> {
-    const trimmedQuery = query?.trim();
+    const options = normalizeQueryOptions(queryOrOptions);
     const result = await this.listIssuesPage(owner, repo, {
       state,
       page,
       limit,
-      ...(trimmedQuery ? { query: trimmedQuery } : {})
+      ...(options.query ? { query: options.query } : {}),
+      ...(options.createdBy ? { createdBy: options.createdBy } : {}),
+      ...(options.assignedBy ? { assignedBy: options.assignedBy } : {}),
+      ...(options.mentionedBy ? { mentionedBy: options.mentionedBy } : {})
     });
     return {
       items: result.items.filter(item => !item.pull_request),
@@ -151,5 +254,83 @@ export class ForgejoClient extends BaseClient {
 
   async updateIssueBody(owner: string, repo: string, number: number, body: string): Promise<Issue> {
     return this.updateIssue(owner, repo, number, { body });
+  }
+
+  async getAuthenticatedUserLogin(): Promise<string | null> {
+    const user = await this.rawRequest<ForgejoUserResponse>('GET', '/user');
+    return trimmedValue(user.login) ?? trimmedValue(user.username) ?? null;
+  }
+
+  private async searchPullRequestsByIssueFiltersPage(
+    owner: string,
+    repo: string,
+    state: 'open' | 'closed' | 'all',
+    page: number,
+    limit: number,
+    options: ForgejoItemQueryOptions
+  ): Promise<PullRequestPage> {
+    const params = new URLSearchParams({
+      state,
+      type: 'pulls'
+    });
+    appendQueryParam(params, 'q', options.query);
+    appendQueryParam(params, 'created_by', options.createdBy);
+    appendQueryParam(params, 'assigned_by', options.assignedBy);
+    appendQueryParam(params, 'mentioned_by', options.mentionedBy);
+    params.set('page', String(page));
+    params.set('limit', String(limit));
+
+    const matches = await this.rawRequest<IssueListItem[]>('GET', `/repos/${owner}/${repo}/issues?${params.toString()}`);
+    const pullRequestNumbers = matches
+      .filter(item => item.pull_request)
+      .map(item => item.number);
+    const items = await mapInBatches(
+      pullRequestNumbers,
+      PULL_REQUEST_DETAIL_BATCH_SIZE,
+      number => this.getPullRequest(owner, repo, number)
+    );
+
+    return {
+      items,
+      page,
+      limit,
+      hasMore: matches.length === limit
+    };
+  }
+
+  private async searchReviewRequestedPullRequestsPage(
+    owner: string,
+    repo: string,
+    state: 'open' | 'closed' | 'all',
+    page: number,
+    limit: number,
+    options: ForgejoItemQueryOptions
+  ): Promise<PullRequestPage> {
+    const params = new URLSearchParams({
+      state,
+      type: 'pulls'
+    });
+    appendQueryParam(params, 'q', options.query);
+    params.set('review_requested', 'true');
+    params.set('owner', owner);
+    params.set('page', String(page));
+    params.set('limit', String(limit));
+
+    const matches = await this.rawRequest<ForgejoIssueSearchItem[]>('GET', `/repos/issues/search?${params.toString()}`);
+    const pullRequestNumbers = matches
+      .filter(item => item.pull_request && issueSearchItemMatchesRepository(item, owner, repo))
+      .map(item => item.number);
+    const items = await mapInBatches(
+      pullRequestNumbers,
+      PULL_REQUEST_DETAIL_BATCH_SIZE,
+      number => this.getPullRequest(owner, repo, number)
+    );
+
+    return {
+      items,
+      page,
+      limit,
+      hasMore: matches.length === limit
+    };
   }
 }

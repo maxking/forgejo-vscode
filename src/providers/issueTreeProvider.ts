@@ -1,12 +1,55 @@
 import * as vscode from 'vscode';
-import { ForgejoClient, IssuePage } from '../api/forgejoClient';
+import { ForgejoClient, ForgejoItemQueryOptions, IssuePage } from '../api/forgejoClient';
 import { IssueListItem } from '../models/issue';
 import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoRepositoryConfigs } from '../utils/config';
 
 const ISSUE_PAGE_SIZE = 50;
 
+type IssueQueryKind = 'assigned' | 'created' | 'mentioned';
+type IssueGroupKind = 'open' | 'closed' | IssueQueryKind;
+
+const ISSUE_QUERY_ORDER: IssueQueryKind[] = ['assigned', 'created', 'mentioned'];
+const ISSUE_QUERY_DEFINITIONS: Record<IssueQueryKind, {
+  label: string;
+  emptyLabel: string;
+  filter: keyof Pick<ForgejoItemQueryOptions, 'assignedBy' | 'createdBy' | 'mentionedBy'>;
+  icon: string;
+}> = {
+  assigned: {
+    label: 'Assigned to me',
+    emptyLabel: 'assigned to me',
+    filter: 'assignedBy',
+    icon: 'account'
+  },
+  created: {
+    label: 'Created by me',
+    emptyLabel: 'created by me',
+    filter: 'createdBy',
+    icon: 'person'
+  },
+  mentioned: {
+    label: 'Mentioned me',
+    emptyLabel: 'mentioning me',
+    filter: 'mentionedBy',
+    icon: 'mention'
+  }
+};
+
 function treeIdPart(value: string | number | undefined): string {
   return encodeURIComponent(String(value ?? ''));
+}
+
+function isIssueQueryKind(kind: IssueGroupKind): kind is IssueQueryKind {
+  return kind === 'assigned' || kind === 'created' || kind === 'mentioned';
+}
+
+function issueItemIdParts(instanceUrl: string | undefined, owner: string, repo: string, issueNumber: number, treeContext?: string): (string | number | undefined)[] {
+  const parts: (string | number | undefined)[] = ['issue', instanceUrl ?? '', owner, repo];
+  if (treeContext) {
+    parts.push(treeContext);
+  }
+  parts.push(issueNumber);
+  return parts;
 }
 
 export class IssueTreeItem extends vscode.TreeItem {
@@ -15,20 +58,15 @@ export class IssueTreeItem extends vscode.TreeItem {
     public readonly htmlUrl: string,
     public readonly owner: string,
     public readonly repo: string,
-    public readonly instanceUrl?: string
+    public readonly instanceUrl?: string,
+    public readonly treeContext?: string
   ) {
     super(`#${issue.number}: ${issue.title}`, vscode.TreeItemCollapsibleState.None);
 
     this.tooltip = `${issue.title}\nby ${issue.user.login}\nState: ${issue.state}\nComments: ${issue.comments}\n\nClick to view details`;
     this.description = `by ${issue.user.login}`;
     this.contextValue = 'issue';
-    this.id = [
-      'issue',
-      instanceUrl ?? '',
-      owner,
-      repo,
-      issue.number
-    ].map(treeIdPart).join('/');
+    this.id = issueItemIdParts(instanceUrl, owner, repo, issue.number, treeContext).map(treeIdPart).join('/');
 
     if (issue.state === 'closed') {
       this.iconPath = new vscode.ThemeIcon('issue-closed', new vscode.ThemeColor('gitDecoration.deletedResourceForeground'));
@@ -44,18 +82,21 @@ export class IssueTreeItem extends vscode.TreeItem {
   }
 }
 
-type IssueGroupKind = 'open' | 'closed';
-
 export class IssueGroupItem extends vscode.TreeItem {
   constructor(
     public readonly label: string,
-    public readonly kind: IssueGroupKind
+    public readonly kind: IssueGroupKind,
+    public readonly isQueryGroup = false
   ) {
-    const collapsibleState = kind === 'closed'
+    const collapsibleState = kind === 'closed' || isQueryGroup
       ? vscode.TreeItemCollapsibleState.Collapsed
       : vscode.TreeItemCollapsibleState.Expanded;
     super(label, collapsibleState);
-    this.contextValue = 'issueGroup';
+    this.contextValue = isQueryGroup ? 'issueQueryGroup' : 'issueGroup';
+    if (isQueryGroup && isIssueQueryKind(kind)) {
+      this.iconPath = new vscode.ThemeIcon(ISSUE_QUERY_DEFINITIONS[kind].icon);
+      this.tooltip = `${label} open issues`;
+    }
   }
 }
 
@@ -83,6 +124,20 @@ export class IssueLoadMoreItem extends vscode.TreeItem {
   }
 }
 
+class IssueQueryRootItem extends vscode.TreeItem {
+  constructor(public readonly config: ForgejoConfig) {
+    super('My Queries', vscode.TreeItemCollapsibleState.Collapsed);
+    this.contextValue = 'issueQueryRoot';
+    this.iconPath = new vscode.ThemeIcon('filter');
+    this.id = [
+      'issue-query-root',
+      config.instanceUrl,
+      config.owner,
+      config.repo
+    ].map(treeIdPart).join('/');
+  }
+}
+
 class IssueRepositoryItem extends vscode.TreeItem {
   constructor(public readonly config: ForgejoRepositoryConfig) {
     super(config.label, vscode.TreeItemCollapsibleState.Collapsed);
@@ -103,16 +158,22 @@ class IssueRepositoryItem extends vscode.TreeItem {
 class IssueMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
-    public readonly isError = false
+    public readonly isError = false,
+    public readonly idContext?: string
   ) {
     super(message, vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(isError ? 'error' : 'info');
     this.contextValue = isError ? 'error' : 'info';
-    this.id = `issue-message/${treeIdPart(isError ? 'error' : 'info')}/${treeIdPart(message)}`;
+    this.id = [
+      'issue-message',
+      isError ? 'error' : 'info',
+      idContext ?? '',
+      message
+    ].map(treeIdPart).join('/');
   }
 }
 
-type IssueTreeElement = IssueRepositoryItem | IssueTreeItem | IssueGroupItem | IssueMessageItem | IssueLoadMoreItem;
+type IssueTreeElement = IssueRepositoryItem | IssueQueryRootItem | IssueTreeItem | IssueGroupItem | IssueMessageItem | IssueLoadMoreItem;
 type IssueState = 'open' | 'closed';
 
 interface IssuePageCache {
@@ -126,8 +187,8 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
   private _onDidChangeTreeData: vscode.EventEmitter<IssueTreeElement | undefined | null | void> = new vscode.EventEmitter<IssueTreeElement | undefined | null | void>();
   readonly onDidChangeTreeData: vscode.Event<IssueTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
 
-  private openIssuePages = new Map<string, IssuePageCache>();
-  private closedIssuePages = new Map<string, IssuePageCache>();
+  private issuePages = new Map<string, IssuePageCache>();
+  private currentUserLogins = new Map<string, Promise<string | null>>();
   private error: string | null = null;
   private searchQuery: string | null = null;
 
@@ -136,8 +197,8 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
   }
 
   refresh(): void {
-    this.openIssuePages.clear();
-    this.closedIssuePages.clear();
+    this.issuePages.clear();
+    this.currentUserLogins.clear();
     this._onDidChangeTreeData.fire();
   }
 
@@ -184,23 +245,35 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
       return this.getGroupsForConfig(configs[0]);
     } else if (element instanceof IssueRepositoryItem) {
       return this.getGroupsForConfig(element.config);
+    } else if (element instanceof IssueQueryRootItem) {
+      return this.getQueryGroupsForConfig(element.config);
     } else if (element instanceof IssueGroupItem) {
       const config = (element as IssueGroupItem & { config?: ForgejoConfig }).config;
       if (!config) {
         return [];
       }
 
-      const issues = await this.getIssuesForGroup(element, config);
-      element.description = this.groupDescription(element, config, issues.length);
-      const children: IssueTreeElement[] = issues.length === 0
-        ? [new IssueMessageItem(`No ${element.label.toLowerCase()} issues found`, false)]
-        : issues.map(issue =>
-          new IssueTreeItem(issue, issue.html_url, config.owner, config.repo, config.instanceUrl)
-        );
-      if (this.canLoadMoreIssues(element, config)) {
-        children.push(new IssueLoadMoreItem(element, config));
+      try {
+        const unavailableMessage = await this.queryUnavailableMessage(element, config);
+        if (unavailableMessage) {
+          return [new IssueMessageItem(unavailableMessage, false, element.id ?? element.kind)];
+        }
+
+        const issues = await this.getIssuesForGroup(element, config);
+        element.description = this.groupDescription(element, config, issues.length);
+        const children: IssueTreeElement[] = issues.length === 0
+          ? [new IssueMessageItem(`No ${this.emptyDescriptionForGroup(element)} issues found`, false, element.id ?? element.kind)]
+          : issues.map(issue =>
+            new IssueTreeItem(issue, issue.html_url, config.owner, config.repo, config.instanceUrl, element.kind)
+          );
+        if (this.canLoadMoreIssues(element, config)) {
+          children.push(new IssueLoadMoreItem(element, config));
+        }
+        return children;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to fetch issues';
+        return [new IssueMessageItem(message, true, element.id ?? element.kind)];
       }
-      return children;
     } else if (element instanceof IssueMessageItem || element instanceof IssueLoadMoreItem) {
       return [];
     }
@@ -208,8 +281,8 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
     return [];
   }
 
-  private configKey(config: ForgejoConfig): string {
-    return `${config.instanceUrl}/${config.owner}/${config.repo}?search=${encodeURIComponent(this.searchQuery ?? '')}`;
+  private configKey(config: ForgejoConfig, groupKind: IssueGroupKind): string {
+    return `${config.instanceUrl}/${config.owner}/${config.repo}?group=${groupKind}&search=${encodeURIComponent(this.searchQuery ?? '')}`;
   }
 
   private groupId(config: ForgejoConfig, group: IssueGroupItem): string {
@@ -232,25 +305,21 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
         this.ensureIssuePage(config, 'open'),
         this.ensureIssuePage(config, 'closed')
       ]);
-      const groups: IssueGroupItem[] = [];
-      const attachConfig = (group: IssueGroupItem): IssueGroupItem => {
-        group.id = this.groupId(config, group);
-        return Object.assign(group, { config });
-      };
+      const groups: IssueTreeElement[] = [new IssueQueryRootItem(config)];
 
       if (openCache.issues.length > 0 || openCache.hasMore) {
-        const group = attachConfig(new IssueGroupItem('Open', 'open'));
+        const group = this.attachConfig(config, new IssueGroupItem('Open', 'open'));
         group.description = this.groupDescription(group, config, openCache.issues.length);
         groups.push(group);
       }
       if (closedCache.issues.length > 0 || closedCache.hasMore) {
-        const group = attachConfig(new IssueGroupItem('Closed', 'closed'));
+        const group = this.attachConfig(config, new IssueGroupItem('Closed', 'closed'));
         group.description = this.groupDescription(group, config, closedCache.issues.length);
         groups.push(group);
       }
 
-      if (groups.length === 0) {
-        return [new IssueMessageItem('No issues found', false)];
+      if (groups.length === 1) {
+        groups.push(new IssueMessageItem('No issues found', false));
       }
 
       return groups;
@@ -258,6 +327,18 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
       this.error = error instanceof Error ? error.message : 'Unknown error';
       return [new IssueMessageItem(this.error, true)];
     }
+  }
+
+  private getQueryGroupsForConfig(config: ForgejoConfig): IssueGroupItem[] {
+    return ISSUE_QUERY_ORDER.map(kind => this.attachConfig(
+      config,
+      new IssueGroupItem(ISSUE_QUERY_DEFINITIONS[kind].label, kind, true)
+    ));
+  }
+
+  private attachConfig(config: ForgejoConfig, group: IssueGroupItem): IssueGroupItem {
+    group.id = this.groupId(config, group);
+    return Object.assign(group, { config });
   }
 
   private async getIssuesForGroup(group: IssueGroupItem, config: ForgejoConfig): Promise<IssueListItem[]> {
@@ -272,10 +353,9 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
     return this.getIssueCache(config, group.kind).hasMore;
   }
 
-  private getIssueCache(config: ForgejoConfig, state: IssueState): IssuePageCache {
-    const key = this.configKey(config);
-    const cacheMap = state === 'open' ? this.openIssuePages : this.closedIssuePages;
-    const cached = cacheMap.get(key);
+  private getIssueCache(config: ForgejoConfig, groupKind: IssueGroupKind): IssuePageCache {
+    const key = this.configKey(config, groupKind);
+    const cached = this.issuePages.get(key);
     if (cached) {
       return cached;
     }
@@ -285,21 +365,21 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
       nextPage: 1,
       hasMore: true
     };
-    cacheMap.set(key, created);
+    this.issuePages.set(key, created);
     return created;
   }
 
-  private async ensureIssuePage(config: ForgejoConfig, state: IssueState): Promise<IssuePageCache> {
-    const cache = this.getIssueCache(config, state);
+  private async ensureIssuePage(config: ForgejoConfig, groupKind: IssueGroupKind): Promise<IssuePageCache> {
+    const cache = this.getIssueCache(config, groupKind);
     if (cache.issues.length > 0 || !cache.hasMore) {
       return cache;
     }
 
-    return this.fetchNextIssuePage(config, state);
+    return this.fetchNextIssuePage(config, groupKind);
   }
 
-  private async fetchNextIssuePage(config: ForgejoConfig, state: IssueState): Promise<IssuePageCache> {
-    const cache = this.getIssueCache(config, state);
+  private async fetchNextIssuePage(config: ForgejoConfig, groupKind: IssueGroupKind): Promise<IssuePageCache> {
+    const cache = this.getIssueCache(config, groupKind);
     if (!cache.hasMore) {
       return cache;
     }
@@ -307,8 +387,8 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
       return cache.inFlightPagePromise;
     }
 
-    const promise = this.fetchIssuesPageUncached(config, state, cache.nextPage).then(page => {
-      cache.issues.push(...page.items);
+    const promise = this.fetchIssuesPageUncached(config, groupKind, cache.nextPage).then(page => {
+      this.appendUniqueIssues(cache, page.items);
       cache.nextPage = page.page + 1;
       cache.hasMore = page.hasMore;
       return cache;
@@ -321,11 +401,26 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
     }
   }
 
-  private async fetchIssuesPageUncached(config: ForgejoConfig, state: IssueState, page: number): Promise<IssuePage> {
+  private appendUniqueIssues(cache: IssuePageCache, issues: IssueListItem[]): void {
+    const seenNumbers = new Set(cache.issues.map(issue => issue.number));
+    for (const issue of issues) {
+      if (seenNumbers.has(issue.number)) {
+        continue;
+      }
+      seenNumbers.add(issue.number);
+      cache.issues.push(issue);
+    }
+  }
+
+  private async fetchIssuesPageUncached(config: ForgejoConfig, groupKind: IssueGroupKind, page: number): Promise<IssuePage> {
+    const state = this.stateForGroup(groupKind);
     console.log(`[Forgejo] Fetching ${state} issues page ${page}...`);
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const issues = this.searchQuery
+      const queryOptions = await this.queryOptionsForGroup(config, groupKind);
+      const issues = queryOptions
+        ? await client.getIssuesPage(config.owner, config.repo, state, page, ISSUE_PAGE_SIZE, queryOptions)
+        : this.searchQuery
         ? await client.getIssuesPage(config.owner, config.repo, state, page, ISSUE_PAGE_SIZE, this.searchQuery)
         : await client.getIssuesPage(config.owner, config.repo, state, page, ISSUE_PAGE_SIZE);
       this.error = null;
@@ -336,5 +431,58 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
       console.error(`[Forgejo] Error fetching ${state} issues page ${page}:`, error);
       throw error;
     }
+  }
+
+  private stateForGroup(groupKind: IssueGroupKind): IssueState {
+    return groupKind === 'closed' ? 'closed' : 'open';
+  }
+
+  private emptyDescriptionForGroup(group: IssueGroupItem): string {
+    return isIssueQueryKind(group.kind)
+      ? ISSUE_QUERY_DEFINITIONS[group.kind].emptyLabel
+      : group.label.toLowerCase();
+  }
+
+  private async queryUnavailableMessage(group: IssueGroupItem, config: ForgejoConfig): Promise<string | null> {
+    if (!isIssueQueryKind(group.kind)) {
+      return null;
+    }
+
+    const login = await this.getCurrentUserLogin(config);
+    return login ? null : 'Configure an authentication token to use issue query views.';
+  }
+
+  private async queryOptionsForGroup(config: ForgejoConfig, groupKind: IssueGroupKind): Promise<ForgejoItemQueryOptions | null> {
+    const baseOptions: ForgejoItemQueryOptions = this.searchQuery ? { query: this.searchQuery } : {};
+    if (!isIssueQueryKind(groupKind)) {
+      return null;
+    }
+
+    const login = await this.getCurrentUserLogin(config);
+    if (!login) {
+      return null;
+    }
+
+    const definition = ISSUE_QUERY_DEFINITIONS[groupKind];
+    return {
+      ...baseOptions,
+      [definition.filter]: login
+    };
+  }
+
+  private async getCurrentUserLogin(config: ForgejoConfig): Promise<string | null> {
+    if (!config.token) {
+      return null;
+    }
+
+    const key = `${config.instanceUrl}\0${config.token}`;
+    const cached = this.currentUserLogins.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    const promise = new ForgejoClient(config.instanceUrl, config.token).getAuthenticatedUserLogin();
+    this.currentUserLogins.set(key, promise);
+    return promise;
   }
 }

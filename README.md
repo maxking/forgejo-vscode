@@ -27,6 +27,8 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.21
 
 - Development version after the 0.3.20 release.
+- **Built-in query views ([#136](https://git.araj.me/maxking/forgejo-vscode/issues/136)):** Pull Request and Issue views now include "My Queries" groups for assigned, created, and mentioned items, plus PRs waiting for your review.
+- **Query view duplicate row fix ([#136](https://git.araj.me/maxking/forgejo-vscode/issues/136)):** Pull Request and Issue rows now keep distinct tree item IDs when the same item appears in both a state group and a "My Queries" group.
 - **Duplicate PR tree row fix:** paged pull request results are now deduplicated before rendering so overlapping API pages cannot register the same tree item id twice.
 - **Richer pull request activity details:** PR detail timelines now normalize Forgejo commit payloads before rendering, so commit authors, timestamps, messages, branch actions, merge commits, and commit references show useful context instead of "Unknown" or empty commit rows.
 
@@ -155,6 +157,49 @@ You can connect to multiple Forgejo servers:
 2. Expand the **Pull Requests** section
 3. Click a PR to see its files
 4. Click a file to view the diff
+
+### Built-In Query Views
+
+Pull Request and Issue **My Queries** groups require an authentication token because the extension first resolves the current API user with `GET /user`.
+
+Pull Request state groups use the Forgejo pull request list API:
+
+| Section | Query | Client-side filter |
+| --- | --- | --- |
+| Open | `/repos/{owner}/{repo}/pulls?state=open&page={page}&limit=50` | `draft === false` |
+| Draft | `/repos/{owner}/{repo}/pulls?state=open&page={page}&limit=50` | `draft === true` |
+| Merged | `/repos/{owner}/{repo}/pulls?state=closed&page={page}&limit=50` | `merged === true` |
+| Closed | `/repos/{owner}/{repo}/pulls?state=closed&page={page}&limit=50` | `merged === false` |
+
+When Pull Request search text is active, state groups instead use `/repos/{owner}/{repo}/issues?state={open|closed}&type=pulls&q={search}&page={page}&limit=50`, hydrate each matched row as a PR, then apply the same client-side filter.
+
+Pull Request **My Queries** groups use issue-search filters with `type=pulls` and `state=open`:
+
+| Section | Query | Notes |
+| --- | --- | --- |
+| Assigned to me | `/repos/{owner}/{repo}/issues?state=open&type=pulls&assigned_by={login}&page={page}&limit=50` | Hydrates each matched issue as a PR. |
+| Waiting for my review | `/repos/issues/search?state=open&type=pulls&review_requested=true&owner={owner}&page={page}&limit=50` | Forgejo treats `review_requested=true` as "review requested from the authenticated user"; the extension filters results back to `{owner}/{repo}` before hydrating PRs. |
+| Created by me | `/repos/{owner}/{repo}/issues?state=open&type=pulls&created_by={login}&page={page}&limit=50` | Hydrates each matched issue as a PR. |
+| Mentioned me | `/repos/{owner}/{repo}/issues?state=open&type=pulls&mentioned_by={login}&page={page}&limit=50` | Hydrates each matched issue as a PR. |
+
+Issue state groups use the Forgejo issue list API:
+
+| Section | Query | Client-side filter |
+| --- | --- | --- |
+| Open | `/repos/{owner}/{repo}/issues?state=open&type=issues&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Closed | `/repos/{owner}/{repo}/issues?state=closed&type=issues&page={page}&limit=50` | Excludes rows with `pull_request`. |
+
+When Issue search text is active, state groups add `q={search}` to the same issue-list query.
+
+Issue **My Queries** groups use `state=open` issue filters:
+
+| Section | Query | Client-side filter |
+| --- | --- | --- |
+| Assigned to me | `/repos/{owner}/{repo}/issues?state=open&type=issues&assigned_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Created by me | `/repos/{owner}/{repo}/issues?state=open&type=issues&created_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Mentioned me | `/repos/{owner}/{repo}/issues?state=open&type=issues&mentioned_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
+
+When the tree search box has text, **My Queries** groups also add `q={search}` to the query shown in the table.
 
 ### PR Actions
 
