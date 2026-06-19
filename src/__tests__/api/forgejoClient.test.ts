@@ -1557,6 +1557,37 @@ describe('ForgejoClient', () => {
       );
     });
 
+    test('should create issue with labels, assignees, milestone, and due date', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => mockCreatedIssue
+      } as unknown as Response);
+
+      const result = await client.createIssue('owner', 'repo', 'Test Issue', 'Test body', {
+        labels: [1, 2],
+        assignees: ['alice', 'bob'],
+        milestone: 7,
+        due_date: '2026-07-10T00:00:00Z'
+      });
+
+      expect(result).toEqual(mockCreatedIssue);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/issues',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            title: 'Test Issue',
+            body: 'Test body',
+            labels: [1, 2],
+            assignees: ['alice', 'bob'],
+            milestone: 7,
+            due_date: '2026-07-10T00:00:00Z'
+          })
+        })
+      );
+    });
+
     test('should include authentication header when token is set', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
