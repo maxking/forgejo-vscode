@@ -18,6 +18,7 @@ import { getAllInstances } from './utils/instanceHelpers';
 import { startOnboarding } from './commands/onboarding';
 import { manageInstances } from './commands/instanceManager';
 import { showDiagnostics } from './commands/diagnostics';
+import { openWorkflowFileByName, openWorkflowFileForCIStatus, validateWorkflowsCommand, viewCIStatusLogs } from './commands/ciNavigation';
 import { createIssueCommand } from './commands/createIssue';
 import { createPullRequestCommand } from './commands/createPullRequest';
 import { createReleaseCommand } from './commands/createRelease';
@@ -34,6 +35,7 @@ import { ForgejoRemoteSourceProvider } from './providers/forgejoRemoteSourceProv
 import { ForgejoAuthenticationProvider } from './auth/forgejoAuthenticationProvider';
 import { createRemoteSourcePublisher, publishRepositoryFromWorkspace } from './commands/publishToForgejo';
 import { activateGitExtension } from './utils/gitExtension';
+import { registerWorkflowDiagnostics } from './diagnostics/workflowDiagnostics';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -54,6 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const issueTreeProvider = new IssueTreeProvider();
   const actionsTreeProvider = new ActionsTreeProvider();
   const releaseTreeProvider = new ReleaseTreeProvider();
+  const workflowDiagnostics = registerWorkflowDiagnostics(context);
 
   // Late-bound so addInstance/manageInstances can trigger a re-registration
   let refreshRemoteSourceProviders: () => Promise<void> = () => Promise.resolve();
@@ -154,6 +157,12 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand('forgejo.showDiagnostics', async () => {
       return await showDiagnostics();
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.validateWorkflows', async () => {
+      await validateWorkflowsCommand(workflowDiagnostics);
     })
   );
 
@@ -591,6 +600,33 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
     )
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.openWorkflowFile', async (item: WorkflowRunTreeItem | JobTreeItem) => {
+      const workflowName = item instanceof WorkflowRunTreeItem
+        ? item.jobs[0]?.workflow_id
+        : item.job.workflow_id;
+
+      if (!workflowName) {
+        void vscode.window.showInformationMessage('No workflow file is associated with this action row.');
+        return;
+      }
+
+      await openWorkflowFileByName(workflowName);
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.viewCIStatusLogs', async (status, owner, repo, instanceUrl) => {
+      await viewCIStatusLogs({ status, owner, repo, instanceUrl });
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.openCIWorkflowFile', async (status, owner, repo, instanceUrl) => {
+      await openWorkflowFileForCIStatus({ status, owner, repo, instanceUrl });
+    })
   );
 
   // Register Action details viewer command

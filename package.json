@@ -121,6 +121,11 @@
         "icon": "$(info)"
       },
       {
+        "command": "forgejo.validateWorkflows",
+        "title": "Forgejo: Validate Workflow Files",
+        "icon": "$(checklist)"
+      },
+      {
         "command": "forgejo.showOutput",
         "title": "Forgejo: Show Output Channel",
         "icon": "$(output)"
@@ -238,6 +243,11 @@
         "icon": "$(output)"
       },
       {
+        "command": "forgejo.openWorkflowFile",
+        "title": "Open Workflow File",
+        "icon": "$(file-code)"
+      },
+      {
         "command": "forgejo.showActionDetails",
         "title": "View Action Details",
         "icon": "$(info)"
@@ -274,6 +284,15 @@
         "command": "forgejo.openReleaseInBrowser",
         "title": "Open Release in Browser",
         "icon": "$(link-external)"
+      }
+    ],
+    "yamlValidation": [
+      {
+        "fileMatch": [
+          ".forgejo/workflows/*.{yml,yaml}",
+          ".gitea/workflows/*.{yml,yaml}"
+        ],
+        "url": "./out/diagnostics/schemas/forgejo-workflow.schema.json"
       }
     ],
     "menus": {
@@ -397,23 +416,28 @@
         },
         {
           "command": "forgejo.showActionDetails",
-          "when": "viewItem == workflowRun || viewItem == workflowJob",
+          "when": "viewItem == workflowRun || viewItem == workflowRunFailed || viewItem == workflowJob || viewItem == workflowJobFailed",
           "group": "navigation@0"
         },
         {
           "command": "forgejo.openActionInBrowser",
-          "when": "viewItem == workflowRun || viewItem == workflowJob || viewItem == workflowStep",
+          "when": "viewItem == workflowRun || viewItem == workflowRunFailed || viewItem == workflowJob || viewItem == workflowJobFailed || viewItem == workflowStep",
           "group": "navigation@1"
         },
         {
           "command": "forgejo.rerunAction",
-          "when": "viewItem == workflowRun || viewItem == workflowJob",
+          "when": "viewItem == workflowRun || viewItem == workflowRunFailed || viewItem == workflowJob || viewItem == workflowJobFailed",
           "group": "navigation@2"
         },
         {
           "command": "forgejo.viewActionLogs",
-          "when": "viewItem == workflowRun || viewItem == workflowJob || viewItem == workflowStep",
+          "when": "viewItem == workflowRun || viewItem == workflowRunFailed || viewItem == workflowJob || viewItem == workflowJobFailed || viewItem == workflowStep",
           "group": "navigation@3"
+        },
+        {
+          "command": "forgejo.openWorkflowFile",
+          "when": "viewItem == workflowRun || viewItem == workflowRunFailed || viewItem == workflowJob || viewItem == workflowJobFailed",
+          "group": "navigation@4"
         },
         {
           "command": "forgejo.openReleaseInBrowser",
@@ -551,7 +575,8 @@
     "test:ci": "npm run lint && npm run test:unit:coverage && npm run test:integration",
     "test:live": "jest --testPathPattern='forgejoClient\\.live\\.test'",
     "test:e2e:live": "playwright test --config playwright.live.config.ts",
-    "test:e2e:live:local": "bash scripts/run-e2e-local.sh"
+    "test:e2e:live:local": "bash scripts/run-e2e-local.sh",
+    "update:workflow-schema": "node scripts/update-workflow-schema.mjs"
   },
   "devDependencies": {
     "@mshanemc/vscode-test-playwright": "^0.0.1-beta14",
@@ -574,6 +599,7 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "forgejo-ts": "^0.4.0"
+    "forgejo-ts": "^0.4.0",
+    "yaml": "^2.8.2"
   }
 }

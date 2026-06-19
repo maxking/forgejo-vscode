@@ -86,6 +86,11 @@ describe('ActionsTreeProvider', () => {
       expect(item.contextValue).toBe('workflowRun');
     });
 
+    test('should mark failed workflow runs for failure-specific commands', () => {
+      const item = new WorkflowRunTreeItem(43, [mockWorkflowRunFailed], owner, repo);
+      expect(item.contextValue).toBe('workflowRunFailed');
+    });
+
     test('should be Collapsed (not Expanded)', () => {
       const item = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], owner, repo);
       expect(item.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
@@ -197,6 +202,16 @@ describe('ActionsTreeProvider', () => {
     test('should not have a command (click expands to show steps)', () => {
       const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo);
       expect(item.command).toBeUndefined();
+    });
+
+    test('should open logs directly for failed jobs', () => {
+      const item = new JobTreeItem(mockWorkflowRunFailed, 0, owner, repo);
+      expect(item.contextValue).toBe('workflowJobFailed');
+      expect(item.command).toEqual({
+        command: 'forgejo.viewActionLogs',
+        title: 'View Logs',
+        arguments: [item]
+      });
     });
 
     test('should set correct icon for success', () => {

@@ -35,6 +35,7 @@ class Uri {
     this.path = path;
     this.query = query;
     this.fragment = fragment;
+    this.fsPath = path;
   }
 
   static parse(uri) {
@@ -173,6 +174,21 @@ class Range {
   }
 }
 
+class Diagnostic {
+  constructor(range, message, severity) {
+    this.range = range;
+    this.message = message;
+    this.severity = severity;
+  }
+}
+
+const DiagnosticSeverity = {
+  Error: 0,
+  Warning: 1,
+  Information: 2,
+  Hint: 3
+};
+
 const comments = {
   createCommentController: jest.fn(() => ({
     commentingRangeProvider: null,
@@ -202,6 +218,7 @@ const window = {
   createTreeView: jest.fn(),
   createWebviewPanel: jest.fn(),
   activeColorTheme: { kind: ColorThemeKind.Dark },
+  showTextDocument: jest.fn(),
   createOutputChannel: jest.fn().mockImplementation(() => ({
     append: jest.fn(),
     appendLine: jest.fn(),
@@ -220,9 +237,22 @@ const workspace = {
     inspect: jest.fn()
   })),
   workspaceFolders: undefined,
+  findFiles: jest.fn().mockResolvedValue([]),
+  openTextDocument: jest.fn(),
   onDidChangeConfiguration: jest.fn(() => ({ dispose: jest.fn() })),
   onDidOpenTextDocument: jest.fn(() => ({ dispose: jest.fn() })),
+  onDidChangeTextDocument: jest.fn(() => ({ dispose: jest.fn() })),
+  onDidSaveTextDocument: jest.fn(() => ({ dispose: jest.fn() })),
   onDidCloseTextDocument: jest.fn(() => ({ dispose: jest.fn() }))
+};
+
+const languages = {
+  createDiagnosticCollection: jest.fn(() => ({
+    set: jest.fn(),
+    delete: jest.fn(),
+    clear: jest.fn(),
+    dispose: jest.fn()
+  }))
 };
 
 const commands = {
@@ -251,9 +281,12 @@ module.exports = {
   CommentMode,
   MarkdownString,
   Range,
+  Diagnostic,
+  DiagnosticSeverity,
   comments,
   window,
   workspace,
+  languages,
   commands,
   env,
   ViewColumn,

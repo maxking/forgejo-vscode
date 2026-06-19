@@ -398,6 +398,25 @@ section h2 {
   font-size: 0.9em;
 }
 
+.ci-status-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.ci-status-action {
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  padding: 2px 6px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ci-status-action:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
 /* Activity Timeline */
 .activity-section {
   margin-bottom: 32px;

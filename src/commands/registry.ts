@@ -14,7 +14,7 @@
  */
 
 import * as vscode from 'vscode';
-import type { PullRequestListItem, PullRequestFile } from '../models/pullRequest';
+import type { PullRequestListItem, PullRequestFile, CommitStatus } from '../models/pullRequest';
 import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
 import type { IssueLoadMoreItem, IssueRepositoryItem, IssueTreeItem } from '../providers/issueTreeProvider';
@@ -37,6 +37,7 @@ export interface CommandMap {
   'forgejo.addInstance': [];
   'forgejo.manageInstances': [];
   'forgejo.showDiagnostics': [];
+  'forgejo.validateWorkflows': [];
   'forgejo.showOutput': [];
   'forgejo.refreshPullRequests': [];
   'forgejo.refreshRepositoryPullRequests': [repositoryItem: PRRepositoryItem];
@@ -139,6 +140,19 @@ export interface CommandMap {
   'forgejo.rerunAction': [item: WorkflowRunTreeItem | JobTreeItem];
 
   'forgejo.viewStepLogs': [args: StepLogArgs];
+  'forgejo.viewCIStatusLogs': [
+    status: CommitStatus,
+    owner: string,
+    repo: string,
+    instanceUrl?: string,
+  ];
+  'forgejo.openCIWorkflowFile': [
+    status: CommitStatus,
+    owner: string,
+    repo: string,
+    instanceUrl?: string,
+  ];
+  'forgejo.openWorkflowFile': [item: WorkflowRunTreeItem | JobTreeItem];
 }
 
 // ---------------------------------------------------------------------------
