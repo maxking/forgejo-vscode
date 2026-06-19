@@ -476,11 +476,11 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   }
 
   private configKeyPrefix(config: ForgejoConfig): string {
-    return `${config.instanceUrl}/${config.owner}/${config.repo}`;
+    return `${config.instanceUrl}/${config.owner}/${config.repo}?`;
   }
 
   private configKey(config: ForgejoConfig, groupKind: PRGroupKind): string {
-    return `${this.configKeyPrefix(config)}?group=${this.cacheGroupForKind(groupKind)}&search=${encodeURIComponent(this.searchQuery ?? '')}`;
+    return `${this.configKeyPrefix(config)}group=${this.cacheGroupForKind(groupKind)}&search=${encodeURIComponent(this.searchQuery ?? '')}`;
   }
 
   private groupId(config: ForgejoConfig, group: PRGroupItem): string {

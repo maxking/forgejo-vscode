@@ -175,10 +175,10 @@ describe('ForgejoClient', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    test('getPullRequestsPage should use raw issue search for user query filters', async () => {
+    test('getPullRequestsPage should use repository issue search for user query filters', async () => {
       const pullRequest = {
         number: 12,
-        title: 'Review requested PR',
+        title: 'Assigned PR',
         state: 'open',
         user: { login: 'alice' },
         html_url: 'https://git.example.com/owner/repo/pulls/12',
@@ -196,14 +196,62 @@ describe('ForgejoClient', () => {
       const detailSpy = jest.spyOn(client, 'getPullRequest').mockResolvedValue(pullRequest as any);
 
       const result = await client.getPullRequestsPage('owner', 'repo', 'open', 2, 25, {
+        query: '  mine  ',
+        assignedBy: 'alice',
+        createdBy: 'bob',
+        mentionedBy: 'carol'
+      });
+
+      expect(rawSpy).toHaveBeenCalledWith(
+        'GET',
+        '/repos/owner/repo/issues?state=open&type=pulls&q=mine&created_by=bob&assigned_by=alice&mentioned_by=carol&page=2&limit=25'
+      );
+      expect(detailSpy).toHaveBeenCalledWith('owner', 'repo', 12);
+      expect(result).toEqual({
+        items: [pullRequest],
+        page: 2,
+        limit: 25,
+        hasMore: false
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    test('getPullRequestsPage should use authenticated review-requested search and filter to the repo', async () => {
+      const pullRequest = {
+        number: 12,
+        title: 'Review requested PR',
+        state: 'open',
+        user: { login: 'alice' },
+        html_url: 'https://git.example.com/owner/repo/pulls/12',
+        created_at: '2026-01-01T00:00:00Z',
+        merged: false,
+        draft: false,
+        comments: 0
+      };
+      const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue([
+        {
+          number: 12,
+          repository: { full_name: 'owner/repo' },
+          pull_request: { url: 'https://git.example.com/api/v1/repos/owner/repo/pulls/12' }
+        },
+        {
+          number: 99,
+          repository: { full_name: 'owner/other-repo' },
+          pull_request: { url: 'https://git.example.com/api/v1/repos/owner/other-repo/pulls/99' }
+        }
+      ] as any);
+      const detailSpy = jest.spyOn(client, 'getPullRequest').mockResolvedValue(pullRequest as any);
+
+      const result = await client.getPullRequestsPage('owner', 'repo', 'open', 2, 25, {
         query: '  review  ',
         reviewRequestedBy: 'alice'
       });
 
       expect(rawSpy).toHaveBeenCalledWith(
         'GET',
-        '/repos/owner/repo/issues?state=open&type=pulls&q=review&review_requested_by=alice&page=2&limit=25'
+        '/repos/issues/search?state=open&type=pulls&q=review&review_requested=true&owner=owner&page=2&limit=25'
       );
+      expect(detailSpy).toHaveBeenCalledTimes(1);
       expect(detailSpy).toHaveBeenCalledWith('owner', 'repo', 12);
       expect(result).toEqual({
         items: [pullRequest],

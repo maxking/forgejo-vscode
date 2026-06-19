@@ -714,6 +714,42 @@ describe('PRTreeProvider', () => {
       expect((closedGroup as any).description).toBe('1');
     });
 
+    test('refreshRepository should only clear caches for the exact repository', async () => {
+      const repoConfig = { ...mockConfig, repo: 'repo', label: 'test-owner/repo' };
+      const repo2Config = { ...mockConfig, repo: 'repo2', label: 'test-owner/repo2' };
+      const repoPR: PullRequestListItem = { ...mockPR, number: 1, title: 'Repo PR' };
+      const repo2PR: PullRequestListItem = { ...mockPR, number: 2, title: 'Repo 2 PR' };
+      const refreshedRepoPR: PullRequestListItem = { ...mockPR, number: 3, title: 'Refreshed repo PR' };
+      mockClient.hasPullRequests.mockResolvedValue(false);
+      mockClient.getPullRequestsPage
+        .mockResolvedValueOnce(prPage([repoPR]))
+        .mockResolvedValueOnce(prPage([repo2PR]))
+        .mockResolvedValueOnce(prPage([refreshedRepoPR]))
+        .mockResolvedValue(prPage([]));
+
+      const repoItem = new PRRepositoryItem(repoConfig);
+      const repo2Item = new PRRepositoryItem(repo2Config);
+      const repoGroups = await provider.getChildren(repoItem);
+      const repoOpenGroup = repoGroups.find(group => (group as any).label === 'Open');
+      const repoOpenItems = await provider.getChildren(repoOpenGroup);
+      const repo2Groups = await provider.getChildren(repo2Item);
+      const repo2OpenGroup = repo2Groups.find(group => (group as any).label === 'Open');
+      const repo2OpenItems = await provider.getChildren(repo2OpenGroup);
+
+      provider.refreshRepository(repoItem);
+      const refreshedRepoItems = await provider.getChildren(repoOpenGroup);
+      const cachedRepo2Items = await provider.getChildren(repo2OpenGroup);
+
+      expect(repoOpenItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([1]);
+      expect(repo2OpenItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([2]);
+      expect(refreshedRepoItems.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([3]);
+      expect(cachedRepo2Items.filter(item => item instanceof PRTreeItem).map(item => (item as PRTreeItem).pr.number)).toEqual([2]);
+      expect(mockClient.getPullRequestsPage).toHaveBeenCalledTimes(3);
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(1, 'test-owner', 'repo', 'open', 1, 50);
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(2, 'test-owner', 'repo2', 'open', 1, 50);
+      expect(mockClient.getPullRequestsPage).toHaveBeenNthCalledWith(3, 'test-owner', 'repo', 'open', 1, 50);
+    });
+
     test('should reuse in-flight closed PR request during simultaneous expansion', async () => {
       const mergedPR: PullRequestListItem = { ...mockPR, number: 2, state: 'closed', merged: true, draft: false };
       const closedPR: PullRequestListItem = { ...mockPR, number: 3, state: 'closed', merged: false, draft: false };
