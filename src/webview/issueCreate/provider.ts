@@ -130,7 +130,8 @@ export class IssueCreateWebviewProvider {
       }
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const body = data.body?.trim() || undefined;
+      const trimmedBody = data.body?.trim();
+      const body = trimmedBody === '' ? undefined : trimmedBody;
       const options = this._buildCreateIssueOptions(data);
       const issue = await client.createIssue(config.owner, config.repo, title, body, options);
 
