@@ -158,6 +158,49 @@ You can connect to multiple Forgejo servers:
 3. Click a PR to see its files
 4. Click a file to view the diff
 
+### Built-In Query Views
+
+Pull Request and Issue **My Queries** groups require an authentication token because the extension first resolves the current API user with `GET /user`.
+
+Pull Request state groups use the Forgejo pull request list API:
+
+| Section | Query | Client-side filter |
+| --- | --- | --- |
+| Open | `/repos/{owner}/{repo}/pulls?state=open&page={page}&limit=50` | `draft === false` |
+| Draft | `/repos/{owner}/{repo}/pulls?state=open&page={page}&limit=50` | `draft === true` |
+| Merged | `/repos/{owner}/{repo}/pulls?state=closed&page={page}&limit=50` | `merged === true` |
+| Closed | `/repos/{owner}/{repo}/pulls?state=closed&page={page}&limit=50` | `merged === false` |
+
+When Pull Request search text is active, state groups instead use `/repos/{owner}/{repo}/issues?state={open|closed}&type=pulls&q={search}&page={page}&limit=50`, hydrate each matched row as a PR, then apply the same client-side filter.
+
+Pull Request **My Queries** groups use issue-search filters with `type=pulls` and `state=open`:
+
+| Section | Query | Notes |
+| --- | --- | --- |
+| Assigned to me | `/repos/{owner}/{repo}/issues?state=open&type=pulls&assigned_by={login}&page={page}&limit=50` | Hydrates each matched issue as a PR. |
+| Waiting for my review | `/repos/issues/search?state=open&type=pulls&review_requested=true&owner={owner}&page={page}&limit=50` | Forgejo treats `review_requested=true` as "review requested from the authenticated user"; the extension filters results back to `{owner}/{repo}` before hydrating PRs. |
+| Created by me | `/repos/{owner}/{repo}/issues?state=open&type=pulls&created_by={login}&page={page}&limit=50` | Hydrates each matched issue as a PR. |
+| Mentioned me | `/repos/{owner}/{repo}/issues?state=open&type=pulls&mentioned_by={login}&page={page}&limit=50` | Hydrates each matched issue as a PR. |
+
+Issue state groups use the Forgejo issue list API:
+
+| Section | Query | Client-side filter |
+| --- | --- | --- |
+| Open | `/repos/{owner}/{repo}/issues?state=open&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Closed | `/repos/{owner}/{repo}/issues?state=closed&page={page}&limit=50` | Excludes rows with `pull_request`. |
+
+When Issue search text is active, state groups add `q={search}` to the same issue-list query.
+
+Issue **My Queries** groups use `state=open` issue filters:
+
+| Section | Query | Client-side filter |
+| --- | --- | --- |
+| Assigned to me | `/repos/{owner}/{repo}/issues?state=open&assigned_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Created by me | `/repos/{owner}/{repo}/issues?state=open&created_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
+| Mentioned me | `/repos/{owner}/{repo}/issues?state=open&mentioned_by={login}&page={page}&limit=50` | Excludes rows with `pull_request`. |
+
+When the tree search box has text, **My Queries** groups also add `q={search}` to the query shown in the table.
+
 ### PR Actions
 
 Right-click on a PR for options:
