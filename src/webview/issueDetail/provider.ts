@@ -43,6 +43,7 @@ export interface IssueDetailViewData {
   owner: string;
   repo: string;
   canComment: boolean;
+  instanceUrl?: string;
 }
 
 interface PanelState {
@@ -138,7 +139,8 @@ export class IssueDetailWebviewProvider {
         activities,
         owner,
         repo,
-        canComment: config.token.trim().length > 0
+        canComment: config.token.trim().length > 0,
+        instanceUrl: state.instanceUrl
       };
       logInfo('pendingData set, isReady:', state.isReady);
 
