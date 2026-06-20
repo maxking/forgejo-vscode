@@ -67,22 +67,42 @@ function activeRepository(git: API): Repository | null {
   return activeUri ? git.getRepository(activeUri) : null;
 }
 
-function preferredRepository(repositories: Repository[], git: API, preferredRootPath?: string): Repository | undefined {
-  if (preferredRootPath) {
-    const matchingRoot = repositories.find(repository => repository.rootUri.fsPath === preferredRootPath);
-    if (matchingRoot) {
-      return matchingRoot;
-    }
+function repositorySelectionPriority(repository: Repository, active: Repository | null, preferredRootPath?: string): number {
+  let priority = 0;
+  if (preferredRootPath && repository.rootUri.fsPath === preferredRootPath) {
+    priority += 2;
   }
-
-  const active = activeRepository(git);
-  return active ? repositories.find(repository => repository === active) : undefined;
+  if (repository === active) {
+    priority += 1;
+  }
+  return priority;
 }
 
-async function pickRepository(repositories: Repository[]): Promise<Repository | undefined> {
-  const picks: RepositoryPick[] = repositories.map(repository => ({
+function repositoryDescription(repository: Repository, active: Repository | null, preferredRootPath?: string): string | undefined {
+  const hints: string[] = [];
+  if (preferredRootPath && repository.rootUri.fsPath === preferredRootPath) {
+    hints.push('issue row');
+  }
+  if (repository === active) {
+    hints.push('active editor');
+  }
+
+  return [repository.state.HEAD?.name, hints.join(', ')].filter(Boolean).join(' - ') || undefined;
+}
+
+async function pickRepository(
+  repositories: Repository[],
+  git: API,
+  preferredRootPath?: string
+): Promise<Repository | undefined> {
+  const active = activeRepository(git);
+  const sortedRepositories = [...repositories].sort((left, right) =>
+    repositorySelectionPriority(right, active, preferredRootPath)
+      - repositorySelectionPriority(left, active, preferredRootPath)
+  );
+  const picks: RepositoryPick[] = sortedRepositories.map(repository => ({
     label: path.basename(repository.rootUri.fsPath),
-    description: repository.state.HEAD?.name,
+    description: repositoryDescription(repository, active, preferredRootPath),
     detail: repository.rootUri.fsPath,
     repository
   }));
@@ -230,10 +250,10 @@ async function createBranch(repository: Repository, branchName: string, baseRef:
 function successMessage(issueNumber: number, branchName: string, repository: Repository, result: CheckoutResult): string {
   const repoPath = repository.rootUri.fsPath;
   if (result.kind === 'created') {
-    return `Created and checked out branch ${branchName} from ${result.baseRef} for issue #${issueNumber} in ${repoPath}.`;
+    return `Created and checked out branch ${branchName} from ${result.baseRef} in existing local worktree ${repoPath} for issue #${issueNumber}.`;
   }
 
-  return `Checked out existing branch ${branchName} for issue #${issueNumber} in ${repoPath}.`;
+  return `Checked out existing branch ${branchName} in existing local worktree ${repoPath} for issue #${issueNumber}.`;
 }
 
 async function getGitApi(): Promise<API | undefined> {
@@ -277,8 +297,9 @@ export async function startWorkOnIssueCommand(
       return;
     }
 
-    const selectedRepository = preferredRepository(matchingRepositories, git, preferredRootPath)
-      ?? (matchingRepositories.length === 1 ? matchingRepositories[0] : await pickRepository(matchingRepositories));
+    const selectedRepository = matchingRepositories.length === 1
+      ? matchingRepositories[0]
+      : await pickRepository(matchingRepositories, git, preferredRootPath);
     if (!selectedRepository) {
       return;
     }

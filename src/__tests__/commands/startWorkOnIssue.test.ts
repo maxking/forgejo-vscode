@@ -130,10 +130,10 @@ describe('startWorkOnIssueCommand', () => {
     expect(repository.createBranch).toHaveBeenCalledWith('feat/188-add-start-work-on-issue-command', true, 'origin/master');
     expect(repository.checkout).not.toHaveBeenCalled();
     expect(logInfo).toHaveBeenCalledWith(
-      'Created and checked out branch feat/188-add-start-work-on-issue-command from origin/master for issue #188 in /workspace/repo.'
+      'Created and checked out branch feat/188-add-start-work-on-issue-command from origin/master in existing local worktree /workspace/repo for issue #188.'
     );
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Created and checked out branch feat/188-add-start-work-on-issue-command from origin/master for issue #188 in /workspace/repo.'
+      'Created and checked out branch feat/188-add-start-work-on-issue-command from origin/master in existing local worktree /workspace/repo for issue #188.'
     );
   });
 
@@ -149,6 +149,65 @@ describe('startWorkOnIssueCommand', () => {
 
     expect(first.createBranch).not.toHaveBeenCalled();
     expect(second.createBranch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true, 'origin/master');
+  });
+
+  it('shows the repository picker when multiple matches include the issue tree repository', async () => {
+    const issueTreeRepository = createRepository('/workspace/repo', 'https://git.example.com/owner/repo.git');
+    const otherRepository = createRepository('/workspace/other-worktree', 'https://git.example.com/owner/repo.git');
+    mockGitApi([issueTreeRepository, otherRepository]);
+    (vscode.window.showQuickPick as jest.Mock)
+      .mockResolvedValueOnce({ repository: otherRepository })
+      .mockResolvedValueOnce({ branchName: 'issue/188-add-start-work-on-issue-command' });
+
+    await startWorkOnIssueCommand(createIssueTreeItem('/workspace/repo'));
+
+    expect(vscode.window.showQuickPick).toHaveBeenNthCalledWith(1, [
+      expect.objectContaining({
+        detail: '/workspace/repo',
+        description: 'main - issue row',
+        repository: issueTreeRepository,
+      }),
+      expect.objectContaining({
+        detail: '/workspace/other-worktree',
+        description: 'main',
+        repository: otherRepository,
+      }),
+    ], expect.objectContaining({
+      placeHolder: 'Select the local repository for this issue',
+    }));
+    expect(issueTreeRepository.createBranch).not.toHaveBeenCalled();
+    expect(otherRepository.createBranch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true, 'origin/master');
+  });
+
+  it('shows the repository picker when multiple matches include the active editor repository', async () => {
+    const active = createRepository('/workspace/active', 'https://git.example.com/owner/repo.git');
+    const selected = createRepository('/workspace/selected', 'https://git.example.com/owner/repo.git');
+    (vscode.window as any).activeTextEditor = {
+      document: { uri: vscode.Uri.file('/workspace/active/file.ts') },
+    };
+    mockGitApi([active, selected], active);
+    (vscode.window.showQuickPick as jest.Mock)
+      .mockResolvedValueOnce({ repository: selected })
+      .mockResolvedValueOnce({ branchName: 'issue/188-add-start-work-on-issue-command' });
+
+    await startWorkOnIssueCommand(issue as any, 'owner', 'repo', 'https://git.example.com');
+
+    expect(vscode.window.showQuickPick).toHaveBeenNthCalledWith(1, [
+      expect.objectContaining({
+        detail: '/workspace/active',
+        description: 'main - active editor',
+        repository: active,
+      }),
+      expect.objectContaining({
+        detail: '/workspace/selected',
+        description: 'main',
+        repository: selected,
+      }),
+    ], expect.objectContaining({
+      placeHolder: 'Select the local repository for this issue',
+    }));
+    expect(active.createBranch).not.toHaveBeenCalled();
+    expect(selected.createBranch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true, 'origin/master');
   });
 
   it('matches an SSH remote by hostname when the instance URL has an HTTP port', async () => {
@@ -180,7 +239,7 @@ describe('startWorkOnIssueCommand', () => {
 
     expect(repository.createBranch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true, 'origin/main');
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Created and checked out branch issue/188-add-start-work-on-issue-command from origin/main for issue #188 in /workspace/repo.'
+      'Created and checked out branch issue/188-add-start-work-on-issue-command from origin/main in existing local worktree /workspace/repo for issue #188.'
     );
   });
 
@@ -223,10 +282,10 @@ describe('startWorkOnIssueCommand', () => {
     expect(repository.createBranch).not.toHaveBeenCalled();
     expect(repository.checkout).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command');
     expect(logInfo).toHaveBeenCalledWith(
-      'Checked out existing branch issue/188-add-start-work-on-issue-command for issue #188 in /workspace/repo.'
+      'Checked out existing branch issue/188-add-start-work-on-issue-command in existing local worktree /workspace/repo for issue #188.'
     );
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Checked out existing branch issue/188-add-start-work-on-issue-command for issue #188 in /workspace/repo.'
+      'Checked out existing branch issue/188-add-start-work-on-issue-command in existing local worktree /workspace/repo for issue #188.'
     );
   });
 
