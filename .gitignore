@@ -16,3 +16,5 @@ forgejo-data/
 .beads/
 # Work-in-progress assets
 forgejo_icon.png
+.antigravitycli/
+.vscode/
