@@ -126,13 +126,3 @@ git worktree add .worktrees/feature-auth-fix -b feature-auth-fix
 cd .worktrees/feature-auth-fix
 ```
 
-Why worktrees?
-
-Keep master/main clean and stable
-Parallel work on multiple features
-Easy context switching without stashing
-Isolated environments per feature
-After creating worktree:
-
-Switch to the worktree directory
-Begin coding in the worktree
