@@ -24,6 +24,11 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ## News
 
+### 0.3.22
+
+- Development version after the 0.3.21 release.
+- **Open VSX workflow schema publishing fix:** the vendored workflow schema now avoids password-shaped string mappings that Open VSX secret scanning can mistake for credentials during publication.
+
 ### 0.3.21
 
 - Development version after the 0.3.20 release.
@@ -37,7 +42,6 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - **Richer pull request activity details:** PR detail timelines now normalize Forgejo commit payloads before rendering, so commit authors, timestamps, messages, branch actions, merge commits, and commit references show useful context instead of "Unknown" or empty commit rows.
 - **Custom SSH clone ports ([#26](https://codeberg.org/maxking/forgejo-vscode/issues/26)):** configured instances can now set `sshPort` so VS Code's Forgejo clone picker uses the right SSH port for self-hosted servers.
 - **Workflow validation and failed CI navigation ([#191](https://git.araj.me/maxking/forgejo-vscode/issues/191)):** Forgejo-compatible workflow files now get local diagnostics, and failed CI rows link directly to logs and matching workflow files.
-- **Open VSX workflow schema publishing fix:** the vendored workflow schema now avoids password-shaped string mappings that Open VSX secret scanning can mistake for credentials during publication.
 
 ### 0.3.20
 
