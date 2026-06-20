@@ -2058,7 +2058,9 @@
       "mapping": {
         "properties": {
           "username": "non-empty-string",
-          "password": "non-empty-string"
+          "password": {
+            "type": "non-empty-string"
+          }
         }
       }
     },
@@ -2131,7 +2133,9 @@
       "mapping": {
         "properties": {
           "username": "non-empty-string",
-          "password": "non-empty-string"
+          "password": {
+            "type": "non-empty-string"
+          }
         }
       }
     },

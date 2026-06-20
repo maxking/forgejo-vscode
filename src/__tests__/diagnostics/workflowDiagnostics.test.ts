@@ -17,6 +17,8 @@ describe('workflowDiagnostics', () => {
     expect(workflowSchema.version).toBe('workflow-v1.0');
     expect(workflowSchema.definitions['workflow-root']).toBeDefined();
     expect(workflowSchema.definitions['workflow-root'].mapping.properties['enable-openid-connect']).toBe('workflow-enable-openid-connect');
+    expect(workflowSchema.definitions['container-registry-credentials'].mapping.properties.password).toEqual({ type: 'non-empty-string' });
+    expect(workflowSchema.definitions['service-container-registry-credentials'].mapping.properties.password).toEqual({ type: 'non-empty-string' });
   });
 
   test('contributes the Forgejo schema to YAML language tooling', () => {
