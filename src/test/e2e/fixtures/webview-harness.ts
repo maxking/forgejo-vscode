@@ -124,6 +124,7 @@ export class WebviewHarness {
 
       <div class="pr-meta">
         <span id="pr-status-badge" class="status-badge"></span>
+        <span id="pr-mergeability-badge" class="mergeability-badge" style="display: none;"></span>
         <span class="pr-author">
           by <img id="author-avatar" src="" alt="" class="avatar" style="display:none">
           <span id="author-name"></span>
@@ -514,6 +515,7 @@ export interface PRDetailData {
     base?: { ref: string };
     head?: { ref: string; sha?: string };
     merge_commit_sha?: string;
+    mergeable?: boolean | null;
   };
   activities: Array<{
     type: string;

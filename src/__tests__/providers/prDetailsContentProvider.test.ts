@@ -82,6 +82,43 @@ describe('PRDetailsContentProvider', () => {
       expect(content).toContain('Build passed');
     });
 
+    test('should include mergeability for clean open PRs', async () => {
+      const uri = createPRDetailsUri('owner', 'repo', 42);
+      mockClient.getPullRequestDetails.mockResolvedValue({
+        ...mockPRWithRefs,
+        mergeable: true
+      });
+      mockClient.getCommitStatuses.mockResolvedValue([]);
+
+      const content = await provider.provideTextDocumentContent(uri);
+
+      expect(content).toContain('**Mergeability:** Ready to merge - Forgejo reports this pull request can be merged cleanly');
+    });
+
+    test('should include conflict status for unmergeable open PRs', async () => {
+      const uri = createPRDetailsUri('owner', 'repo', 42);
+      mockClient.getPullRequestDetails.mockResolvedValue({
+        ...mockPRWithRefs,
+        mergeable: false
+      });
+      mockClient.getCommitStatuses.mockResolvedValue([]);
+
+      const content = await provider.provideTextDocumentContent(uri);
+
+      expect(content).toContain('**Mergeability:** Merge conflicts - Forgejo reports this pull request cannot be merged cleanly');
+    });
+
+    test('should include unknown mergeability when Forgejo omits the field', async () => {
+      const uri = createPRDetailsUri('owner', 'repo', 42);
+      const { mergeable: _mergeable, ...prWithoutMergeable } = mockPRWithRefs;
+      mockClient.getPullRequestDetails.mockResolvedValue(prWithoutMergeable as typeof mockPRWithRefs);
+      mockClient.getCommitStatuses.mockResolvedValue([]);
+
+      const content = await provider.provideTextDocumentContent(uri);
+
+      expect(content).toContain('**Mergeability:** Mergeability unknown - Forgejo has not reported whether this pull request can be merged');
+    });
+
     test('should include labels in output', async () => {
       const uri = createPRDetailsUri('owner', 'repo', 42);
       mockClient.getPullRequestDetails.mockResolvedValue(mockPRWithRefs);

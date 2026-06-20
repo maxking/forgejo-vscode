@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import { ForgejoClient, ForgejoItemQueryOptions, PullRequestPage } from '../api/forgejoClient';
-import { PullRequestListItem, PullRequestFile } from '../models/pullRequest';
+import { getPullRequestMergeability, PullRequestFile, PullRequestListItemWithMergeability } from '../models/pullRequest';
 import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoConfigFor, getForgejoRepositoryConfigs } from '../utils/config';
 
 const PULL_REQUEST_PAGE_SIZE = 50;
+const PULL_REQUEST_MERGEABILITY_BATCH_SIZE = 5;
 
 type PRQueryKind = 'assigned' | 'review' | 'created' | 'mentioned';
 type PRGroupKind = 'open' | 'draft' | 'merged' | 'closed' | PRQueryKind;
@@ -66,7 +67,7 @@ export class PRTreeItem extends vscode.TreeItem {
   public headRef?: string;
 
   constructor(
-    public readonly pr: PullRequestListItem,
+    public readonly pr: PullRequestListItemWithMergeability,
     public readonly htmlUrl: string,
     public readonly owner: string,
     public readonly repo: string,
@@ -75,13 +76,20 @@ export class PRTreeItem extends vscode.TreeItem {
   ) {
     super(`#${pr.number}: ${pr.title}`, vscode.TreeItemCollapsibleState.Collapsed);
 
-    this.tooltip = `${pr.title}\nby ${pr.user.login}\nState: ${pr.state}${pr.merged ? ' (merged)' : ''}${pr.draft ? ' (draft)' : ''}`;
-    this.description = `by ${pr.user.login}`;
+    const mergeability = getPullRequestMergeability(pr);
+    const mergeabilitySuffix = mergeability.state === 'notApplicable' ? '' : `\nMergeability: ${mergeability.label}`;
+
+    this.tooltip = `${pr.title}\nby ${pr.user.login}\nState: ${pr.state}${pr.merged ? ' (merged)' : ''}${pr.draft ? ' (draft)' : ''}${mergeabilitySuffix}`;
+    this.description = mergeability.state === 'notApplicable'
+      ? `by ${pr.user.login}`
+      : `by ${pr.user.login} - ${mergeability.label}`;
     this.contextValue = 'pullRequest';
     this.id = itemIdParts('pr', config?.instanceUrl, owner, repo, pr.number, treeContext).map(treeIdPart).join('/');
 
     // Set icon based on state
-    if (pr.merged) {
+    if (mergeability.state === 'conflicting') {
+      this.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('problemsWarningIcon.foreground'));
+    } else if (pr.merged) {
       this.iconPath = new vscode.ThemeIcon('git-merge', new vscode.ThemeColor('gitDecoration.addedResourceForeground'));
     } else if (pr.draft) {
       this.iconPath = new vscode.ThemeIcon('git-pull-request-draft');
@@ -101,7 +109,7 @@ export class PRGroupItem extends vscode.TreeItem {
   constructor(
     public readonly label: string,
     public readonly kind: PRGroupKind,
-    public readonly pullRequests: PullRequestListItem[] | null,
+    public readonly pullRequests: PullRequestListItemWithMergeability[] | null,
     public readonly isQueryGroup = false
   ) {
     const collapsibleState = kind === 'closed' || kind === 'merged' || isQueryGroup
@@ -196,7 +204,7 @@ class PRMessageItem extends vscode.TreeItem {
 export class PRFileItem extends vscode.TreeItem {
   constructor(
     public readonly file: PullRequestFile,
-    public readonly pr: PullRequestListItem,
+    public readonly pr: PullRequestListItemWithMergeability,
     public readonly owner: string,
     public readonly repo: string,
     public readonly baseRef: string,
@@ -259,7 +267,7 @@ class PRLoadingItem extends vscode.TreeItem {
  */
 export class PROverviewItem extends vscode.TreeItem {
   constructor(
-    public readonly pr: PullRequestListItem,
+    public readonly pr: PullRequestListItemWithMergeability,
     public readonly owner: string,
     public readonly repo: string,
     public readonly instanceUrl?: string,
@@ -282,7 +290,7 @@ type PRTreeElement = PRRepositoryItem | PRQueryRootItem | PRTreeItem | PRGroupIt
 type PullRequestListState = 'open' | 'closed';
 
 interface PullRequestPageCache {
-  pullRequests: PullRequestListItem[];
+  pullRequests: PullRequestListItemWithMergeability[];
   nextPage: number;
   hasMore: boolean;
   inFlightPagePromise?: Promise<PullRequestPageCache>;
@@ -384,15 +392,16 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
         }
 
         const pullRequests = await this.getPullRequestsForGroup(element, config);
-        element.description = this.groupDescription(element, config, pullRequests.length);
-        if (pullRequests.length === 0) {
+        const displayPullRequests = await this.hydrateMergeabilityForVisiblePullRequests(config, pullRequests);
+        element.description = this.groupDescription(element, config, displayPullRequests.length);
+        if (displayPullRequests.length === 0) {
           const children: PRTreeElement[] = [new PRMessageItem(`No ${this.emptyDescriptionForGroup(element)} pull requests found`, false, element.id ?? element.kind)];
           if (this.canLoadMorePullRequests(element, config)) {
             children.push(new PRLoadMoreItem(element, config));
           }
           return children;
         }
-        const children: PRTreeElement[] = pullRequests.map(pr => new PRTreeItem(pr, pr.html_url, config.owner, config.repo, config, element.kind));
+        const children: PRTreeElement[] = displayPullRequests.map(pr => new PRTreeItem(pr, pr.html_url, config.owner, config.repo, config, element.kind));
         if (this.canLoadMorePullRequests(element, config)) {
           children.push(new PRLoadMoreItem(element, config));
         }
@@ -544,7 +553,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     return Object.assign(group, { config });
   }
 
-  private async getPullRequestsForGroup(group: PRGroupItem, config: ForgejoConfig): Promise<PullRequestListItem[]> {
+  private async getPullRequestsForGroup(group: PRGroupItem, config: ForgejoConfig): Promise<PullRequestListItemWithMergeability[]> {
     if (group.pullRequests) {
       return group.pullRequests;
     }
@@ -633,7 +642,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     }
   }
 
-  private appendUniquePullRequests(cache: PullRequestPageCache, pullRequests: PullRequestListItem[]): void {
+  private appendUniquePullRequests(cache: PullRequestPageCache, pullRequests: PullRequestListItemWithMergeability[]): void {
     const seenNumbers = new Set(cache.pullRequests.map(pr => pr.number));
     for (const pullRequest of pullRequests) {
       if (seenNumbers.has(pullRequest.number)) {
@@ -642,6 +651,32 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       seenNumbers.add(pullRequest.number);
       cache.pullRequests.push(pullRequest);
     }
+  }
+
+  private async hydrateMergeabilityForVisiblePullRequests(
+    config: ForgejoConfig,
+    pullRequests: PullRequestListItemWithMergeability[]
+  ): Promise<PullRequestListItemWithMergeability[]> {
+    const needsHydration = pullRequests.filter(pr => pr.state === 'open' && !pr.draft && pr.mergeable === undefined);
+    if (needsHydration.length === 0) {
+      return pullRequests;
+    }
+
+    const client = new ForgejoClient(config.instanceUrl, config.token);
+    for (let index = 0; index < needsHydration.length; index += PULL_REQUEST_MERGEABILITY_BATCH_SIZE) {
+      const batch = needsHydration.slice(index, index + PULL_REQUEST_MERGEABILITY_BATCH_SIZE);
+      await Promise.all(batch.map(async pr => {
+        try {
+          const details = await client.getPullRequestDetails(config.owner, config.repo, pr.number);
+          pr.mergeable = details.mergeable;
+        } catch (error) {
+          console.warn(`[Forgejo] Could not fetch mergeability for PR #${pr.number}:`, error);
+          pr.mergeable = null;
+        }
+      }));
+    }
+
+    return pullRequests;
   }
 
   private async fetchPullRequestsPageUncached(config: ForgejoConfig, groupKind: PRGroupKind, page: number): Promise<PullRequestPage> {

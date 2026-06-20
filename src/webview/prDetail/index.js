@@ -16,6 +16,7 @@
   const prNumberEl = document.getElementById('pr-number');
   const copyUrlBtn = document.getElementById('copy-url-btn');
   const prStatusBadge = document.getElementById('pr-status-badge');
+  const prMergeabilityBadge = document.getElementById('pr-mergeability-badge');
   const authorAvatar = document.getElementById('author-avatar');
   const authorName = document.getElementById('author-name');
   const baseBranch = document.getElementById('base-branch');
@@ -390,6 +391,19 @@
     prStatusBadge.textContent = statusText;
     prStatusBadge.className = 'status-badge ' + statusClass;
 
+    const mergeability = getMergeability(pr);
+    if (mergeability.state === 'notApplicable') {
+      prMergeabilityBadge.style.display = 'none';
+      prMergeabilityBadge.textContent = '';
+      prMergeabilityBadge.title = '';
+      prMergeabilityBadge.className = 'mergeability-badge';
+    } else {
+      prMergeabilityBadge.style.display = 'inline-flex';
+      prMergeabilityBadge.textContent = mergeability.label;
+      prMergeabilityBadge.title = mergeability.description;
+      prMergeabilityBadge.className = 'mergeability-badge ' + mergeability.state;
+    }
+
     // Update author
     if (pr.user && pr.user.avatar_url) {
       authorAvatar.src = pr.user.avatar_url;
@@ -457,12 +471,25 @@
     if (pr.state === 'open' && !pr.draft) {
       mergeActionsEl.style.display = 'flex';
       revertActionsEl.style.display = 'none';
+      if (mergeBtn) {
+        const hasConflicts = mergeability.state === 'conflicting';
+        mergeBtn.disabled = hasConflicts;
+        mergeBtn.title = hasConflicts ? mergeability.description : '';
+      }
     } else if (pr.merged) {
       mergeActionsEl.style.display = 'none';
       revertActionsEl.style.display = 'flex';
+      if (mergeBtn) {
+        mergeBtn.disabled = false;
+        mergeBtn.title = '';
+      }
     } else {
       mergeActionsEl.style.display = 'none';
       revertActionsEl.style.display = 'none';
+      if (mergeBtn) {
+        mergeBtn.disabled = false;
+        mergeBtn.title = '';
+      }
     }
 
     // Update activity timeline
@@ -479,6 +506,42 @@
     // Show content
     setLoading(false);
     console.log('[Forgejo Webview] PR details updated successfully');
+  }
+
+  function getMergeability(pr) {
+    if (pr.merged || pr.state === 'closed' || pr.draft) {
+      return {
+        state: 'notApplicable',
+        label: 'Not applicable',
+        description: pr.merged
+          ? 'Already merged'
+          : pr.draft
+          ? 'Draft pull requests cannot be merged yet'
+          : 'Closed pull requests cannot be merged'
+      };
+    }
+
+    if (pr.mergeable === true) {
+      return {
+        state: 'mergeable',
+        label: 'Ready to merge',
+        description: 'Forgejo reports this pull request can be merged cleanly'
+      };
+    }
+
+    if (pr.mergeable === false) {
+      return {
+        state: 'conflicting',
+        label: 'Merge conflicts',
+        description: 'Forgejo reports this pull request cannot be merged cleanly'
+      };
+    }
+
+    return {
+      state: 'unknown',
+      label: 'Mergeability unknown',
+      description: 'Forgejo has not reported whether this pull request can be merged'
+    };
   }
 
   /**

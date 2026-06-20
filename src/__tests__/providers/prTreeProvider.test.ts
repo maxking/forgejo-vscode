@@ -47,6 +47,7 @@ describe('PRTreeProvider', () => {
     mockClient = {
       getPullRequests: jest.fn(),
       getPullRequestsPage: jest.fn(),
+      getPullRequestDetails: jest.fn(),
       hasPullRequests: jest.fn(),
       getPullRequestFiles: jest.fn(),
       getPullRequestRefs: jest.fn(),
@@ -74,6 +75,7 @@ describe('PRTreeProvider', () => {
       hasMore: false
     });
     mockClient.hasPullRequests.mockResolvedValue(false);
+    mockClient.getPullRequestDetails.mockResolvedValue({ ...mockPR, mergeable: true } as any);
     mockClient.getAuthenticatedUserLogin.mockResolvedValue('alice');
     provider = new PRTreeProvider();
 
@@ -222,7 +224,7 @@ describe('PRTreeProvider', () => {
 
       expect(prItem.label).toBe('#42: Test PR');
       expect(prItem.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
-      expect(prItem.description).toBe('by testuser');
+      expect(prItem.description).toBe('by testuser - Mergeability unknown');
       expect(prItem.contextValue).toBe('pullRequest');
       expect(prItem.id).toBe('pr/https%3A%2F%2Fgit.example.com/owner/repo/42');
       expect(prItem.command).toBeUndefined();
@@ -295,6 +297,25 @@ describe('PRTreeProvider', () => {
       expect(prItem.iconPath).toBeInstanceOf(vscode.ThemeIcon);
       const icon = prItem.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('git-pull-request');
+    });
+
+    test('should show merge conflict state for unmergeable open PRs', () => {
+      const conflictingPR: PullRequestListItem = { ...mockPR, mergeable: false } as PullRequestListItem;
+      const prItem = new PRTreeItem(conflictingPR, conflictingPR.html_url, 'owner', 'repo');
+
+      expect(prItem.description).toBe('by testuser - Merge conflicts');
+      expect(prItem.tooltip).toContain('Mergeability: Merge conflicts');
+      expect(prItem.iconPath).toBeInstanceOf(vscode.ThemeIcon);
+      const icon = prItem.iconPath as vscode.ThemeIcon;
+      expect(icon.id).toBe('warning');
+    });
+
+    test('should show mergeable state in tooltip for clean open PRs', () => {
+      const mergeablePR: PullRequestListItem = { ...mockPR, mergeable: true } as PullRequestListItem;
+      const prItem = new PRTreeItem(mergeablePR, mergeablePR.html_url, 'owner', 'repo');
+
+      expect(prItem.description).toBe('by testuser - Ready to merge');
+      expect(prItem.tooltip).toContain('Mergeability: Ready to merge');
     });
   });
 
@@ -439,6 +460,26 @@ describe('PRTreeProvider', () => {
       expect((openGroup as vscode.TreeItem).id).toBe('pr-group/https%3A%2F%2Fgit.example.com/test-owner/test-repo/open');
       const openItems = await provider.getChildren(openGroup);
       expect((openItems[0] as PRTreeItem).pr).toEqual(openPR);
+    });
+
+    test('should hydrate missing open PR mergeability from PR details before rendering rows', async () => {
+      const openPR: PullRequestListItem = { ...mockPR, state: 'open', draft: false, merged: false };
+      mockClient.getPullRequestsPage.mockResolvedValue({
+        items: [openPR],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
+      mockClient.getPullRequestDetails.mockResolvedValue({ ...mockPR, mergeable: false } as any);
+
+      const children = await provider.getChildren();
+      const openGroup = children.find(child => (child as any).label === 'Open');
+      const openItems = await provider.getChildren(openGroup);
+      const prItem = openItems[0] as PRTreeItem;
+
+      expect(mockClient.getPullRequestDetails).toHaveBeenCalledWith('test-owner', 'test-repo', 42);
+      expect(prItem.pr.mergeable).toBe(false);
+      expect(prItem.description).toBe('by testuser - Merge conflicts');
     });
 
     test('should not fire tree refresh while resolving group children', async () => {

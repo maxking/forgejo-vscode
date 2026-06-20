@@ -547,6 +547,7 @@ export class PRDetailWebviewProvider {
 
       <div class="pr-meta">
         <span id="pr-status-badge" class="status-badge"></span>
+        <span id="pr-mergeability-badge" class="mergeability-badge" style="display: none;"></span>
         <span class="pr-author">
           by <img id="author-avatar" src="" alt="" class="avatar" style="display:none">
           <span id="author-name"></span>

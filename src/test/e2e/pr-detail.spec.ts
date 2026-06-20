@@ -66,6 +66,57 @@ test.describe('PR Detail Webview', () => {
     await expect(badge).toHaveClass(/\bdraft\b/);
   });
 
+  test('shows ready-to-merge badge for mergeable open PRs', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({
+      state: 'open',
+      draft: false,
+      mergeable: true,
+    }));
+
+    const badge = page.locator('#pr-mergeability-badge');
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveText('Ready to merge');
+    await expect(badge).toHaveClass(/\bmergeable\b/);
+    await expect(page.locator('#merge-btn')).toBeEnabled();
+  });
+
+  test('shows conflict badge and disables merge for unmergeable open PRs', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({
+      state: 'open',
+      draft: false,
+      mergeable: false,
+    }));
+
+    const badge = page.locator('#pr-mergeability-badge');
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveText('Merge conflicts');
+    await expect(badge).toHaveClass(/\bconflicting\b/);
+    await expect(page.locator('#merge-actions')).toBeVisible();
+    await expect(page.locator('#merge-btn')).toBeDisabled();
+  });
+
+  test('shows unknown mergeability badge when Forgejo omits mergeability', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({
+      state: 'open',
+      draft: false,
+    }));
+
+    const badge = page.locator('#pr-mergeability-badge');
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveText('Mergeability unknown');
+    await expect(badge).toHaveClass(/\bunknown\b/);
+  });
+
+  test('hides mergeability badge for draft PRs', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({
+      state: 'open',
+      draft: true,
+      mergeable: false,
+    }));
+
+    await expect(page.locator('#pr-mergeability-badge')).toBeHidden();
+  });
+
   test('displays author name', async ({ page }) => {
     await harness.sendPRUpdate(createMockPRData({
       user: { login: 'octocat' },

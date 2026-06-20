@@ -145,6 +145,31 @@ body {
   color: #ffffff;
 }
 
+.mergeability-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--vscode-badge-background);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.mergeability-badge.mergeable {
+  color: #2da042;
+  border-color: #2da042;
+}
+
+.mergeability-badge.conflicting {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  border-color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.mergeability-badge.unknown {
+  color: var(--vscode-descriptionForeground);
+  border-color: var(--vscode-descriptionForeground);
+}
+
 .pr-author {
   display: flex;
   align-items: center;
