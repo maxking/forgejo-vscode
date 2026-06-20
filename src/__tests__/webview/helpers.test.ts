@@ -219,10 +219,43 @@ describe('Webview Helpers', () => {
       expect(renderIssueTimelineEvent({ event: 'comment' })).toBe('commented');
     });
 
-    test('should render label event with label name', () => {
-      const result = renderIssueTimelineEvent({ event: 'label', label: { name: 'bug' } });
-      expect(result).toContain('bug');
-      expect(result).toContain('changed label');
+    test('should render Forgejo label add event with label name', () => {
+      expect(renderIssueTimelineEvent({ event: 'label', body: '1', label: { name: 'bug' } })).toBe(
+        'added label <strong>bug</strong>'
+      );
+    });
+
+    test('should render Forgejo label remove event with label name', () => {
+      expect(renderIssueTimelineEvent({ event: 'label', body: '', label: { name: 'priority/high' } })).toBe(
+        'removed label <strong>priority/high</strong>'
+      );
+    });
+
+    test('should render GitHub-style label events with label names', () => {
+      expect(renderIssueTimelineEvent({ event: 'labeled', label: { name: 'feature' } })).toBe(
+        'added label <strong>feature</strong>'
+      );
+      expect(renderIssueTimelineEvent({ event: 'unlabeled', label: { name: 'feature' } })).toBe(
+        'removed label <strong>feature</strong>'
+      );
+    });
+
+    test('should render tracked time added for manual time events', () => {
+      expect(renderIssueTimelineEvent({ event: 'add_time_manual', tracked_time: { time: 5400 } })).toBe(
+        'added <strong>1h 30m</strong> tracked time'
+      );
+    });
+
+    test('should render tracked time added for stopped timers', () => {
+      expect(renderIssueTimelineEvent({ event: 'stop_tracking', tracked_time: { time: 90 } })).toBe(
+        'stopped time tracking and added <strong>1m 30s</strong>'
+      );
+    });
+
+    test('should render tracked time removed for deleted time events', () => {
+      expect(renderIssueTimelineEvent({ event: 'delete_time_manual', tracked_time: { time: 45 } })).toBe(
+        'removed <strong>45s</strong> tracked time'
+      );
     });
 
     test('should render change_title event with old and new titles', () => {
@@ -256,6 +289,21 @@ describe('Webview Helpers', () => {
 
     test('should render comment event as "commented"', () => {
       expect(renderPRTimelineEvent({ event: 'comment' })).toBe('commented');
+    });
+
+    test('should render Forgejo label add and remove events with label names', () => {
+      expect(renderPRTimelineEvent({ event: 'label', body: '1', label: { name: 'type/feature' } })).toBe(
+        'added label <strong>type/feature</strong>'
+      );
+      expect(renderPRTimelineEvent({ event: 'label', body: '', label: { name: 'type/feature' } })).toBe(
+        'removed label <strong>type/feature</strong>'
+      );
+    });
+
+    test('should render tracked time details for PR timeline events', () => {
+      expect(renderPRTimelineEvent({ event: 'add_time_manual', tracked_time: { time: 3661 } })).toBe(
+        'added <strong>1h 1m 1s</strong> tracked time'
+      );
     });
 
     test('should render close event for pull requests', () => {

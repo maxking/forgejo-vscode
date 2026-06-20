@@ -69,6 +69,8 @@ export function formatTimeAgo(dateString: string | null | undefined, now?: Date)
 export interface TimelineActivity {
   event?: string;
   type?: string;
+  body?: string;
+  content?: string;
   label?: { name?: string };
   old_title?: string;
   new_title?: string;
@@ -94,6 +96,14 @@ export interface TimelineActivity {
     html_url?: string;
     message?: string;
   };
+  tracked_time?: {
+    time?: number;
+    seconds?: number;
+    duration?: string;
+  };
+  time?: number | { time?: number; seconds?: number; duration?: string };
+  seconds?: number;
+  duration?: string;
 }
 
 export function getTimelineEventName(activity: TimelineActivity): string | undefined {
@@ -188,9 +198,69 @@ function buildEventMap(itemType: 'issue' | 'pull request'): Record<string, strin
   return { ...resolvedShared, ...typeSpecific };
 }
 
+function getTimelineBody(activity: TimelineActivity): string {
+  return [activity.body, activity.content].find((value) => typeof value === 'string') ?? '';
+}
+
+function getLabelEventVerb(activity: TimelineActivity, eventName: string): 'added' | 'removed' | undefined {
+  if (eventName === 'labeled') return 'added';
+  if (eventName === 'unlabeled') return 'removed';
+
+  if (eventName !== 'label') return undefined;
+
+  const body = getTimelineBody(activity).trim();
+  if (body === '1') return 'added';
+  if (body.length === 0) return 'removed';
+  return undefined;
+}
+
+function getFiniteSeconds(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.floor(value));
+}
+
+function formatDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
+  return parts.join(' ');
+}
+
+function getTrackedTimeText(activity: TimelineActivity): string {
+  const trackedTime = activity.tracked_time;
+  const legacyTime = typeof activity.time === 'object' ? activity.time : undefined;
+  const seconds = [
+    getFiniteSeconds(trackedTime?.time),
+    getFiniteSeconds(trackedTime?.seconds),
+    getFiniteSeconds(legacyTime?.time),
+    getFiniteSeconds(legacyTime?.seconds),
+    getFiniteSeconds(activity.time),
+    getFiniteSeconds(activity.seconds)
+  ].find((value): value is number => value !== undefined);
+
+  if (seconds !== undefined) return formatDuration(seconds);
+
+  const duration = [trackedTime?.duration, legacyTime?.duration, activity.duration, getTimelineBody(activity)]
+    .find((value) => typeof value === 'string' && value.trim().length > 0 && value.trim() !== '1');
+  return duration?.trim() ?? '';
+}
+
 function enrichEventText(activity: TimelineActivity, eventName: string, eventText: string): string {
   if (eventName === 'label' && activity.label) {
-    return 'changed label <strong>' + escapeHtml(activity.label.name ?? '') + '</strong>';
+    const verb = getLabelEventVerb(activity, eventName);
+    if (verb) {
+      return verb + ' label <strong>' + escapeHtml(activity.label.name ?? '') + '</strong>';
+    }
+    return eventText + ' <strong>' + escapeHtml(activity.label.name ?? '') + '</strong>';
+  }
+  if ((eventName === 'labeled' || eventName === 'unlabeled') && activity.label) {
+    const verb = getLabelEventVerb(activity, eventName) ?? (eventName === 'labeled' ? 'added' : 'removed');
+    return verb + ' label <strong>' + escapeHtml(activity.label.name ?? '') + '</strong>';
   }
   if (eventName === 'change_title' && activity.old_title && activity.new_title) {
     return 'changed title from <del>' + escapeHtml(activity.old_title) + '</del> to <strong>' + escapeHtml(activity.new_title) + '</strong>';
@@ -200,6 +270,16 @@ function enrichEventText(activity: TimelineActivity, eventName: string, eventTex
   }
   if (eventName === 'milestone' && activity.milestone) {
     return 'set milestone to <strong>' + escapeHtml(activity.milestone.title ?? '') + '</strong>';
+  }
+  const trackedTimeText = getTrackedTimeText(activity);
+  if (eventName === 'add_time_manual' && trackedTimeText) {
+    return 'added <strong>' + escapeHtml(trackedTimeText) + '</strong> tracked time';
+  }
+  if (eventName === 'stop_tracking' && trackedTimeText) {
+    return 'stopped time tracking and added <strong>' + escapeHtml(trackedTimeText) + '</strong>';
+  }
+  if (eventName === 'delete_time_manual' && trackedTimeText) {
+    return 'removed <strong>' + escapeHtml(trackedTimeText) + '</strong> tracked time';
   }
   return eventText;
 }
