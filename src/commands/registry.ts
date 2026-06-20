@@ -19,6 +19,7 @@ import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
 import type { IssueLoadMoreItem, IssueRepositoryItem, IssueTreeItem } from '../providers/issueTreeProvider';
 import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem, PRLoadMoreItem } from '../providers/prTreeProvider';
+import type { RemoteRepositoryBrowseItem, RemoteRepositoryFileItem, RemoteRepositoryInstanceItem, RemoteRepositoryItem } from '../providers/remoteRepositoryTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
 
 // ---------------------------------------------------------------------------
@@ -48,9 +49,13 @@ export interface CommandMap {
   'forgejo.loadMoreIssues': [item: IssueLoadMoreItem];
   'forgejo.refreshActions': [];
   'forgejo.refreshReleases': [];
+  'forgejo.refreshRemoteRepositories': [];
   'forgejo.configureInstanceUrl': [];
   'forgejo.setAuthToken': [];
   'forgejo.selectRemote': [];
+  'forgejo.browseRemoteRepository': [item?: RemoteRepositoryInstanceItem | RemoteRepositoryBrowseItem];
+  'forgejo.selectRemoteRepositoryBranch': [item?: RemoteRepositoryItem];
+  'forgejo.openRemoteFile': [item?: RemoteRepositoryFileItem];
   'forgejo.createIssue': [];
   'forgejo.createIssueForRepository': [repositoryItem: IssueRepositoryItem];
   'forgejo.createPullRequest': [];
