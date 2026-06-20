@@ -45,6 +45,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # ~/.npm holds downloaded tarballs, which are node-version agnostic, so a
+    # single lockfile-keyed cache is shared across the forgejo-version matrix.
+    - name: Cache npm download cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-
+
     - name: Install dependencies
       run: |
         command -v jq
