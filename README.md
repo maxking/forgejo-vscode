@@ -27,6 +27,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.24
 
 - **Issue comment composer ([#200](https://git.araj.me/maxking/forgejo-vscode/issues/200)):** issue detail views now show the comment text box immediately when the selected repository has a configured token, instead of requiring a separate "+ Comment" reveal button.
+- **Issue time tracking ([#194](https://git.araj.me/maxking/forgejo-vscode/issues/194)):** issue detail pages now show tracked time, running stopwatch state, and controls to start, stop, cancel, or manually add time.
 
 ### 0.3.23
 
@@ -94,6 +95,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - Browse issues with full details and comments
 - Create new issues from within VS Code
 - Rich detail view with comment history and timeline events
+- Track time from issue details with Forgejo stopwatch and manual time entries
 
 ### Actions / CI
 - Monitor CI/CD workflow runs in a 3-level tree view (Run > Job > Step)

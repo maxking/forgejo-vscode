@@ -92,6 +92,99 @@ test.describe('Issue Detail Webview', () => {
     expect(messages).toContainEqual({ type: 'reopenIssue' });
   });
 
+  test('shows idle time tracking controls and total tracked time', async ({ page }) => {
+    const data = createMockIssueData();
+    data.timeTracking = {
+      canTrack: true,
+      totalSeconds: 3660,
+      entries: [
+        { id: 1, time: 1800, user_name: 'alice', created: '2026-01-01T00:00:00Z' },
+        { id: 2, time: 1860, user_name: 'bob', created: '2026-01-02T00:00:00Z' },
+      ],
+    };
+
+    await harness.sendIssueUpdate(data);
+
+    await expect(page.locator('#tracked-time-total')).toHaveText('1h 01m');
+    await expect(page.locator('#time-tracking-status')).toHaveText('No timer is running for this issue.');
+    await expect(page.locator('#start-timer-btn')).toBeVisible();
+    await expect(page.locator('#stop-timer-btn')).toBeHidden();
+    await expect(page.locator('.tracked-time-entry')).toHaveCount(2);
+  });
+
+  test('sends startTimer message on Start Timer click', async ({ page }) => {
+    await harness.sendIssueUpdate(createMockIssueData());
+
+    await page.locator('#start-timer-btn').click();
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'startTimer' });
+  });
+
+  test('shows running timer controls and sends stop and cancel messages', async ({ page }) => {
+    const data = createMockIssueData();
+    data.timeTracking = {
+      canTrack: true,
+      totalSeconds: 120,
+      entries: [],
+      currentStopwatch: {
+        issue_index: 10,
+        issue_title: 'Bug report',
+        repo_name: 'repo',
+        repo_owner_name: 'owner',
+        seconds: 90,
+      },
+    };
+
+    await harness.sendIssueUpdate(data);
+
+    await expect(page.locator('#time-tracking-status')).toContainText('Timer running');
+    await expect(page.locator('#start-timer-btn')).toBeHidden();
+    await expect(page.locator('#stop-timer-btn')).toBeVisible();
+    await expect(page.locator('#cancel-timer-btn')).toBeVisible();
+
+    await page.locator('#stop-timer-btn').click();
+    await harness.sendIssueUpdate(data);
+    await page.locator('#cancel-timer-btn').click();
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'stopTimer' });
+    expect(messages).toContainEqual({ type: 'cancelTimer' });
+  });
+
+  test('disables start when another stopwatch is running', async ({ page }) => {
+    const data = createMockIssueData();
+    data.timeTracking = {
+      canTrack: true,
+      totalSeconds: 0,
+      entries: [],
+      otherStopwatch: {
+        issue_index: 99,
+        issue_title: 'Other issue',
+        repo_name: 'repo',
+        repo_owner_name: 'owner',
+        seconds: 60,
+      },
+    };
+
+    await harness.sendIssueUpdate(data);
+
+    await expect(page.locator('#time-tracking-status')).toContainText('Timer running on owner/repo#99');
+    await expect(page.locator('#start-timer-btn')).toBeDisabled();
+  });
+
+  test('sends addManualTime message from manual time form', async ({ page }) => {
+    await harness.sendIssueUpdate(createMockIssueData());
+
+    await page.locator('#add-manual-time-btn').click();
+    await page.locator('#manual-hours-input').fill('1');
+    await page.locator('#manual-minutes-input').fill('15');
+    await page.locator('#save-manual-time-btn').click();
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'addManualTime', seconds: 4500 });
+  });
+
   test('displays issue description', async ({ page }) => {
     await harness.sendIssueUpdate(createMockIssueData({
       body: 'Steps to reproduce the bug',

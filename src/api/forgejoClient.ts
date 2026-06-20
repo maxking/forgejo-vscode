@@ -37,6 +37,25 @@ export interface IssuePage {
   hasMore: boolean;
 }
 
+export interface ForgejoStopwatch {
+  created?: string;
+  duration?: string;
+  issue_index: number;
+  issue_title?: string;
+  repo_name: string;
+  repo_owner_name: string;
+  seconds?: number;
+}
+
+export interface ForgejoTrackedTime {
+  id: number;
+  created?: string;
+  time: number;
+  user_name?: string;
+  issue_id?: number;
+  user_id?: number;
+}
+
 export interface ForgejoItemQueryOptions {
   query?: string;
   createdBy?: string;
@@ -92,6 +111,10 @@ function appendQueryParam(params: URLSearchParams, key: string, value: string | 
   if (value) {
     params.set(key, value);
   }
+}
+
+function repoIssuePath(owner: string, repo: string, number: number): string {
+  return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${encodeURIComponent(String(number))}`;
 }
 
 async function mapInBatches<T, U>(
@@ -241,6 +264,32 @@ export class ForgejoClient extends BaseClient {
 
   async getIssueDetails(owner: string, repo: string, number: number): Promise<Issue> {
     return this.getIssue(owner, repo, number);
+  }
+
+  async getUserStopwatches(page = 1, limit = 50): Promise<ForgejoStopwatch[]> {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    return this.rawRequest<ForgejoStopwatch[]>('GET', `/user/stopwatches?${params.toString()}`);
+  }
+
+  async startIssueStopwatch(owner: string, repo: string, number: number): Promise<void> {
+    await this.rawRequest<void>('POST', `${repoIssuePath(owner, repo, number)}/stopwatch/start`);
+  }
+
+  async stopIssueStopwatch(owner: string, repo: string, number: number): Promise<void> {
+    await this.rawRequest<void>('POST', `${repoIssuePath(owner, repo, number)}/stopwatch/stop`);
+  }
+
+  async deleteIssueStopwatch(owner: string, repo: string, number: number): Promise<void> {
+    await this.rawRequest<void>('DELETE', `${repoIssuePath(owner, repo, number)}/stopwatch/delete`);
+  }
+
+  async getIssueTrackedTimes(owner: string, repo: string, number: number, page = 1, limit = 50): Promise<ForgejoTrackedTime[]> {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    return this.rawRequest<ForgejoTrackedTime[]>('GET', `${repoIssuePath(owner, repo, number)}/times?${params.toString()}`);
+  }
+
+  async addIssueTrackedTime(owner: string, repo: string, number: number, seconds: number): Promise<ForgejoTrackedTime> {
+    return this.rawRequest<ForgejoTrackedTime>('POST', `${repoIssuePath(owner, repo, number)}/times`, { time: seconds });
   }
 
   async createIssue(owner: string, repo: string, title: string, body?: string, options?: CreateIssueOptions): Promise<Issue> {
