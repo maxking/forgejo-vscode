@@ -269,7 +269,6 @@ export class WebviewHarness {
     <nav class="action-bar">
       <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
       <button id="open-web-btn" class="btn btn-secondary">Open in Web</button>
-      <button id="add-comment-btn" class="btn btn-secondary">+ Comment</button>
       <div id="state-actions" class="state-actions">
         <button id="close-issue-btn" class="btn btn-danger" style="display: none;">Close Issue</button>
         <button id="reopen-issue-btn" class="btn btn-success" style="display: none;">Reopen Issue</button>
@@ -299,8 +298,8 @@ export class WebviewHarness {
     <div id="comment-input-container" class="comment-input-container" style="display: none;">
       <textarea id="comment-input" placeholder="Write a comment..."></textarea>
       <div class="comment-actions">
-        <button id="submit-comment-btn" class="btn btn-primary">Submit</button>
-        <button id="cancel-comment-btn" class="btn btn-secondary">Cancel</button>
+        <button id="submit-comment-btn" class="btn btn-primary">Comment</button>
+        <button id="cancel-comment-btn" class="btn btn-secondary">Clear</button>
       </div>
     </div>
   </div>
@@ -548,6 +547,7 @@ export interface IssueDetailData {
   }>;
   owner: string;
   repo: string;
+  canComment: boolean;
 }
 
 // ---- Factory helpers for mock data ----
@@ -589,6 +589,7 @@ export function createMockIssueData(overrides: Partial<IssueDetailData['issue']>
     activities: [],
     owner: 'owner',
     repo: 'repo',
+    canComment: true,
   };
 }
 

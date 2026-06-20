@@ -269,33 +269,41 @@ test.describe('Issue Detail Webview', () => {
     await expect(page.locator('#activity-count')).toHaveText('(2 events)');
   });
 
-  test('shows comment input on + Comment click', async ({ page }) => {
+  test('shows comment input when commenting is available', async ({ page }) => {
     await harness.sendIssueUpdate(createMockIssueData());
 
-    await expect(page.locator('#comment-input-container')).toBeHidden();
-
-    await page.locator('#add-comment-btn').click();
+    await expect(page.locator('#add-comment-btn')).toHaveCount(0);
     await expect(page.locator('#comment-input-container')).toBeVisible();
+    await expect(page.locator('#submit-comment-btn')).toHaveText('Comment');
   });
 
-  test('hides comment input on cancel', async ({ page }) => {
+  test('hides comment input when commenting is unavailable', async ({ page }) => {
+    const data = createMockIssueData();
+    data.canComment = false;
+    await harness.sendIssueUpdate(data);
+
+    await expect(page.locator('#add-comment-btn')).toHaveCount(0);
+    await expect(page.locator('#comment-input-container')).toBeHidden();
+  });
+
+  test('clears comment input without hiding it', async ({ page }) => {
     await harness.sendIssueUpdate(createMockIssueData());
 
-    await page.locator('#add-comment-btn').click();
     await expect(page.locator('#comment-input-container')).toBeVisible();
+    await page.locator('#comment-input').fill('Draft comment');
 
     await page.locator('#cancel-comment-btn').click();
-    await expect(page.locator('#comment-input-container')).toBeHidden();
+    await expect(page.locator('#comment-input-container')).toBeVisible();
+    await expect(page.locator('#comment-input')).toHaveValue('');
   });
 
   test('submits comment and clears input', async ({ page }) => {
     await harness.sendIssueUpdate(createMockIssueData());
 
-    await page.locator('#add-comment-btn').click();
     await page.locator('#comment-input').fill('Adding my two cents');
     await page.locator('#submit-comment-btn').click();
 
-    await expect(page.locator('#comment-input-container')).toBeHidden();
+    await expect(page.locator('#comment-input-container')).toBeVisible();
     await expect(page.locator('#comment-input')).toHaveValue('');
 
     const messages = await getPostedMessages(page);
@@ -305,7 +313,6 @@ test.describe('Issue Detail Webview', () => {
   test('does not submit empty comment', async ({ page }) => {
     await harness.sendIssueUpdate(createMockIssueData());
 
-    await page.locator('#add-comment-btn').click();
     await page.locator('#submit-comment-btn').click();
 
     await expect(page.locator('#comment-input-container')).toBeVisible();

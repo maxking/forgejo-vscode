@@ -24,7 +24,6 @@
 
   const refreshBtn = document.getElementById('refresh-btn');
   const openWebBtn = document.getElementById('open-web-btn');
-  const addCommentBtn = document.getElementById('add-comment-btn');
   const closeIssueBtn = document.getElementById('close-issue-btn');
   const reopenIssueBtn = document.getElementById('reopen-issue-btn');
 
@@ -83,12 +82,6 @@
       vscode.postMessage({ type: 'openInBrowser' });
     });
 
-    addCommentBtn.addEventListener('click', () => {
-      console.log('[Forgejo Issue Webview] Add comment clicked');
-      commentInputContainer.style.display = 'block';
-      commentInput.focus();
-    });
-
     closeIssueBtn.addEventListener('click', () => {
       console.log('[Forgejo Issue Webview] Close issue clicked');
       vscode.postMessage({ type: 'closeIssue' });
@@ -141,14 +134,13 @@
       if (body) {
         vscode.postMessage({ type: 'addComment', body });
         commentInput.value = '';
-        commentInputContainer.style.display = 'none';
       }
     });
 
     cancelCommentBtn.addEventListener('click', () => {
-      console.log('[Forgejo Issue Webview] Cancel comment clicked');
+      console.log('[Forgejo Issue Webview] Clear comment clicked');
       commentInput.value = '';
-      commentInputContainer.style.display = 'none';
+      commentInput.focus();
     });
   }
 
@@ -290,6 +282,13 @@
 
     // Update action buttons
     console.log('[Forgejo Issue Webview] Issue state:', issue.state);
+    const canComment = data.canComment === true;
+    commentInputContainer.style.display = canComment ? 'block' : 'none';
+    document.body.classList.toggle('has-comment-input', canComment);
+    if (!canComment) {
+      commentInput.value = '';
+    }
+
     if (issue.state === 'open') {
       closeIssueBtn.style.display = 'inline-flex';
       reopenIssueBtn.style.display = 'none';
