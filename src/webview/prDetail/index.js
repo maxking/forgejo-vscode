@@ -682,6 +682,67 @@
     return '';
   }
 
+  function getTimelineBody(activity) {
+    if (typeof activity.body === 'string') return activity.body;
+    if (typeof activity.content === 'string') return activity.content;
+    return '';
+  }
+
+  function getLabelEventVerb(activity) {
+    if (activity.event === 'labeled') return 'added';
+    if (activity.event === 'unlabeled') return 'removed';
+    if (activity.event !== 'label') return '';
+
+    var body = getTimelineBody(activity).trim();
+    if (body === '1') return 'added';
+    if (body.length === 0) return 'removed';
+    return '';
+  }
+
+  function getFiniteSeconds(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined;
+  }
+
+  function formatTimelineDuration(totalSeconds) {
+    var hours = Math.floor(totalSeconds / 3600);
+    var minutes = Math.floor((totalSeconds % 3600) / 60);
+    var seconds = totalSeconds % 60;
+    var parts = [];
+
+    if (hours > 0) parts.push(hours + 'h');
+    if (minutes > 0) parts.push(minutes + 'm');
+    if (seconds > 0 || parts.length === 0) parts.push(seconds + 's');
+    return parts.join(' ');
+  }
+
+  function getTrackedTimeText(activity) {
+    var trackedTime = activity.tracked_time || {};
+    var legacyTime = activity.time && typeof activity.time === 'object' ? activity.time : {};
+    var secondValues = [
+      getFiniteSeconds(trackedTime.time),
+      getFiniteSeconds(trackedTime.seconds),
+      getFiniteSeconds(legacyTime.time),
+      getFiniteSeconds(legacyTime.seconds),
+      getFiniteSeconds(activity.time),
+      getFiniteSeconds(activity.seconds)
+    ];
+
+    for (var i = 0; i < secondValues.length; i++) {
+      if (secondValues[i] !== undefined) {
+        return formatTimelineDuration(secondValues[i]);
+      }
+    }
+
+    var durationValues = [trackedTime.duration, legacyTime.duration, activity.duration, getTimelineBody(activity)];
+    for (var d = 0; d < durationValues.length; d++) {
+      if (typeof durationValues[d] === 'string' && durationValues[d].trim().length > 0 && durationValues[d].trim() !== '1') {
+        return durationValues[d].trim();
+      }
+    }
+
+    return '';
+  }
+
   function renderTimelineEvent(activity) {
     if (!activity.event) return 'performed an action';
 
@@ -756,7 +817,13 @@
 
     // Enhance with contextual details when available
     if (activity.event === 'label' && activity.label) {
-      eventText = 'changed label <strong>' + escapeHtml(activity.label.name || '') + '</strong>';
+      var labelVerb = getLabelEventVerb(activity);
+      eventText = labelVerb
+        ? labelVerb + ' label <strong>' + escapeHtml(activity.label.name || '') + '</strong>'
+        : eventText + ' <strong>' + escapeHtml(activity.label.name || '') + '</strong>';
+    }
+    if ((activity.event === 'labeled' || activity.event === 'unlabeled') && activity.label) {
+      eventText = getLabelEventVerb(activity) + ' label <strong>' + escapeHtml(activity.label.name || '') + '</strong>';
     }
     if (activity.event === 'change_title' && activity.old_title && activity.new_title) {
       eventText = 'changed title from <del>' + escapeHtml(activity.old_title) + '</del> to <strong>' + escapeHtml(activity.new_title) + '</strong>';
@@ -766,6 +833,16 @@
     }
     if (activity.event === 'milestone' && activity.milestone) {
       eventText = 'set milestone to <strong>' + escapeHtml(activity.milestone.title || '') + '</strong>';
+    }
+    var trackedTimeText = getTrackedTimeText(activity);
+    if (activity.event === 'add_time_manual' && trackedTimeText) {
+      eventText = 'added <strong>' + escapeHtml(trackedTimeText) + '</strong> tracked time';
+    }
+    if (activity.event === 'stop_tracking' && trackedTimeText) {
+      eventText = 'stopped time tracking and added <strong>' + escapeHtml(trackedTimeText) + '</strong>';
+    }
+    if (activity.event === 'delete_time_manual' && trackedTimeText) {
+      eventText = 'removed <strong>' + escapeHtml(trackedTimeText) + '</strong> tracked time';
     }
     if (activity.event === 'delete_branch' && branchName) {
       eventText = 'deleted branch <strong>' + escapeHtml(branchName) + '</strong>';
