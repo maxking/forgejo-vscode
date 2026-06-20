@@ -68,6 +68,10 @@ body {
   overflow-y: auto;
 }
 
+body.has-comment-input #content {
+  padding-bottom: 180px;
+}
+
 /* Header Section */
 .issue-header {
   padding-bottom: 16px;

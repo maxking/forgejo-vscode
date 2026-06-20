@@ -24,6 +24,10 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ## News
 
+### 0.3.24
+
+- **Issue comment composer ([#200](https://git.araj.me/maxking/forgejo-vscode/issues/200)):** issue detail views now show the comment text box immediately when the selected repository has a configured token, instead of requiring a separate "+ Comment" reveal button.
+
 ### 0.3.23
 
 - **Faster live Playwright CI:** the live-test Docker image now bakes VS Code and the Playwright chromium browser, and the live/VS Code Playwright configs reuse the baked VS Code install instead of downloading 241 MB on every run.
