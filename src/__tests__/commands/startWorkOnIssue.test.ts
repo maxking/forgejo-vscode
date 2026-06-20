@@ -7,6 +7,7 @@ import {
 } from '../../commands/startWorkOnIssue';
 import { IssueTreeItem } from '../../providers/issueTreeProvider';
 import { activateGitExtension } from '../../utils/gitExtension';
+import { logInfo } from '../../utils/logger';
 
 jest.mock('../../utils/gitExtension');
 jest.mock('../../utils/logger', () => ({
@@ -128,8 +129,11 @@ describe('startWorkOnIssueCommand', () => {
     expect(repository.getBranch).toHaveBeenCalledWith('feat/188-add-start-work-on-issue-command');
     expect(repository.createBranch).toHaveBeenCalledWith('feat/188-add-start-work-on-issue-command', true, 'origin/master');
     expect(repository.checkout).not.toHaveBeenCalled();
+    expect(logInfo).toHaveBeenCalledWith(
+      'Created and checked out branch feat/188-add-start-work-on-issue-command from origin/master for issue #188 in /workspace/repo.'
+    );
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Started work on issue #188 on branch feat/188-add-start-work-on-issue-command.'
+      'Created and checked out branch feat/188-add-start-work-on-issue-command from origin/master for issue #188 in /workspace/repo.'
     );
   });
 
@@ -175,6 +179,9 @@ describe('startWorkOnIssueCommand', () => {
     await startWorkOnIssueCommand(createIssueTreeItem());
 
     expect(repository.createBranch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true, 'origin/main');
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+      'Created and checked out branch issue/188-add-start-work-on-issue-command from origin/main for issue #188 in /workspace/repo.'
+    );
   });
 
   it('returns early when repository selection is cancelled', async () => {
@@ -215,6 +222,12 @@ describe('startWorkOnIssueCommand', () => {
 
     expect(repository.createBranch).not.toHaveBeenCalled();
     expect(repository.checkout).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command');
+    expect(logInfo).toHaveBeenCalledWith(
+      'Checked out existing branch issue/188-add-start-work-on-issue-command for issue #188 in /workspace/repo.'
+    );
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+      'Checked out existing branch issue/188-add-start-work-on-issue-command for issue #188 in /workspace/repo.'
+    );
   });
 
   it('returns early when branch selection is cancelled', async () => {

@@ -18,6 +18,10 @@ interface BranchPick extends vscode.QuickPickItem {
   branchName: string;
 }
 
+type CheckoutResult =
+  | { kind: 'created'; baseRef: string }
+  | { kind: 'checkedOutExisting' };
+
 function remoteUrl(remote: Remote): string | undefined {
   return [remote.fetchUrl, remote.pushUrl].find((url): url is string => typeof url === 'string' && url.length > 0);
 }
@@ -192,7 +196,7 @@ async function confirmDirtyRepository(repository: Repository): Promise<boolean> 
   return action === 'Continue';
 }
 
-async function checkoutBranch(repository: Repository, branchName: string): Promise<boolean> {
+async function checkoutBranch(repository: Repository, branchName: string): Promise<CheckoutResult | undefined> {
   if (await branchExists(repository, branchName)) {
     const action = await vscode.window.showWarningMessage(
       `Branch "${branchName}" already exists. Check it out?`,
@@ -202,15 +206,16 @@ async function checkoutBranch(repository: Repository, branchName: string): Promi
     );
 
     if (action !== 'Checkout Existing Branch') {
-      return false;
+      return undefined;
     }
 
     await repository.checkout(branchName);
-    return true;
+    return { kind: 'checkedOutExisting' };
   }
 
-  await createBranch(repository, branchName);
-  return true;
+  const baseRef = startWorkBaseRef();
+  await createBranch(repository, branchName, baseRef);
+  return { kind: 'created', baseRef };
 }
 
 function startWorkBaseRef(): string {
@@ -218,8 +223,17 @@ function startWorkBaseRef(): string {
     || DEFAULT_BASE_REF;
 }
 
-async function createBranch(repository: Repository, branchName: string): Promise<void> {
-  await repository.createBranch(branchName, true, startWorkBaseRef());
+async function createBranch(repository: Repository, branchName: string, baseRef: string): Promise<void> {
+  await repository.createBranch(branchName, true, baseRef);
+}
+
+function successMessage(issueNumber: number, branchName: string, repository: Repository, result: CheckoutResult): string {
+  const repoPath = repository.rootUri.fsPath;
+  if (result.kind === 'created') {
+    return `Created and checked out branch ${branchName} from ${result.baseRef} for issue #${issueNumber} in ${repoPath}.`;
+  }
+
+  return `Checked out existing branch ${branchName} for issue #${issueNumber} in ${repoPath}.`;
 }
 
 async function getGitApi(): Promise<API | undefined> {
@@ -284,12 +298,14 @@ export async function startWorkOnIssueCommand(
       return;
     }
 
-    if (!await checkoutBranch(selectedRepository, branchName)) {
+    const checkoutResult = await checkoutBranch(selectedRepository, branchName);
+    if (!checkoutResult) {
       return;
     }
 
-    logInfo(`Started work on issue #${issue.number} in ${selectedRepository.rootUri.fsPath} on ${branchName}`);
-    void vscode.window.showInformationMessage(`Started work on issue #${issue.number} on branch ${branchName}.`);
+    const message = successMessage(issue.number, branchName, selectedRepository, checkoutResult);
+    logInfo(message);
+    void vscode.window.showInformationMessage(message);
   } catch (error) {
     logError('Error starting work on issue:', error);
     void vscode.window.showErrorMessage(
