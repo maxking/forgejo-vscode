@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { WebviewHarness, createMockPRData } from './fixtures/webview-harness';
+import { WebviewHarness, createMockIssueData, createMockPRData } from './fixtures/webview-harness';
 
 test.describe('Markdown Rendering', () => {
   let harness: WebviewHarness;
@@ -105,6 +105,30 @@ test.describe('Markdown Rendering', () => {
       const img = desc.locator('img');
       await expect(img).toHaveAttribute('alt', 'Alt text');
       await expect(img).toHaveAttribute('src', 'https://example.com/image.png');
+    });
+
+    test('autolinks same-repository issue references', async ({ page }) => {
+      const desc = await renderMarkdown(page, 'Fixes #199');
+      const link = desc.locator('a');
+      await expect(link).toHaveText('#199');
+      await expect(link).toHaveAttribute('href', 'https://git.example.com/owner/repo/issues/199');
+    });
+
+    test('autolinks cross-repository issue references', async ({ page }) => {
+      const desc = await renderMarkdown(page, 'Related to other/project#12');
+      const link = desc.locator('a');
+      await expect(link).toHaveText('other/project#12');
+      await expect(link).toHaveAttribute('href', 'https://git.example.com/other/project/issues/12');
+    });
+
+    test('does not autolink issue references inside code spans or explicit links', async ({ page }) => {
+      const desc = await renderMarkdown(page, '`#199` and [already linked #200](https://example.com/custom)');
+
+      await expect(desc.locator('code')).toHaveText('#199');
+      const links = desc.locator('a');
+      await expect(links).toHaveCount(1);
+      await expect(links.first()).toHaveText('already linked #200');
+      await expect(links.first()).toHaveAttribute('href', 'https://example.com/custom');
     });
   });
 
@@ -269,5 +293,17 @@ test.describe('Markdown Rendering', () => {
       await expect(desc.locator('pre')).toBeVisible();
       await expect(desc.locator('blockquote')).toContainText('Note: This requires Node.js 18+');
     });
+  });
+});
+
+test.describe('Issue Markdown Rendering', () => {
+  test('autolinks same-repository issue references in issue details', async ({ page }) => {
+    const harness = new WebviewHarness(page);
+    await harness.loadIssueDetail();
+    await harness.sendIssueUpdate(createMockIssueData({ body: 'Duplicate of #199' }));
+
+    const link = page.locator('#issue-description a');
+    await expect(link).toHaveText('#199');
+    await expect(link).toHaveAttribute('href', 'https://git.example.com/owner/repo/issues/199');
   });
 });

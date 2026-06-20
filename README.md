@@ -32,6 +32,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 - **Faster live Playwright CI:** the live-test Docker image now bakes VS Code and the Playwright chromium browser, and the live/VS Code Playwright configs reuse the baked VS Code install instead of downloading 241 MB on every run.
 - **Open VSX workflow schema publishing fix:** the vendored workflow schema now avoids password-shaped string mappings that Open VSX secret scanning can mistake for credentials during publication.
+- **PR and issue autolinks ([#199](https://git.araj.me/maxking/forgejo-vscode/issues/199)):** detail webviews now link same-repository `#123` and cross-repository `owner/repo#123` references in descriptions and comments.
 
 ### 0.3.21
 

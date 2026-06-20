@@ -523,6 +523,7 @@ export interface PRDetailData {
   }>;
   owner: string;
   repo: string;
+  instanceUrl?: string;
 }
 
 export interface IssueDetailData {
@@ -548,6 +549,7 @@ export interface IssueDetailData {
   owner: string;
   repo: string;
   canComment: boolean;
+  instanceUrl?: string;
 }
 
 // ---- Factory helpers for mock data ----

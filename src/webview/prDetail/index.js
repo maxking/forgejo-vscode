@@ -1047,19 +1047,28 @@
   function processInline(text) {
     if (!text) return '';
 
+    var htmlTokens = [];
+    function addHtmlToken(markup) {
+      var idx = htmlTokens.length;
+      htmlTokens.push(markup);
+      return '%%HTMLTOKEN_' + idx + '%%';
+    }
+
     // Images: ![alt](url) -- processed before links so ![alt](url) is not consumed by link regex
     text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_match, alt, url) {
       var safe = sanitizeUrl(url);
       if (!safe) return alt;
-      return '<img src="' + safe + '" alt="' + alt + '" style="max-width:100%;">';
+      return addHtmlToken('<img src="' + safe + '" alt="' + alt + '" style="max-width:100%;">');
     });
 
     // Links: [text](url) -- processed after images to avoid matching image syntax
     text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_match, linkText, url) {
       var safe = sanitizeUrl(url);
       if (!safe) return linkText;
-      return '<a href="' + safe + '">' + linkText + '</a>';
+      return addHtmlToken('<a href="' + safe + '">' + linkText + '</a>');
     });
+
+    text = autolinkIssueReferences(text);
 
     // Bold + italic: ***text*** or ___text___
     text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
@@ -1076,7 +1085,43 @@
     // Strikethrough: ~~text~~
     text = text.replace(/~~([^~]+)~~/g, '<del>$1</del>');
 
+    for (var i = 0; i < htmlTokens.length; i++) {
+      text = text.replace(new RegExp('%%HTMLTOKEN_' + i + '%%', 'g'), htmlTokens[i]);
+    }
+
     return text;
+  }
+
+  function autolinkIssueReferences(text) {
+    var currentOwner = currentData && currentData.owner;
+    var currentRepo = currentData && currentData.repo;
+    if (!currentOwner || !currentRepo) return text;
+
+    return text.replace(/(^|[\s([{])(([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+))?#([1-9]\d*)\b/g, function(_match, prefix, repoRef, refOwner, refRepo, number) {
+      var fullRef = (repoRef || '') + '#' + number;
+      var owner = refOwner || currentOwner;
+      var repo = refRepo || currentRepo;
+      var url = buildIssueReferenceUrl(owner, repo, number);
+      if (!url) return prefix + fullRef;
+      return prefix + '<a href="' + escapeHtml(url) + '">' + fullRef + '</a>';
+    });
+  }
+
+  function buildIssueReferenceUrl(owner, repo, number) {
+    var itemUrl = currentData && currentData.pr && currentData.pr.html_url;
+    var instanceBase = '';
+    if (itemUrl) {
+      var currentRepoPath = '/' + currentData.owner + '/' + currentData.repo + '/';
+      var repoPathIndex = itemUrl.indexOf(currentRepoPath);
+      if (repoPathIndex >= 0) {
+        instanceBase = itemUrl.slice(0, repoPathIndex);
+      }
+    }
+    if (!instanceBase && currentData && currentData.instanceUrl) {
+      instanceBase = currentData.instanceUrl.replace(/\/$/, '');
+    }
+    if (!instanceBase) return '';
+    return instanceBase + '/' + owner + '/' + repo + '/issues/' + number;
   }
 
   /**
