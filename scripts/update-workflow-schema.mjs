@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +13,27 @@ const repoRoot = path.resolve(scriptDir, '..');
 const schemaDir = path.join(repoRoot, 'src', 'diagnostics', 'schemas');
 const schemaPath = path.join(schemaDir, 'forgejo-workflow.schema.json');
 const readmePath = path.join(schemaDir, 'README.md');
+
+function sanitizePasswordPropertyMappings(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      sanitizePasswordPropertyMappings(item);
+    }
+    return;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+
+  if (value.mapping?.properties?.password === 'non-empty-string') {
+    value.mapping.properties.password = { type: 'non-empty-string' };
+  }
+
+  for (const item of Object.values(value)) {
+    sanitizePasswordPropertyMappings(item);
+  }
+}
 
 let downloadOutput;
 try {
@@ -31,6 +52,9 @@ if (downloadInfo.Error) {
 }
 
 copyFileSync(path.join(downloadInfo.Dir, 'act', 'schema', 'workflow_schema.json'), schemaPath);
+const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
+sanitizePasswordPropertyMappings(schema);
+writeFileSync(schemaPath, `${JSON.stringify(schema, null, 2)}\n`);
 writeFileSync(readmePath, `# Workflow Schema Source
 
 \`forgejo-workflow.schema.json\` is vendored from Forgejo runner:
