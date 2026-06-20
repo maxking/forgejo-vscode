@@ -167,6 +167,65 @@ class MarkdownString {
   }
 }
 
+class Hover {
+  constructor(contents, range) {
+    this.contents = Array.isArray(contents) ? contents : [contents];
+    this.range = range;
+  }
+}
+
+class CompletionItem {
+  constructor(label, kind) {
+    this.label = label;
+    this.kind = kind;
+    this.insertText = undefined;
+    this.range = undefined;
+    this.detail = undefined;
+    this.documentation = undefined;
+  }
+}
+
+const CompletionItemKind = {
+  Text: 0,
+  Method: 1,
+  Function: 2,
+  Constructor: 3,
+  Field: 4,
+  Variable: 5,
+  Class: 6,
+  Interface: 7,
+  Module: 8,
+  Property: 9,
+  Unit: 10,
+  Value: 11,
+  Enum: 12,
+  Keyword: 13,
+  Snippet: 14,
+  Color: 15,
+  File: 16,
+  Reference: 17,
+  Folder: 18,
+  EnumMember: 19,
+  Constant: 20,
+  Struct: 21,
+  Event: 22,
+  Operator: 23,
+  TypeParameter: 24,
+  User: 25
+};
+
+class CodeAction {
+  constructor(title, kind) {
+    this.title = title;
+    this.kind = kind;
+    this.command = undefined;
+  }
+}
+
+const CodeActionKind = {
+  QuickFix: { value: 'quickfix' }
+};
+
 class Range {
   constructor(startLine, startCharacter, endLine, endCharacter) {
     this.start = { line: startLine, character: startCharacter };
@@ -252,7 +311,10 @@ const languages = {
     delete: jest.fn(),
     clear: jest.fn(),
     dispose: jest.fn()
-  }))
+  })),
+  registerHoverProvider: jest.fn(() => ({ dispose: jest.fn() })),
+  registerCompletionItemProvider: jest.fn(() => ({ dispose: jest.fn() })),
+  registerCodeActionsProvider: jest.fn(() => ({ dispose: jest.fn() }))
 };
 
 const commands = {
@@ -280,6 +342,11 @@ module.exports = {
   QuickPickItemKind,
   CommentMode,
   MarkdownString,
+  Hover,
+  CompletionItem,
+  CompletionItemKind,
+  CodeAction,
+  CodeActionKind,
   Range,
   Diagnostic,
   DiagnosticSeverity,

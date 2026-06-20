@@ -137,6 +137,33 @@ describe('ForgejoClient', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    test('getIssueReferencesPage should use a bounded raw issue list without filtering PR rows', async () => {
+      const issue = {
+        number: 10,
+        title: 'Searchable issue',
+        state: 'open',
+        html_url: 'https://git.example.com/owner/repo/issues/10'
+      };
+      const pullRequest = {
+        number: 11,
+        title: 'Searchable PR',
+        state: 'open',
+        html_url: 'https://git.example.com/owner/repo/pulls/11',
+        pull_request: { url: 'https://git.example.com/api/v1/repos/owner/repo/pulls/11' }
+      };
+      const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue([issue, pullRequest] as any);
+
+      const result = await client.getIssueReferencesPage('owner', 'repo', '  searchable  ', 2, 10);
+
+      expect(rawSpy).toHaveBeenCalledWith('GET', '/repos/owner/repo/issues?state=all&page=2&limit=10&q=searchable');
+      expect(result).toEqual({
+        items: [issue, pullRequest],
+        page: 2,
+        limit: 10,
+        hasMore: false
+      });
+    });
+
     test('getIssuesPage should pass structured user query filters to forgejo-ts', async () => {
       const issue = {
         number: 11,

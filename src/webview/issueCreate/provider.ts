@@ -13,12 +13,18 @@ export interface CreateIssueFormPayload {
   dueDate?: string;
 }
 
+export interface InitialIssueDraft {
+  title: string;
+  body?: string;
+}
+
 export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'createIssue'; data: CreateIssueFormPayload };
 
 export type ExtensionMessage =
   | { type: 'theme'; theme: 'light' | 'dark' | 'high-contrast' }
+  | { type: 'prefill'; data: InitialIssueDraft }
   | { type: 'submitting'; show: boolean }
   | { type: 'error'; message: string }
   | { type: 'created'; number: number; title: string; url: string };
@@ -39,7 +45,7 @@ export class IssueCreateWebviewProvider {
     private readonly _issueTreeProvider: IssueTreeProvider
   ) {}
 
-  public showCreateIssue(config: ForgejoConfig): void {
+  public showCreateIssue(config: ForgejoConfig, initialDraft?: InitialIssueDraft): void {
     logInfo('Showing create issue webview:', {
       owner: config.owner,
       repo: config.repo,
@@ -51,6 +57,9 @@ export class IssueCreateWebviewProvider {
     if (existingState) {
       existingState.panel.reveal(vscode.ViewColumn.One);
       this._sendTheme(panelKey);
+      if (initialDraft) {
+        this._post({ type: 'prefill', data: this._sanitizeInitialDraft(initialDraft) }, panelKey);
+      }
       return;
     }
 
@@ -73,7 +82,7 @@ export class IssueCreateWebviewProvider {
     };
     this._panels.set(panelKey, state);
 
-    panel.webview.html = this._getHtmlForWebview(panel.webview, config);
+    panel.webview.html = this._getHtmlForWebview(panel.webview, config, initialDraft ? this._sanitizeInitialDraft(initialDraft) : undefined);
     panel.webview.onDidReceiveMessage(
       (message: unknown) => {
         void this._handleMessage(message as WebviewMessage, panelKey);
@@ -197,6 +206,13 @@ export class IssueCreateWebviewProvider {
     return `${config.instanceUrl}/${config.owner}/${config.repo}`;
   }
 
+  private _sanitizeInitialDraft(initialDraft: InitialIssueDraft): InitialIssueDraft {
+    return {
+      title: initialDraft.title,
+      ...(initialDraft.body ? { body: initialDraft.body } : {})
+    };
+  }
+
   private _getThemeName(kind: vscode.ColorThemeKind): 'light' | 'dark' | 'high-contrast' {
     switch (kind) {
       case vscode.ColorThemeKind.Light: return 'light';
@@ -206,7 +222,7 @@ export class IssueCreateWebviewProvider {
     }
   }
 
-  private _getHtmlForWebview(webview: vscode.Webview, config: ForgejoConfig): string {
+  private _getHtmlForWebview(webview: vscode.Webview, config: ForgejoConfig, initialDraft?: InitialIssueDraft): string {
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'issueCreate', 'styles.css'));
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'issueCreate', 'index.js'));
     const nonce = this._getNonce();
@@ -235,12 +251,12 @@ export class IssueCreateWebviewProvider {
     <form id="create-issue-form" class="issue-form">
       <label class="field">
         <span>Title</span>
-        <input id="title" type="text" required maxlength="255" autocomplete="off" placeholder="Short issue title">
+        <input id="title" type="text" required maxlength="255" autocomplete="off" placeholder="Short issue title" value="${this._escapeHtml(initialDraft?.title ?? '')}">
       </label>
 
       <label class="field">
         <span>Description</span>
-        <textarea id="body" rows="10" placeholder="Describe the problem, expected behavior, and useful context"></textarea>
+        <textarea id="body" rows="10" placeholder="Describe the problem, expected behavior, and useful context">${this._escapeHtml(initialDraft?.body ?? '')}</textarea>
       </label>
 
       <div class="field-grid">

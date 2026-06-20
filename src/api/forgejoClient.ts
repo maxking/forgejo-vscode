@@ -40,6 +40,13 @@ export interface IssuePage {
   hasMore: boolean;
 }
 
+export interface ForgejoReferencePage {
+  items: IssueListItem[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
 export interface ForgejoStopwatch {
   created?: string;
   duration?: string;
@@ -269,6 +276,29 @@ export class ForgejoClient extends BaseClient {
 
   async getIssueDetails(owner: string, repo: string, number: number): Promise<Issue> {
     return this.getIssue(owner, repo, number);
+  }
+
+  async getIssueReferencesPage(
+    owner: string,
+    repo: string,
+    query = '',
+    page = 1,
+    limit = 10
+  ): Promise<ForgejoReferencePage> {
+    const params = new URLSearchParams({
+      state: 'all',
+      page: String(page),
+      limit: String(limit)
+    });
+    appendQueryParam(params, 'q', trimmedValue(query));
+
+    const items = await this.rawRequest<IssueListItem[]>('GET', `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?${params.toString()}`);
+    return {
+      items,
+      page,
+      limit,
+      hasMore: items.length === limit
+    };
   }
 
   async getUserStopwatches(page = 1, limit = 50): Promise<ForgejoStopwatch[]> {

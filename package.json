@@ -247,6 +247,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "forgejo.createIssueFromTodo",
+        "title": "Forgejo: Create Issue from TODO",
+        "icon": "$(add)"
+      },
+      {
         "command": "forgejo.refreshActions",
         "title": "Forgejo: Refresh Actions",
         "icon": "$(refresh)"
@@ -523,6 +528,12 @@
         {
           "command": "forgejo.submitInlineComment",
           "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "forgejo.createIssueFromTodo",
+          "when": "false"
         }
       ]
     },
