@@ -31,6 +31,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - **Start work target clarity ([#188](https://git.araj.me/maxking/forgejo-vscode/issues/188)):** when multiple matching local worktrees exist, Start Work now asks which path to use and its success message names the existing local worktree where the branch was checked out.
 - **Issue detail Start Work ([#188](https://git.araj.me/maxking/forgejo-vscode/issues/188)):** issue detail pages now include a Start Work button that uses the same branch and worktree selection flow as issue tree rows.
 - **Issue comment composer ([#200](https://git.araj.me/maxking/forgejo-vscode/issues/200)):** issue detail views now show the comment text box immediately when the selected repository has a configured token, instead of requiring a separate "+ Comment" reveal button.
+- **Issue time tracking ([#194](https://git.araj.me/maxking/forgejo-vscode/issues/194)):** issue detail pages now show tracked time, running stopwatch state, and controls to start, stop, cancel, or manually add time.
 
 ### 0.3.23
 
@@ -98,6 +99,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - Browse issues with full details and comments
 - Create new issues from within VS Code
 - Rich detail view with comment history and timeline events
+- Track time from issue details with Forgejo stopwatch and manual time entries
 
 ### Actions / CI
 - Monitor CI/CD workflow runs in a 3-level tree view (Run > Job > Step)

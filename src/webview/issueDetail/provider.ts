@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ForgejoClient } from '../../api/forgejoClient';
+import { ForgejoClient, type ForgejoStopwatch, type ForgejoTrackedTime } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
 import { Issue } from '../../models/issue';
 import { logDebug, logInfo, logError } from '../../utils/logger';
@@ -13,7 +13,11 @@ export type WebviewMessage =
   | { type: 'startWork' }
   | { type: 'closeIssue' }
   | { type: 'reopenIssue' }
-  | { type: 'updateBody'; body: string };
+  | { type: 'updateBody'; body: string }
+  | { type: 'startTimer' }
+  | { type: 'stopTimer' }
+  | { type: 'cancelTimer' }
+  | { type: 'addManualTime'; seconds: number };
 
 export type ExtensionMessage =
   | { type: 'update'; data: IssueDetailViewData }
@@ -41,10 +45,20 @@ type IssueTimelineApiActivity = Omit<IssueActivity, 'type' | 'event'> & Timeline
 export interface IssueDetailViewData {
   issue: Issue;
   activities: IssueActivity[];
+  timeTracking: IssueTimeTrackingViewData;
   owner: string;
   repo: string;
   canComment: boolean;
   instanceUrl?: string;
+}
+
+export interface IssueTimeTrackingViewData {
+  canTrack: boolean;
+  totalSeconds: number;
+  entries: ForgejoTrackedTime[];
+  currentStopwatch?: ForgejoStopwatch;
+  otherStopwatch?: ForgejoStopwatch;
+  error?: string;
 }
 
 interface PanelState {
@@ -135,9 +149,18 @@ export class IssueDetailWebviewProvider {
       const activities = await this._fetchActivities(client, owner, repo, number);
       logInfo('Activities fetched:', { activities: activities.length });
 
+      const timeTracking = await this._fetchTimeTracking(client, owner, repo, number, Boolean(config.token));
+      logInfo('Time tracking fetched:', {
+        totalSeconds: timeTracking.totalSeconds,
+        entries: timeTracking.entries.length,
+        hasCurrentStopwatch: Boolean(timeTracking.currentStopwatch),
+        hasOtherStopwatch: Boolean(timeTracking.otherStopwatch)
+      });
+
       state.pendingData = {
         issue: issueDetails,
         activities,
+        timeTracking,
         owner,
         repo,
         canComment: config.token.trim().length > 0,
@@ -205,6 +228,51 @@ export class IssueDetailWebviewProvider {
     });
   }
 
+  private async _fetchTimeTracking(
+    client: ForgejoClient,
+    owner: string,
+    repo: string,
+    number: number,
+    canTrack: boolean
+  ): Promise<IssueTimeTrackingViewData> {
+    let entries: ForgejoTrackedTime[] = [];
+    let currentStopwatch: ForgejoStopwatch | undefined;
+    let otherStopwatch: ForgejoStopwatch | undefined;
+    let error: string | undefined;
+
+    try {
+      entries = await client.getIssueTrackedTimes(owner, repo, number);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Could not fetch tracked time';
+      logDebug('Could not fetch tracked time:', e);
+    }
+
+    if (canTrack) {
+      try {
+        const stopwatches = await client.getUserStopwatches();
+        currentStopwatch = stopwatches.find(stopwatch => this._isStopwatchForIssue(stopwatch, owner, repo, number));
+        otherStopwatch = stopwatches.find(stopwatch => !this._isStopwatchForIssue(stopwatch, owner, repo, number));
+      } catch (e) {
+        logDebug('Could not fetch user stopwatches:', e);
+      }
+    }
+
+    return {
+      canTrack,
+      entries,
+      totalSeconds: entries.reduce((total, entry) => total + (Number.isFinite(entry.time) ? entry.time : 0), 0),
+      ...(currentStopwatch ? { currentStopwatch } : {}),
+      ...(otherStopwatch ? { otherStopwatch } : {}),
+      ...(error ? { error } : {})
+    };
+  }
+
+  private _isStopwatchForIssue(stopwatch: ForgejoStopwatch, owner: string, repo: string, number: number): boolean {
+    return stopwatch.issue_index === number
+      && stopwatch.repo_name.toLowerCase() === repo.toLowerCase()
+      && stopwatch.repo_owner_name.toLowerCase() === owner.toLowerCase();
+  }
+
   private async _handleMessage(message: WebviewMessage, panelKey: string): Promise<void> {
     logDebug('Received message from webview:', message.type);
     const state = this._panels.get(panelKey);
@@ -231,6 +299,10 @@ export class IssueDetailWebviewProvider {
       case 'closeIssue': await this._closeIssue(owner, repo, number, panelKey, instanceUrl); break;
       case 'reopenIssue': await this._reopenIssue(owner, repo, number, panelKey, instanceUrl); break;
       case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey, instanceUrl); break;
+      case 'startTimer': await this._startTimer(owner, repo, number, panelKey, instanceUrl); break;
+      case 'stopTimer': await this._stopTimer(owner, repo, number, panelKey, instanceUrl); break;
+      case 'cancelTimer': await this._cancelTimer(owner, repo, number, panelKey, instanceUrl); break;
+      case 'addManualTime': await this._addManualTime(owner, repo, number, message.seconds, panelKey, instanceUrl); break;
     }
   }
 
@@ -298,6 +370,88 @@ export class IssueDetailWebviewProvider {
       if (panelState) {
         void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: false });
       }
+    }
+  }
+
+  private async _startTimer(owner: string, repo: string, number: number, panelKey: string, instanceUrl?: string): Promise<void> {
+    await this._runTimeTrackingAction(
+      panelKey,
+      async (client) => client.startIssueStopwatch(owner, repo, number),
+      {
+        success: `Started timer for issue #${String(number)}`,
+        failure: 'Failed to start timer'
+      },
+      instanceUrl
+    );
+  }
+
+  private async _stopTimer(owner: string, repo: string, number: number, panelKey: string, instanceUrl?: string): Promise<void> {
+    await this._runTimeTrackingAction(
+      panelKey,
+      async (client) => client.stopIssueStopwatch(owner, repo, number),
+      {
+        success: `Stopped timer for issue #${String(number)}`,
+        failure: 'Failed to stop timer'
+      },
+      instanceUrl
+    );
+  }
+
+  private async _cancelTimer(owner: string, repo: string, number: number, panelKey: string, instanceUrl?: string): Promise<void> {
+    await this._runTimeTrackingAction(
+      panelKey,
+      async (client) => client.deleteIssueStopwatch(owner, repo, number),
+      {
+        success: `Canceled timer for issue #${String(number)}`,
+        failure: 'Failed to cancel timer'
+      },
+      instanceUrl
+    );
+  }
+
+  private async _addManualTime(owner: string, repo: string, number: number, seconds: number, panelKey: string, instanceUrl?: string): Promise<void> {
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      void vscode.window.showErrorMessage('Enter a tracked time greater than zero.');
+      const panelState = this._panels.get(panelKey);
+      void panelState?.panel.webview.postMessage({ type: 'actionComplete', action: 'timeTracking', success: false });
+      return;
+    }
+
+    await this._runTimeTrackingAction(
+      panelKey,
+      async (client) => client.addIssueTrackedTime(owner, repo, number, Math.round(seconds)),
+      {
+        success: `Added tracked time to issue #${String(number)}`,
+        failure: 'Failed to add tracked time'
+      },
+      instanceUrl
+    );
+  }
+
+  private async _runTimeTrackingAction(
+    panelKey: string,
+    action: (client: ForgejoClient) => Promise<unknown>,
+    messages: { success: string; failure: string },
+    instanceUrl?: string
+  ): Promise<void> {
+    const panelState = this._panels.get(panelKey);
+    if (!panelState) return;
+
+    try {
+      const config = await this._getConfig(panelState.owner, panelState.repo, instanceUrl);
+      if (!config.token) {
+        throw new Error('A Forgejo token is required for issue time tracking.');
+      }
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await action(client);
+      void vscode.window.showInformationMessage(messages.success);
+      await this._fetchIssueData(panelKey);
+      void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'timeTracking', success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logError(messages.failure, error);
+      void vscode.window.showErrorMessage(`${messages.failure}: ${message}`);
+      void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'timeTracking', success: false });
     }
   }
 
@@ -394,6 +548,27 @@ export class IssueDetailWebviewProvider {
         <button id="reopen-issue-btn" class="btn btn-success" style="display: none;">Reopen Issue</button>
       </div>
     </nav>
+
+    <section class="time-tracking-section">
+      <div class="time-tracking-header">
+        <h2>Time Tracking</h2>
+        <span id="tracked-time-total" class="tracked-time-total"></span>
+      </div>
+      <div id="time-tracking-status" class="time-tracking-status"></div>
+      <div class="time-tracking-actions">
+        <button id="start-timer-btn" class="btn btn-primary btn-small">Start Timer</button>
+        <button id="stop-timer-btn" class="btn btn-success btn-small" style="display: none;">Stop Timer</button>
+        <button id="cancel-timer-btn" class="btn btn-secondary btn-small" style="display: none;">Cancel Timer</button>
+        <button id="add-manual-time-btn" class="btn btn-secondary btn-small">Add Manual Time</button>
+      </div>
+      <form id="manual-time-form" class="manual-time-form" style="display: none;">
+        <input id="manual-hours-input" class="manual-time-input" type="number" min="0" step="1" placeholder="Hours">
+        <input id="manual-minutes-input" class="manual-time-input" type="number" min="0" max="59" step="1" placeholder="Minutes">
+        <button id="save-manual-time-btn" class="btn btn-primary btn-small" type="submit">Add</button>
+        <button id="cancel-manual-time-btn" class="btn btn-secondary btn-small" type="button">Cancel</button>
+      </form>
+      <div id="tracked-time-list" class="tracked-time-list"></div>
+    </section>
 
     <section class="description-section">
       <div class="description-header">

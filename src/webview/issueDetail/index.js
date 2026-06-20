@@ -28,6 +28,19 @@
   const closeIssueBtn = document.getElementById('close-issue-btn');
   const reopenIssueBtn = document.getElementById('reopen-issue-btn');
 
+  const trackedTimeTotal = document.getElementById('tracked-time-total');
+  const timeTrackingStatus = document.getElementById('time-tracking-status');
+  const startTimerBtn = document.getElementById('start-timer-btn');
+  const stopTimerBtn = document.getElementById('stop-timer-btn');
+  const cancelTimerBtn = document.getElementById('cancel-timer-btn');
+  const addManualTimeBtn = document.getElementById('add-manual-time-btn');
+  const manualTimeForm = document.getElementById('manual-time-form');
+  const manualHoursInput = document.getElementById('manual-hours-input');
+  const manualMinutesInput = document.getElementById('manual-minutes-input');
+  const saveManualTimeBtn = document.getElementById('save-manual-time-btn');
+  const cancelManualTimeBtn = document.getElementById('cancel-manual-time-btn');
+  const trackedTimeList = document.getElementById('tracked-time-list');
+
   const issueDescriptionEl = document.getElementById('issue-description');
   const editDescriptionBtn = document.getElementById('edit-description-btn');
   const descriptionEditor = document.getElementById('issue-description-editor');
@@ -41,6 +54,8 @@
   const commentInput = document.getElementById('comment-input');
   const submitCommentBtn = document.getElementById('submit-comment-btn');
   const cancelCommentBtn = document.getElementById('cancel-comment-btn');
+  let timerInterval = null;
+  let timerDataReceivedAt = Date.now();
 
   // Initialize
   function init() {
@@ -96,6 +111,47 @@
     reopenIssueBtn.addEventListener('click', () => {
       console.log('[Forgejo Issue Webview] Reopen issue clicked');
       vscode.postMessage({ type: 'reopenIssue' });
+    });
+
+    startTimerBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Start timer clicked');
+      setTimeTrackingBusy(true);
+      vscode.postMessage({ type: 'startTimer' });
+    });
+
+    stopTimerBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Stop timer clicked');
+      setTimeTrackingBusy(true);
+      vscode.postMessage({ type: 'stopTimer' });
+    });
+
+    cancelTimerBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Cancel timer clicked');
+      setTimeTrackingBusy(true);
+      vscode.postMessage({ type: 'cancelTimer' });
+    });
+
+    addManualTimeBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Add manual time clicked');
+      manualTimeForm.style.display = 'flex';
+      manualHoursInput.focus();
+    });
+
+    manualTimeForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const hours = Number.parseInt(manualHoursInput.value || '0', 10);
+      const minutes = Number.parseInt(manualMinutesInput.value || '0', 10);
+      const seconds = (Number.isFinite(hours) ? hours : 0) * 3600 + (Number.isFinite(minutes) ? minutes : 0) * 60;
+      console.log('[Forgejo Issue Webview] Manual time submit:', seconds);
+      if (seconds > 0) {
+        setTimeTrackingBusy(true);
+        vscode.postMessage({ type: 'addManualTime', seconds });
+      }
+    });
+
+    cancelManualTimeBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Cancel manual time clicked');
+      resetManualTimeForm();
     });
 
     editDescriptionBtn.addEventListener('click', () => {
@@ -195,6 +251,11 @@
           if (message.action === 'updateBody') {
             saveDescriptionBtn.disabled = false;
             saveDescriptionBtn.textContent = 'Save';
+          } else if (message.action === 'timeTracking') {
+            setTimeTrackingBusy(false);
+            if (message.success) {
+              resetManualTimeForm();
+            }
           }
           break;
         default:
@@ -303,6 +364,8 @@
       reopenIssueBtn.style.display = 'inline-flex';
     }
 
+    updateTimeTracking(data.timeTracking);
+
     // Update activity timeline
     const activityCount = activities ? activities.length : 0;
     console.log('[Forgejo Issue Webview] Activities:', activityCount);
@@ -317,6 +380,143 @@
     // Show content
     setLoading(false);
     console.log('[Forgejo Issue Webview] Issue details updated successfully');
+  }
+
+  function updateTimeTracking(timeTracking) {
+    clearTimerInterval();
+    timerDataReceivedAt = Date.now();
+
+    const data = timeTracking || {
+      canTrack: false,
+      totalSeconds: 0,
+      entries: []
+    };
+    const currentStopwatch = data.currentStopwatch;
+    const otherStopwatch = data.otherStopwatch;
+    const isRunning = Boolean(currentStopwatch);
+    const canStart = data.canTrack && !isRunning && !otherStopwatch;
+
+    trackedTimeTotal.textContent = formatDuration(data.totalSeconds || 0);
+    startTimerBtn.style.display = isRunning ? 'none' : 'inline-flex';
+    stopTimerBtn.style.display = isRunning ? 'inline-flex' : 'none';
+    cancelTimerBtn.style.display = isRunning ? 'inline-flex' : 'none';
+    addManualTimeBtn.disabled = !data.canTrack;
+    startTimerBtn.disabled = !canStart;
+
+    if (!data.canTrack) {
+      timeTrackingStatus.className = 'time-tracking-status warning';
+      timeTrackingStatus.textContent = 'Configure a Forgejo token to track time on this issue.';
+    } else if (isRunning) {
+      timeTrackingStatus.className = 'time-tracking-status running';
+      updateRunningTimerStatus(currentStopwatch);
+      timerInterval = setInterval(function() {
+        updateRunningTimerStatus(currentStopwatch);
+      }, 1000);
+    } else if (otherStopwatch) {
+      timeTrackingStatus.className = 'time-tracking-status warning';
+      timeTrackingStatus.textContent = 'Timer running on ' + formatStopwatchIssue(otherStopwatch) + '. Stop it before starting this issue.';
+    } else if (data.error) {
+      timeTrackingStatus.className = 'time-tracking-status warning';
+      timeTrackingStatus.textContent = data.error;
+    } else {
+      timeTrackingStatus.className = 'time-tracking-status';
+      timeTrackingStatus.textContent = 'No timer is running for this issue.';
+    }
+
+    if (data.entries && data.entries.length > 0) {
+      trackedTimeList.innerHTML = data.entries.slice(0, 5).map(renderTrackedTimeEntry).join('');
+    } else {
+      trackedTimeList.innerHTML = '<div class="tracked-time-empty">No tracked time entries yet.</div>';
+    }
+
+    setTimeTrackingBusy(false);
+  }
+
+  function clearTimerInterval() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }
+
+  function updateRunningTimerStatus(stopwatch) {
+    const seconds = getStopwatchSeconds(stopwatch);
+    timeTrackingStatus.textContent = 'Timer running ' + formatDuration(seconds);
+  }
+
+  function getStopwatchSeconds(stopwatch) {
+    if (stopwatch && stopwatch.created) {
+      const startedAt = new Date(stopwatch.created).getTime();
+      if (Number.isFinite(startedAt)) {
+        return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      }
+    }
+
+    const baseSeconds = stopwatch && Number.isFinite(stopwatch.seconds) ? stopwatch.seconds : 0;
+    return baseSeconds + Math.floor((Date.now() - timerDataReceivedAt) / 1000);
+  }
+
+  function formatStopwatchIssue(stopwatch) {
+    const owner = stopwatch.repo_owner_name || 'unknown';
+    const repo = stopwatch.repo_name || 'unknown';
+    const index = stopwatch.issue_index || '?';
+    const title = stopwatch.issue_title ? ': ' + stopwatch.issue_title : '';
+    return owner + '/' + repo + '#' + index + title;
+  }
+
+  function renderTrackedTimeEntry(entry) {
+    const user = entry.user_name ? escapeHtml(entry.user_name) : 'Unknown';
+    const created = entry.created ? formatTimeAgo(entry.created) : '';
+    return '<div class="tracked-time-entry">' +
+      '<span class="tracked-time-entry-duration">' + formatDuration(entry.time || 0) + '</span>' +
+      '<span class="tracked-time-entry-meta">by ' + user + (created ? ' ' + created : '') + '</span>' +
+    '</div>';
+  }
+
+  function formatDuration(totalSeconds) {
+    const seconds = Math.max(0, Math.floor(totalSeconds || 0));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+
+    if (hours > 0) {
+      return hours + 'h ' + String(minutes).padStart(2, '0') + 'm';
+    }
+    if (minutes > 0) {
+      return minutes + 'm ' + String(remainingSeconds).padStart(2, '0') + 's';
+    }
+    return remainingSeconds + 's';
+  }
+
+  function setTimeTrackingBusy(isBusy) {
+    startTimerBtn.disabled = isBusy || startTimerBtn.disabled;
+    stopTimerBtn.disabled = isBusy;
+    cancelTimerBtn.disabled = isBusy;
+    addManualTimeBtn.disabled = isBusy || (currentData && currentData.timeTracking && !currentData.timeTracking.canTrack);
+    saveManualTimeBtn.disabled = isBusy;
+    if (isBusy) {
+      startTimerBtn.dataset.previousText = startTimerBtn.textContent;
+      stopTimerBtn.dataset.previousText = stopTimerBtn.textContent;
+      saveManualTimeBtn.dataset.previousText = saveManualTimeBtn.textContent;
+      startTimerBtn.textContent = 'Starting...';
+      stopTimerBtn.textContent = 'Stopping...';
+      saveManualTimeBtn.textContent = 'Adding...';
+    } else {
+      startTimerBtn.textContent = startTimerBtn.dataset.previousText || 'Start Timer';
+      stopTimerBtn.textContent = stopTimerBtn.dataset.previousText || 'Stop Timer';
+      saveManualTimeBtn.textContent = saveManualTimeBtn.dataset.previousText || 'Add';
+      if (currentData && currentData.timeTracking) {
+        const data = currentData.timeTracking;
+        startTimerBtn.disabled = !data.canTrack || Boolean(data.currentStopwatch) || Boolean(data.otherStopwatch);
+        addManualTimeBtn.disabled = !data.canTrack;
+      }
+    }
+  }
+
+  function resetManualTimeForm() {
+    manualHoursInput.value = '';
+    manualMinutesInput.value = '';
+    manualTimeForm.style.display = 'none';
   }
 
   /**

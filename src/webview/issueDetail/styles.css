@@ -260,6 +260,92 @@ body.has-comment-input #content {
   gap: 8px;
 }
 
+/* Time Tracking */
+.time-tracking-section {
+  padding: 14px 0 16px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  margin-bottom: 16px;
+}
+
+.time-tracking-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.time-tracking-header h2 {
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.tracked-time-total {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.time-tracking-status {
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 10px;
+}
+
+.time-tracking-status.running {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+.time-tracking-status.warning {
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-descriptionForeground));
+}
+
+.time-tracking-actions,
+.manual-time-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.manual-time-form {
+  margin-top: 10px;
+}
+
+.manual-time-input {
+  width: 96px;
+  padding: 6px 8px;
+  border: 1px solid var(--vscode-input-border);
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border-radius: 3px;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+.tracked-time-list {
+  margin-top: 12px;
+}
+
+.tracked-time-entry {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.tracked-time-entry-duration {
+  min-width: 64px;
+  font-weight: 600;
+}
+
+.tracked-time-entry-meta,
+.tracked-time-empty {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
 /* Section Styling */
 section {
   margin-bottom: 24px;

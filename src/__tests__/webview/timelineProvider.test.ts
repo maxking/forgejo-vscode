@@ -47,6 +47,64 @@ describe('detail webview timeline activity normalization', () => {
     });
   });
 
+  test('issue details build time tracking data for the current running stopwatch', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const client = {
+      getIssueTrackedTimes: jest.fn().mockResolvedValue([
+        { id: 1, time: 600, user_name: 'alice' },
+        { id: 2, time: 1200, user_name: 'bob' }
+      ]),
+      getUserStopwatches: jest.fn().mockResolvedValue([
+        {
+          issue_index: 13020,
+          issue_title: 'Current issue',
+          repo_name: 'forgejo',
+          repo_owner_name: 'forgejo',
+          seconds: 90
+        },
+        {
+          issue_index: 99,
+          issue_title: 'Other issue',
+          repo_name: 'forgejo',
+          repo_owner_name: 'forgejo',
+          seconds: 30
+        }
+      ])
+    };
+
+    const timeTracking = await (provider as any)._fetchTimeTracking(client, 'forgejo', 'forgejo', 13020, true);
+
+    expect(timeTracking).toMatchObject({
+      canTrack: true,
+      totalSeconds: 1800,
+      currentStopwatch: {
+        issue_index: 13020,
+        issue_title: 'Current issue'
+      },
+      otherStopwatch: {
+        issue_index: 99,
+        issue_title: 'Other issue'
+      }
+    });
+  });
+
+  test('issue details do not fetch user stopwatches without authentication', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const client = {
+      getIssueTrackedTimes: jest.fn().mockResolvedValue([{ id: 1, time: 300 }]),
+      getUserStopwatches: jest.fn()
+    };
+
+    const timeTracking = await (provider as any)._fetchTimeTracking(client, 'forgejo', 'forgejo', 13020, false);
+
+    expect(timeTracking).toMatchObject({
+      canTrack: false,
+      totalSeconds: 300,
+      entries: [{ id: 1, time: 300 }]
+    });
+    expect(client.getUserStopwatches).not.toHaveBeenCalled();
+  });
+
   test('PR details skip duplicate timeline comments and preserve Forgejo type actions', async () => {
     const provider = new PRDetailWebviewProvider({} as never);
     const client = {

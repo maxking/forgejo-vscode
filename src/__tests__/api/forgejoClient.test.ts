@@ -271,6 +271,52 @@ describe('ForgejoClient', () => {
     });
   });
 
+  describe('issue time tracking', () => {
+    test('getUserStopwatches should fetch paged user stopwatches', async () => {
+      const stopwatches = [{
+        issue_index: 10,
+        repo_name: 'repo',
+        repo_owner_name: 'owner',
+        seconds: 120
+      }];
+      const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue(stopwatches as any);
+
+      await expect(client.getUserStopwatches(2, 25)).resolves.toEqual(stopwatches);
+
+      expect(rawSpy).toHaveBeenCalledWith('GET', '/user/stopwatches?page=2&limit=25');
+    });
+
+    test('should start, stop, and delete an issue stopwatch', async () => {
+      const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue(undefined as any);
+
+      await client.startIssueStopwatch('owner name', 'repo name', 42);
+      await client.stopIssueStopwatch('owner name', 'repo name', 42);
+      await client.deleteIssueStopwatch('owner name', 'repo name', 42);
+
+      expect(rawSpy).toHaveBeenNthCalledWith(1, 'POST', '/repos/owner%20name/repo%20name/issues/42/stopwatch/start');
+      expect(rawSpy).toHaveBeenNthCalledWith(2, 'POST', '/repos/owner%20name/repo%20name/issues/42/stopwatch/stop');
+      expect(rawSpy).toHaveBeenNthCalledWith(3, 'DELETE', '/repos/owner%20name/repo%20name/issues/42/stopwatch/delete');
+    });
+
+    test('getIssueTrackedTimes should fetch paged issue time entries', async () => {
+      const entries = [{ id: 1, time: 900, user_name: 'alice' }];
+      const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue(entries as any);
+
+      await expect(client.getIssueTrackedTimes('owner', 'repo', 42, 3, 10)).resolves.toEqual(entries);
+
+      expect(rawSpy).toHaveBeenCalledWith('GET', '/repos/owner/repo/issues/42/times?page=3&limit=10');
+    });
+
+    test('addIssueTrackedTime should post seconds to the issue time endpoint', async () => {
+      const entry = { id: 2, time: 1800, user_name: 'alice' };
+      const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue(entry as any);
+
+      await expect(client.addIssueTrackedTime('owner', 'repo', 42, 1800)).resolves.toEqual(entry);
+
+      expect(rawSpy).toHaveBeenCalledWith('POST', '/repos/owner/repo/issues/42/times', { time: 1800 });
+    });
+  });
+
   describe('getPullRequestFiles', () => {
     test('should fetch pull request files successfully', async () => {
       mockFetch.mockResolvedValueOnce({

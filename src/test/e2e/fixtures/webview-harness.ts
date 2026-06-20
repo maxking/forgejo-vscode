@@ -275,6 +275,27 @@ export class WebviewHarness {
       </div>
     </nav>
 
+    <section class="time-tracking-section">
+      <div class="time-tracking-header">
+        <h2>Time Tracking</h2>
+        <span id="tracked-time-total" class="tracked-time-total"></span>
+      </div>
+      <div id="time-tracking-status" class="time-tracking-status"></div>
+      <div class="time-tracking-actions">
+        <button id="start-timer-btn" class="btn btn-primary btn-small">Start Timer</button>
+        <button id="stop-timer-btn" class="btn btn-success btn-small" style="display: none;">Stop Timer</button>
+        <button id="cancel-timer-btn" class="btn btn-secondary btn-small" style="display: none;">Cancel Timer</button>
+        <button id="add-manual-time-btn" class="btn btn-secondary btn-small">Add Manual Time</button>
+      </div>
+      <form id="manual-time-form" class="manual-time-form" style="display: none;">
+        <input id="manual-hours-input" class="manual-time-input" type="number" min="0" step="1" placeholder="Hours">
+        <input id="manual-minutes-input" class="manual-time-input" type="number" min="0" max="59" step="1" placeholder="Minutes">
+        <button id="save-manual-time-btn" class="btn btn-primary btn-small" type="submit">Add</button>
+        <button id="cancel-manual-time-btn" class="btn btn-secondary btn-small" type="button">Cancel</button>
+      </form>
+      <div id="tracked-time-list" class="tracked-time-list"></div>
+    </section>
+
     <section class="description-section">
       <div class="description-header">
         <h2>Description</h2>
@@ -546,6 +567,33 @@ export interface IssueDetailData {
     body?: string;
     event?: string;
   }>;
+  timeTracking: {
+    canTrack: boolean;
+    totalSeconds: number;
+    entries: Array<{
+      id: number;
+      time: number;
+      created?: string;
+      user_name?: string;
+    }>;
+    currentStopwatch?: {
+      created?: string;
+      seconds?: number;
+      issue_index: number;
+      issue_title?: string;
+      repo_name: string;
+      repo_owner_name: string;
+    };
+    otherStopwatch?: {
+      created?: string;
+      seconds?: number;
+      issue_index: number;
+      issue_title?: string;
+      repo_name: string;
+      repo_owner_name: string;
+    };
+    error?: string;
+  };
   owner: string;
   repo: string;
   canComment: boolean;
@@ -589,6 +637,11 @@ export function createMockIssueData(overrides: Partial<IssueDetailData['issue']>
       ...overrides,
     },
     activities: [],
+    timeTracking: {
+      canTrack: true,
+      totalSeconds: 0,
+      entries: [],
+    },
     owner: 'owner',
     repo: 'repo',
     canComment: true,
