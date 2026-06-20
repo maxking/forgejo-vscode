@@ -27,7 +27,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.24
 
 - **Faster CI dependency installs:** all test/publish/live-test jobs now cache the npm download cache (`~/.npm`) keyed on `package-lock.json`, so the ~740-package `npm ci` reinstall reuses cached tarballs instead of re-fetching them from the registry on every run.
-- **Start work on issue ([#188](https://git.araj.me/maxking/forgejo-vscode/issues/188)):** issue rows now offer a start-work action that picks a local Git repository, suggests branch names from the issue number and title, and checks out the branch through VS Code's Git extension.
+- **Start work on issue ([#188](https://git.araj.me/maxking/forgejo-vscode/issues/188)):** issue rows now offer a start-work action that picks a local Git repository, suggests branch names from the issue number and title, and checks out the branch through VS Code's Git extension from the configured base ref.
 - **Issue comment composer ([#200](https://git.araj.me/maxking/forgejo-vscode/issues/200)):** issue detail views now show the comment text box immediately when the selected repository has a configured token, instead of requiring a separate "+ Comment" reveal button.
 
 ### 0.3.23
