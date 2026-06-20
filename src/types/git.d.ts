@@ -13,6 +13,9 @@ export interface InputBox {
 export interface RepositoryState {
   readonly HEAD: Branch | undefined;
   readonly remotes: Remote[];
+  readonly indexChanges?: Change[];
+  readonly workingTreeChanges?: Change[];
+  readonly mergeChanges?: Change[];
 }
 
 export interface Branch {
@@ -25,6 +28,10 @@ export interface Remote {
   readonly name: string;
   readonly fetchUrl?: string;
   readonly pushUrl?: string;
+}
+
+export interface Change {
+  readonly uri: Uri;
 }
 
 export interface CommitOptions {
@@ -42,8 +49,11 @@ export interface Repository {
   add(paths: string[]): Promise<void>;
   commit(message: string, opts?: CommitOptions): Promise<void>;
   addRemote(name: string, url: string): Promise<void>;
+  createBranch(name: string, checkout?: boolean, ref?: string): Promise<void>;
+  checkout(treeish: string): Promise<void>;
   push(remoteName?: string, branchName?: string, setUpstream?: boolean): Promise<void>;
   fetch(remoteName?: string, ref?: string, depth?: number): Promise<void>;
+  getBranch(name: string): Promise<Branch>;
 }
 
 export interface RemoteSource {

@@ -118,6 +118,14 @@ export interface CommandMap {
     instanceUrl?: string,
   ];
 
+  // view/item/context: viewItem == issue
+  'forgejo.startWorkOnIssue': [
+    issueOrItem: IssueListItem | IssueTreeItem,
+    owner?: string,
+    repo?: string,
+    instanceUrl?: string,
+  ];
+
   'forgejo.openIssueInBrowserFromContext': [issueItem: IssueTreeItem];
 
   // view/item/context: viewItem == workflowRun | workflowJob

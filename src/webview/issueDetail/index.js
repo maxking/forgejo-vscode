@@ -23,6 +23,7 @@
   const assigneesContainer = document.getElementById('assignees-container');
 
   const refreshBtn = document.getElementById('refresh-btn');
+  const startWorkBtn = document.getElementById('start-work-btn');
   const openWebBtn = document.getElementById('open-web-btn');
   const closeIssueBtn = document.getElementById('close-issue-btn');
   const reopenIssueBtn = document.getElementById('reopen-issue-btn');
@@ -75,6 +76,11 @@
     refreshBtn.addEventListener('click', () => {
       console.log('[Forgejo Issue Webview] Refresh clicked');
       vscode.postMessage({ type: 'refresh' });
+    });
+
+    startWorkBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Start work clicked');
+      vscode.postMessage({ type: 'startWork' });
     });
 
     openWebBtn.addEventListener('click', () => {

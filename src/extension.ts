@@ -21,6 +21,7 @@ import { showDiagnostics } from './commands/diagnostics';
 import { openWorkflowFileByName, openWorkflowFileForCIStatus, validateWorkflowsCommand, viewCIStatusLogs } from './commands/ciNavigation';
 import { createIssueCommand } from './commands/createIssue';
 import { createPullRequestCommand } from './commands/createPullRequest';
+import { startWorkOnIssueCommand } from './commands/startWorkOnIssue';
 import { createReleaseCommand } from './commands/createRelease';
 import { mergePrCommand } from './commands/mergePr';
 import { selectRemoteCommand } from './commands/selectRemote';
@@ -854,6 +855,10 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
     )
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.startWorkOnIssue', startWorkOnIssueCommand)
   );
 
   // Register open issue in browser from context menu command

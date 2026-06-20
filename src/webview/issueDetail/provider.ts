@@ -10,6 +10,7 @@ export type WebviewMessage =
   | { type: 'refresh' }
   | { type: 'addComment'; body: string }
   | { type: 'openInBrowser' }
+  | { type: 'startWork' }
   | { type: 'closeIssue' }
   | { type: 'reopenIssue' }
   | { type: 'updateBody'; body: string };
@@ -226,6 +227,7 @@ export class IssueDetailWebviewProvider {
       case 'refresh': await this._fetchIssueData(panelKey); break;
       case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey, instanceUrl); break;
       case 'openInBrowser': await this._openInBrowser(owner, repo, number, instanceUrl); break;
+      case 'startWork': await this._startWorkOnIssue(panelKey); break;
       case 'closeIssue': await this._closeIssue(owner, repo, number, panelKey, instanceUrl); break;
       case 'reopenIssue': await this._reopenIssue(owner, repo, number, panelKey, instanceUrl); break;
       case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey, instanceUrl); break;
@@ -309,6 +311,23 @@ export class IssueDetailWebviewProvider {
     }
   }
 
+  private async _startWorkOnIssue(panelKey: string): Promise<void> {
+    const state = this._panels.get(panelKey);
+    const issue = state?.pendingData?.issue;
+    if (!state || !issue) {
+      void vscode.window.showErrorMessage('Issue details are not loaded yet.');
+      return;
+    }
+
+    await vscode.commands.executeCommand(
+      'forgejo.startWorkOnIssue',
+      issue,
+      state.owner,
+      state.repo,
+      state.instanceUrl
+    );
+  }
+
   private _getThemeName(kind: vscode.ColorThemeKind): 'light' | 'dark' | 'high-contrast' {
     switch (kind) {
       case vscode.ColorThemeKind.Light: return 'light';
@@ -367,6 +386,7 @@ export class IssueDetailWebviewProvider {
     </header>
 
     <nav class="action-bar">
+      <button id="start-work-btn" class="btn btn-primary">Start Work</button>
       <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
       <button id="open-web-btn" class="btn btn-secondary">Open in Web</button>
       <div id="state-actions" class="state-actions">

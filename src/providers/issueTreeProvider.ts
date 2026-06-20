@@ -59,7 +59,8 @@ export class IssueTreeItem extends vscode.TreeItem {
     public readonly owner: string,
     public readonly repo: string,
     public readonly instanceUrl?: string,
-    public readonly treeContext?: string
+    public readonly treeContext?: string,
+    public readonly config?: ForgejoConfig & { rootPath?: string }
   ) {
     super(`#${issue.number}: ${issue.title}`, vscode.TreeItemCollapsibleState.None);
 
@@ -265,7 +266,7 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
         const children: IssueTreeElement[] = issues.length === 0
           ? [new IssueMessageItem(`No ${this.emptyDescriptionForGroup(element)} issues found`, false, element.id ?? element.kind)]
           : issues.map(issue =>
-            new IssueTreeItem(issue, issue.html_url, config.owner, config.repo, config.instanceUrl, element.kind)
+            new IssueTreeItem(issue, issue.html_url, config.owner, config.repo, config.instanceUrl, element.kind, config)
           );
         if (this.canLoadMoreIssues(element, config)) {
           children.push(new IssueLoadMoreItem(element, config));

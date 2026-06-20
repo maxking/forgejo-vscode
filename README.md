@@ -27,6 +27,9 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.24
 
 - **Faster CI dependency installs:** all test/publish/live-test jobs now cache the npm download cache (`~/.npm`) keyed on `package-lock.json`, so the ~740-package `npm ci` reinstall reuses cached tarballs instead of re-fetching them from the registry on every run.
+- **Start work on issue ([#188](https://git.araj.me/maxking/forgejo-vscode/issues/188)):** issue rows now offer a start-work action that picks a local Git repository, suggests branch names from the issue number and title, and checks out the branch through VS Code's Git extension from the configured base ref.
+- **Start work target clarity ([#188](https://git.araj.me/maxking/forgejo-vscode/issues/188)):** when multiple matching local worktrees exist, Start Work now asks which path to use and its success message names the existing local worktree where the branch was checked out.
+- **Issue detail Start Work ([#188](https://git.araj.me/maxking/forgejo-vscode/issues/188)):** issue detail pages now include a Start Work button that uses the same branch and worktree selection flow as issue tree rows.
 - **Issue comment composer ([#200](https://git.araj.me/maxking/forgejo-vscode/issues/200)):** issue detail views now show the comment text box immediately when the selected repository has a configured token, instead of requiring a separate "+ Comment" reveal button.
 
 ### 0.3.23
@@ -284,6 +287,7 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 |---------|---------|-------------|
 | `forgejo.autoDetectFromRemote` | `true` | Auto-detect instance from git remote |
 | `forgejo.preferredRemote` | `""` | Preferred git remote name (default: auto-detect, falls back to origin) |
+| `forgejo.startWorkOnIssueBaseRef` | `"origin/master"` | Git ref to create Start Work on Issue branches from |
 | `forgejo.debug` | `false` | Enable debug logging |
 | `forgejo.showFileStatusNotifications` | `true` | Show notifications for added/deleted files |
 
