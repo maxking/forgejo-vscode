@@ -8,6 +8,7 @@ import { parseRemoteUrl } from '../utils/gitUtils';
 import { logError, logInfo } from '../utils/logger';
 
 const CUSTOM_BRANCH_PICK = '__custom__';
+const DEFAULT_BASE_REF = 'origin/master';
 
 interface RepositoryPick extends vscode.QuickPickItem {
   repository: Repository;
@@ -208,8 +209,17 @@ async function checkoutBranch(repository: Repository, branchName: string): Promi
     return true;
   }
 
-  await repository.branch(branchName, true);
+  await createBranch(repository, branchName);
   return true;
+}
+
+function startWorkBaseRef(): string {
+  return vscode.workspace.getConfiguration('forgejo').get<string>('startWorkOnIssueBaseRef', DEFAULT_BASE_REF).trim()
+    || DEFAULT_BASE_REF;
+}
+
+async function createBranch(repository: Repository, branchName: string): Promise<void> {
+  await repository.createBranch(branchName, true, startWorkBaseRef());
 }
 
 async function getGitApi(): Promise<API | undefined> {

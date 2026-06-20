@@ -36,7 +36,7 @@ function createRepository(rootPath: string, remoteUrl: string, overrides: Record
       mergeChanges: [],
       ...(overrides.state as object | undefined),
     },
-    branch: jest.fn().mockResolvedValue(undefined),
+    createBranch: jest.fn().mockResolvedValue(undefined),
     checkout: jest.fn().mockResolvedValue(undefined),
     getBranch: jest.fn().mockRejectedValue(new Error('not found')),
     ...overrides,
@@ -108,6 +108,12 @@ describe('startWorkOnIssueCommand', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (vscode.window as any).activeTextEditor = undefined;
+    (vscode.workspace.getConfiguration as jest.Mock).mockImplementation(() => ({
+      get: jest.fn((_key: string, defaultValue?: unknown) => defaultValue),
+      update: jest.fn(),
+      has: jest.fn(),
+      inspect: jest.fn(),
+    }));
   });
 
   it('creates and checks out a new branch in the issue tree repository', async () => {
@@ -120,7 +126,7 @@ describe('startWorkOnIssueCommand', () => {
     await startWorkOnIssueCommand(createIssueTreeItem());
 
     expect(repository.getBranch).toHaveBeenCalledWith('feat/188-add-start-work-on-issue-command');
-    expect(repository.branch).toHaveBeenCalledWith('feat/188-add-start-work-on-issue-command', true);
+    expect(repository.createBranch).toHaveBeenCalledWith('feat/188-add-start-work-on-issue-command', true, 'origin/master');
     expect(repository.checkout).not.toHaveBeenCalled();
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
       'Started work on issue #188 on branch feat/188-add-start-work-on-issue-command.'
@@ -137,8 +143,8 @@ describe('startWorkOnIssueCommand', () => {
 
     await startWorkOnIssueCommand(issue as any, 'owner', 'repo', 'https://git.example.com');
 
-    expect(first.branch).not.toHaveBeenCalled();
-    expect(second.branch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true);
+    expect(first.createBranch).not.toHaveBeenCalled();
+    expect(second.createBranch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true, 'origin/master');
   });
 
   it('matches an SSH remote by hostname when the instance URL has an HTTP port', async () => {
@@ -150,7 +156,25 @@ describe('startWorkOnIssueCommand', () => {
 
     await startWorkOnIssueCommand(issue as any, 'owner', 'repo', 'https://git.example.com:3000');
 
-    expect(repository.branch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true);
+    expect(repository.createBranch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true, 'origin/master');
+  });
+
+  it('uses the configured parent ref when creating a branch', async () => {
+    const repository = createRepository('/workspace/repo', 'https://git.example.com/owner/repo.git');
+    mockGitApi([repository]);
+    (vscode.workspace.getConfiguration as jest.Mock).mockImplementation(() => ({
+      get: jest.fn((key: string, defaultValue?: unknown) => key === 'startWorkOnIssueBaseRef' ? 'origin/main' : defaultValue),
+      update: jest.fn(),
+      has: jest.fn(),
+      inspect: jest.fn(),
+    }));
+    (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({
+      branchName: 'issue/188-add-start-work-on-issue-command',
+    });
+
+    await startWorkOnIssueCommand(createIssueTreeItem());
+
+    expect(repository.createBranch).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command', true, 'origin/main');
   });
 
   it('returns early when repository selection is cancelled', async () => {
@@ -161,8 +185,8 @@ describe('startWorkOnIssueCommand', () => {
 
     await startWorkOnIssueCommand(issue as any, 'owner', 'repo', 'https://git.example.com');
 
-    expect(first.branch).not.toHaveBeenCalled();
-    expect(second.branch).not.toHaveBeenCalled();
+    expect(first.createBranch).not.toHaveBeenCalled();
+    expect(second.createBranch).not.toHaveBeenCalled();
   });
 
   it('returns early when dirty repository confirmation is cancelled', async () => {
@@ -174,7 +198,7 @@ describe('startWorkOnIssueCommand', () => {
 
     await startWorkOnIssueCommand(createIssueTreeItem());
 
-    expect(repository.branch).not.toHaveBeenCalled();
+    expect(repository.createBranch).not.toHaveBeenCalled();
     expect(vscode.window.showQuickPick).not.toHaveBeenCalled();
   });
 
@@ -189,7 +213,7 @@ describe('startWorkOnIssueCommand', () => {
 
     await startWorkOnIssueCommand(createIssueTreeItem());
 
-    expect(repository.branch).not.toHaveBeenCalled();
+    expect(repository.createBranch).not.toHaveBeenCalled();
     expect(repository.checkout).toHaveBeenCalledWith('issue/188-add-start-work-on-issue-command');
   });
 
@@ -200,7 +224,7 @@ describe('startWorkOnIssueCommand', () => {
 
     await startWorkOnIssueCommand(createIssueTreeItem());
 
-    expect(repository.branch).not.toHaveBeenCalled();
+    expect(repository.createBranch).not.toHaveBeenCalled();
     expect(repository.checkout).not.toHaveBeenCalled();
   });
 
@@ -211,6 +235,6 @@ describe('startWorkOnIssueCommand', () => {
     await startWorkOnIssueCommand(createIssueTreeItem());
 
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('No local Git repository found for owner/repo.');
-    expect(repository.branch).not.toHaveBeenCalled();
+    expect(repository.createBranch).not.toHaveBeenCalled();
   });
 });

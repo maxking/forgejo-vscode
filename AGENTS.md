@@ -53,6 +53,7 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - Workflow file diagnostics must stay local and bounded; do not add network validation for `.forgejo/workflows`, `.gitea/workflows`, or `.github/workflows` during activation or document validation.
 - Keep the vendored workflow schema publish-safe for Open VSX: password properties should use object mappings like `{ "type": "non-empty-string" }` instead of `"password": "non-empty-string"`, and schema refresh tooling should preserve that sanitization.
 - Issue context commands that need local Git state should preserve repository identity from `IssueTreeItem` and use the VS Code Git extension API for repository selection and branch operations instead of shelling out from a workspace root.
+- Start-work-on-issue branch creation should call the VS Code Git extension's `createBranch(name, checkout, ref)` API, using `forgejo.startWorkOnIssueBaseRef` as the parent ref.
 
 ## Architecture & Code Patterns
 

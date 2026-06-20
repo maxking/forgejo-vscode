@@ -285,6 +285,7 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 |---------|---------|-------------|
 | `forgejo.autoDetectFromRemote` | `true` | Auto-detect instance from git remote |
 | `forgejo.preferredRemote` | `""` | Preferred git remote name (default: auto-detect, falls back to origin) |
+| `forgejo.startWorkOnIssueBaseRef` | `"origin/master"` | Git ref to create Start Work on Issue branches from |
 | `forgejo.debug` | `false` | Enable debug logging |
 | `forgejo.showFileStatusNotifications` | `true` | Show notifications for added/deleted files |
 

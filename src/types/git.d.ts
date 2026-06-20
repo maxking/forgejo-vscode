@@ -49,7 +49,7 @@ export interface Repository {
   add(paths: string[]): Promise<void>;
   commit(message: string, opts?: CommitOptions): Promise<void>;
   addRemote(name: string, url: string): Promise<void>;
-  branch(name: string, checkout?: boolean): Promise<void>;
+  createBranch(name: string, checkout?: boolean, ref?: string): Promise<void>;
   checkout(treeish: string): Promise<void>;
   push(remoteName?: string, branchName?: string, setUpstream?: boolean): Promise<void>;
   fetch(remoteName?: string, ref?: string, depth?: number): Promise<void>;

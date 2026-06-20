@@ -558,6 +558,11 @@
           "type": "string",
           "default": "",
           "description": "Preferred git remote name to use for Forgejo detection (default: auto-detect, falls back to origin)"
+        },
+        "forgejo.startWorkOnIssueBaseRef": {
+          "type": "string",
+          "default": "origin/master",
+          "description": "Git ref to create Start Work on Issue branches from"
         }
       }
     }
