@@ -24,7 +24,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ## News
 
-### 0.3.22
+### 0.3.23
 
 - **Open VSX workflow schema publishing fix:** the vendored workflow schema now avoids password-shaped string mappings that Open VSX secret scanning can mistake for credentials during publication.
 
