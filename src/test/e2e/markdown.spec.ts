@@ -130,6 +130,23 @@ test.describe('Markdown Rendering', () => {
       await expect(links.first()).toHaveText('already linked #200');
       await expect(links.first()).toHaveAttribute('href', 'https://example.com/custom');
     });
+
+    test('autolinks cross-repository issue references in PR comments', async ({ page }) => {
+      const data = createMockPRData({ body: 'No description links.' });
+      data.activities = [
+        {
+          type: 'comment',
+          id: 1,
+          user: { login: 'reviewer' },
+          body: 'Related to tools/cli#88',
+        },
+      ];
+      await harness.sendPRUpdate(data);
+
+      const link = page.locator('#activity-timeline .activity-body a');
+      await expect(link).toHaveText('tools/cli#88');
+      await expect(link).toHaveAttribute('href', 'https://git.example.com/tools/cli/issues/88');
+    });
   });
 
   test.describe('Lists', () => {
@@ -305,5 +322,34 @@ test.describe('Issue Markdown Rendering', () => {
     const link = page.locator('#issue-description a');
     await expect(link).toHaveText('#199');
     await expect(link).toHaveAttribute('href', 'https://git.example.com/owner/repo/issues/199');
+  });
+
+  test('autolinks cross-repository issue references in issue details', async ({ page }) => {
+    const harness = new WebviewHarness(page);
+    await harness.loadIssueDetail();
+    await harness.sendIssueUpdate(createMockIssueData({ body: 'Related to tools/cli#88' }));
+
+    const link = page.locator('#issue-description a');
+    await expect(link).toHaveText('tools/cli#88');
+    await expect(link).toHaveAttribute('href', 'https://git.example.com/tools/cli/issues/88');
+  });
+
+  test('autolinks cross-repository issue references in issue comments', async ({ page }) => {
+    const harness = new WebviewHarness(page);
+    await harness.loadIssueDetail();
+    const data = createMockIssueData({ body: 'No description links.' });
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'commenter' },
+        body: 'See tools/cli#88',
+      },
+    ];
+    await harness.sendIssueUpdate(data);
+
+    const link = page.locator('#activity-timeline .activity-body a');
+    await expect(link).toHaveText('tools/cli#88');
+    await expect(link).toHaveAttribute('href', 'https://git.example.com/tools/cli/issues/88');
   });
 });
