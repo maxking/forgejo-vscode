@@ -19,7 +19,11 @@ export default defineConfig<VSCodeTestOptions, VSCodeWorkerOptions>({
   projects: [
     {
       name: 'stable',
-      use: { vscodeVersion: 'stable' },
+      // In CI the live-test Docker image bakes a pinned VS Code at
+      // /opt/vscode-test and exports VSCODE_TEST_VERSION; @vscode/test-electron
+      // then reuses that install and skips the 241 MB download. Locally this
+      // falls back to 'stable' (downloaded/cached under .vscode-test as usual).
+      use: { vscodeVersion: process.env.VSCODE_TEST_VERSION ?? 'stable' },
     },
   ],
 });
