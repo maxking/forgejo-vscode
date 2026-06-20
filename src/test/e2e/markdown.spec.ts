@@ -100,6 +100,14 @@ test.describe('Markdown Rendering', () => {
       await expect(link).toHaveAttribute('href', 'https://example.com');
     });
 
+    test('renders inline formatting inside explicit links', async ({ page }) => {
+      const desc = await renderMarkdown(page, '[**Fixed #199**](https://example.com/custom)');
+      const link = desc.locator('a');
+      await expect(link).toHaveAttribute('href', 'https://example.com/custom');
+      await expect(link.locator('strong')).toHaveText('Fixed #199');
+      await expect(link.locator('a')).toHaveCount(0);
+    });
+
     test('renders images', async ({ page }) => {
       const desc = await renderMarkdown(page, '![Alt text](https://example.com/image.png)');
       const img = desc.locator('img');

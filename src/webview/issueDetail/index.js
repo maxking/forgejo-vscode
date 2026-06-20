@@ -515,9 +515,17 @@
     text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_match, linkText, url) {
       var safe = sanitizeUrl(url);
       if (!safe) return linkText;
-      return addHtmlToken('<a href="' + safe + '">' + linkText + '</a>');
+      return addHtmlToken('<a href="' + safe + '">' + applyInlineFormatting(linkText) + '</a>');
     });
     text = autolinkIssueReferences(text);
+    text = applyInlineFormatting(text);
+    for (var i = 0; i < htmlTokens.length; i++) {
+      text = text.replace(new RegExp('%%HTMLTOKEN_' + i + '%%', 'g'), htmlTokens[i]);
+    }
+    return text;
+  }
+
+  function applyInlineFormatting(text) {
     text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
     text = text.replace(/___([^_]+)___/g, '<strong><em>$1</em></strong>');
     text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -525,9 +533,6 @@
     text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     text = text.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
     text = text.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-    for (var i = 0; i < htmlTokens.length; i++) {
-      text = text.replace(new RegExp('%%HTMLTOKEN_' + i + '%%', 'g'), htmlTokens[i]);
-    }
     return text;
   }
 
