@@ -51,6 +51,72 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - Detail webviews should receive normalized activity view models rather than raw API rows; flatten nested Forgejo commit fields such as `commit.message`, `commit.author.date`, and `author.login` before rendering.
 - Workflow file diagnostics must stay local and bounded; do not add network validation for `.forgejo/workflows`, `.gitea/workflows`, or `.github/workflows` during activation or document validation.
 
+## Architecture & Code Patterns
+
+### Activation
+
+- The extension's `activationEvents` is `onStartupFinished`. Do not change it to a view-based activation event; doing so has caused circular-dependency regressions in the past.
+
+### API client
+
+- `src/api/forgejoClient.ts` is a thin backward-compatible wrapper around the [`forgejo-ts`](https://codeberg.org/maxking/forgejo-ts) client library. Prefer extending or composing that wrapper rather than introducing new raw `fetch` paths.
+- All authenticated requests use the header `Authorization: token <TOKEN>`. Tokens are stored via `src/utils/secretStorage.ts` (VS Code `SecretStorage`), not in plain settings.
+- Required token scopes: `read:repository` (PRs, files, refs) and `read:issues` (issues, comments).
+
+### Forgejo API quirks
+
+- `GET /api/v1/repos/{owner}/{repo}/issues` returns **both** issues and pull requests. Always filter out items that have a non-null `pull_request` field before rendering in the Issues tree.
+- Base URL format: `{instanceUrl}/api/v1/repos/{owner}/{repo}/...`. `forgejoClient` always normalizes remotes to HTTPS before issuing requests.
+- For review-requested PR queries, the repository-scoped issue listing endpoint does **not** support `review_requested_by`. Use `/repos/issues/search` with `review_requested=true` and filter the results back to the selected repository before hydrating PR details.
+
+### Git remote detection (`src/utils/gitUtils.ts`)
+
+Supported URL formats:
+
+- HTTPS: `https://git.example.com/owner/repo.git`
+- SSH scp-style: `git@git.example.com:owner/repo.git`
+- SSH protocol: `ssh://git@git.example.com/owner/repo.git`
+
+Parsing extracts the instance URL, owner, and repo name and converts to HTTPS for API calls.
+
+### Console logging
+
+Always prefix logs with `[Forgejo]` so they can be filtered in the Developer Tools console:
+
+```typescript
+console.log('[Forgejo] Fetching pull requests...');
+console.error('[Forgejo] Error:', error);
+```
+
+Use the shared logger adapter (`src/utils/forgejoLoggerAdapter.ts`) when the call site already has a `ForgejoClient` available.
+
+### Tree providers
+
+- Implement `vscode.TreeDataProvider<T>`. Use an internal `EventEmitter` for `onDidChangeTreeData` and expose a `refresh()` method that fires it.
+- Return a `MessageItem` (error or info) from `getChildren()` when the provider has an error or no data, instead of returning an empty array. This keeps the tree view informative.
+- Group items by state (Open/Closed/Draft/Merged) at the top level.
+- Never fire tree refresh events from inside `getChildren()`. Trigger refreshes only from explicit user actions or configuration-change listeners.
+
+### VS Code extension conventions
+
+- Command IDs must match the IDs declared in `package.json` `contributes.commands`. Register them in `activate()` and push the resulting `vscode.Disposable` to `context.subscriptions`.
+- View IDs must match `package.json` `contributes.views`. Register providers with `vscode.window.createTreeView()` and add the returned view to `context.subscriptions`.
+- Settings belong in `package.json` under `contributes.configuration`. Read them via `vscode.workspace.getConfiguration('forgejo')` and write with `config.update(key, value, ConfigurationTarget.Global)`.
+
+### Testing strategy
+
+The project uses a multi-track testing strategy. Pick the right track for the change:
+
+- **Jest unit tests** (`npm run test:unit`, `npm run test:unit:watch`, `npm run test:unit:coverage`): fast tests of pure logic with no VS Code API. Lives in `src/__tests__/`.
+- **Mocha + `@vscode/test-cli` integration tests** (`npm run test:integration`): tests that need a real Extension Host (tree providers, command registration, activation). Lives in `src/test/suite/`.
+- **Playwright E2E tests** (`npm run test:e2e`, `npm run test:e2e:vscode`): UI-level tests against a launched VS Code instance. Use `npm run test:e2e:live` against a real Forgejo when needed.
+- **Live API tests** (`npm run test:live`): require a running Forgejo instance (see `docker-compose.e2e.yml`).
+
+Pre-commit gate: `npm run lint && npm run test:unit && npm run compile`.
+Pre-push gate: `npm run test:ci` (lint + unit coverage + integration).
+
+CI runs on the Forgejo workflows at `.forgejo/workflows/test.yml` against Node 18 and Node 20.
+
 ## Landing the Plane (Session Completion)
 
 Before pushing, ask the user for confirmation unless they have explicitly requested a push/merge in the current task.
@@ -126,13 +192,3 @@ git worktree add .worktrees/feature-auth-fix -b feature-auth-fix
 cd .worktrees/feature-auth-fix
 ```
 
-Why worktrees?
-
-Keep master/main clean and stable
-Parallel work on multiple features
-Easy context switching without stashing
-Isolated environments per feature
-After creating worktree:
-
-Switch to the worktree directory
-Begin coding in the worktree
