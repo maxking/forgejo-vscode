@@ -1,3 +1,4 @@
+import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
 import { IssueDetailWebviewProvider } from '../../webview/issueDetail/provider';
@@ -79,5 +80,37 @@ describe('IssueDetailWebviewProvider', () => {
         canComment: expectedCanComment
       }
     });
+  });
+
+  it('starts work on the loaded issue from the details page', async () => {
+    const { provider } = createProvider('test-token');
+    const state = (provider as any)._panels.get('panel');
+    state.pendingData = {
+      issue,
+      activities: [],
+      owner: 'owner',
+      repo: 'repo',
+      canComment: true,
+      instanceUrl: 'https://git.example.com'
+    };
+
+    await (provider as any)._handleMessage({ type: 'startWork' }, 'panel');
+
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'forgejo.startWorkOnIssue',
+      issue,
+      'owner',
+      'repo',
+      'https://git.example.com'
+    );
+  });
+
+  it('shows an error when start work is clicked before issue details load', async () => {
+    const { provider } = createProvider('test-token');
+
+    await (provider as any)._handleMessage({ type: 'startWork' }, 'panel');
+
+    expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Issue details are not loaded yet.');
   });
 });
