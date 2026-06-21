@@ -2,9 +2,8 @@ import * as vscode from 'vscode';
 import {
   createIssueFromTodoCommand,
   findIssueReferenceAtPosition,
-  findIssueReferenceRanges,
   ForgejoReferenceLanguageProvider,
-  registerReferenceLanguageFeatures,
+  registerReferenceDecorations,
   todoDraftFromLine
 } from '../../providers/referenceLanguageProvider';
 import type { ForgejoConfig } from '../../utils/config';
@@ -62,22 +61,7 @@ describe('ForgejoReferenceLanguageProvider', () => {
     });
   });
 
-  it('finds all issue reference ranges in visible document lines', () => {
-    const document = documentWithLines([
-      'See #190 and owner/repo#12',
-      'No reference here',
-      'Fixes (#215)'
-    ]);
-
-    const ranges = findIssueReferenceRanges(document, [new vscode.Range(0, 0, 2, 20)]);
-
-    expect(ranges).toEqual([
-      new vscode.Range(0, 4, 0, 8),
-      new vscode.Range(2, 7, 2, 11)
-    ]);
-  });
-
-  it('registers issue reference decorations for editor changes without network lookups', () => {
+  it('registers issue reference decorations only after a reference is resolved', () => {
     const document = documentWithLines(['See #190']);
     const setDecorations = jest.fn();
     const decorationType = { dispose: jest.fn() };
@@ -89,8 +73,9 @@ describe('ForgejoReferenceLanguageProvider', () => {
     };
     (vscode.languages.match as jest.Mock).mockReturnValue(1);
     (vscode.window.createTextEditorDecorationType as jest.Mock).mockReturnValue(decorationType);
+    (vscode.window.visibleTextEditors as any) = [editor];
 
-    registerReferenceLanguageFeatures(context, issueCreateProvider as any);
+    const markResolvedReference = registerReferenceDecorations(context, [{ scheme: 'file' }]);
     const updateEditor = (vscode.window.onDidChangeActiveTextEditor as jest.Mock).mock.calls[0][0];
     updateEditor(editor);
 
@@ -98,12 +83,11 @@ describe('ForgejoReferenceLanguageProvider', () => {
       backgroundColor: expect.any(vscode.ThemeColor),
       textDecoration: 'underline'
     }));
-    expect(setDecorations).toHaveBeenCalledWith(
-      decorationType,
-      [new vscode.Range(0, 4, 0, 8)]
-    );
-    expect(client.getIssueDetails).not.toHaveBeenCalled();
-    expect(client.getIssueReferencesPage).not.toHaveBeenCalled();
+    expect(setDecorations).toHaveBeenLastCalledWith(decorationType, []);
+
+    markResolvedReference(document, new vscode.Range(0, 4, 0, 8));
+
+    expect(setDecorations).toHaveBeenLastCalledWith(decorationType, [new vscode.Range(0, 4, 0, 8)]);
   });
 
   it('renders public no-auth issue hovers with title, state, author, labels, and link', async () => {
@@ -126,6 +110,27 @@ describe('ForgejoReferenceLanguageProvider', () => {
     expect(markdown.value).toContain('Labels: type/feature');
     expect(markdown.value).toContain('[Open in Forgejo](https://git.example.com/owner/repo/issues/190)');
     expect(markdown.isTrusted).toBe(false);
+  });
+
+  it('marks reference decorations only when hover lookup succeeds', async () => {
+    const markResolvedReference = jest.fn();
+    provider = new ForgejoReferenceLanguageProvider(
+      issueCreateProvider as any,
+      async () => config,
+      () => client as any,
+      markResolvedReference
+    );
+    const document = documentWithLines(['Fixes #190']);
+    client.getIssueDetails.mockResolvedValue({
+      number: 190,
+      title: 'Reference hovers',
+      state: 'open',
+      labels: []
+    });
+
+    await provider.provideHover(document, position(0, 8));
+
+    expect(markResolvedReference).toHaveBeenCalledWith(document, new vscode.Range(0, 6, 0, 10));
   });
 
   it('omits unsafe hover links from API responses', async () => {
@@ -167,6 +172,22 @@ describe('ForgejoReferenceLanguageProvider', () => {
     const hover = await provider.provideHover(documentWithLines(['Broken #404']), position(0, 9));
 
     expect(hover).toBeUndefined();
+  });
+
+  it('does not mark reference decorations when the API lookup fails', async () => {
+    const markResolvedReference = jest.fn();
+    provider = new ForgejoReferenceLanguageProvider(
+      issueCreateProvider as any,
+      async () => config,
+      () => client as any,
+      markResolvedReference
+    );
+    client.getIssueDetails.mockRejectedValue(new Error('not found'));
+
+    const hover = await provider.provideHover(documentWithLines(['Broken #12345']), position(0, 9));
+
+    expect(hover).toBeUndefined();
+    expect(markResolvedReference).not.toHaveBeenCalled();
   });
 
   it('returns bounded reference completions and caches repeated lookups', async () => {

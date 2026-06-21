@@ -8,7 +8,6 @@ const REFERENCE_PATTERN = /(^|[^\w/])#(\d+)\b/g;
 const TODO_COMMENT_PATTERN = /(?:^|[\s{(;])(?:(?:\/\/+)|#|--|;|\/\*+|\*|<!--)\s*\b(TODO|FIXME)\b(?:\([^)]+\))?\s*:?\s*(.*?)(?:\s*\*\/|\s*-->)?\s*$/i;
 const COMPLETION_LIMIT = 10;
 const CACHE_TTL_MS = 60_000;
-const MAX_DECORATED_VISIBLE_LINES = 1_000;
 
 type CacheKind = 'reference' | 'user';
 
@@ -71,6 +70,17 @@ function safeHttpUrl(value: string | undefined): string | undefined {
   }
 }
 
+function rangesEqual(left: vscode.Range, right: vscode.Range): boolean {
+  return left.start.line === right.start.line &&
+    left.start.character === right.start.character &&
+    left.end.line === right.end.line &&
+    left.end.character === right.end.character;
+}
+
+function noopMarkResolvedReference(): void {
+  return undefined;
+}
+
 export function findIssueReferenceAtPosition(document: vscode.TextDocument, position: vscode.Position): { number: number; range: vscode.Range } | undefined {
   const line = document.lineAt(position.line).text;
   REFERENCE_PATTERN.lastIndex = 0;
@@ -87,31 +97,6 @@ export function findIssueReferenceAtPosition(document: vscode.TextDocument, posi
   }
 
   return undefined;
-}
-
-export function findIssueReferenceRanges(document: vscode.TextDocument, visibleRanges?: readonly vscode.Range[]): vscode.Range[] {
-  const ranges: vscode.Range[] = [];
-  const scanRanges = visibleRanges && visibleRanges.length > 0
-    ? visibleRanges
-    : [new vscode.Range(0, 0, Math.max(0, document.lineCount - 1), Number.MAX_SAFE_INTEGER)];
-
-  for (const visibleRange of scanRanges) {
-    const startLine = Math.max(0, visibleRange.start.line);
-    const endLine = Math.min(document.lineCount - 1, visibleRange.end.line, startLine + MAX_DECORATED_VISIBLE_LINES - 1);
-
-    for (let lineNumber = startLine; lineNumber <= endLine; lineNumber++) {
-      const line = document.lineAt(lineNumber).text;
-      REFERENCE_PATTERN.lastIndex = 0;
-
-      for (let match = REFERENCE_PATTERN.exec(line); match; match = REFERENCE_PATTERN.exec(line)) {
-        const referenceStart = match.index + match[1].length;
-        const referenceEnd = referenceStart + match[0].length - match[1].length;
-        ranges.push(new vscode.Range(lineNumber, referenceStart, lineNumber, referenceEnd));
-      }
-    }
-  }
-
-  return ranges;
 }
 
 export function todoDraftFromLine(document: vscode.TextDocument, lineNumber: number): TodoIssueDraft | undefined {
@@ -167,7 +152,8 @@ export class ForgejoReferenceLanguageProvider implements vscode.HoverProvider, v
   constructor(
     private readonly issueCreateWebviewProvider: IssueCreateWebviewProvider,
     private readonly getConfig: () => Promise<ForgejoConfig | null> = getForgejoConfig,
-    private readonly createClient: (config: ForgejoConfig) => ForgejoClient = config => new ForgejoClient(config.instanceUrl, config.token)
+    private readonly createClient: (config: ForgejoConfig) => ForgejoClient = config => new ForgejoClient(config.instanceUrl, config.token),
+    private readonly markResolvedReference: (document: vscode.TextDocument, range: vscode.Range) => void = noopMarkResolvedReference
   ) {}
 
   async provideHover(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.Hover | undefined> {
@@ -187,6 +173,7 @@ export class ForgejoReferenceLanguageProvider implements vscode.HoverProvider, v
 
     try {
       const item = await this.createClient(config).getIssueDetails(config.owner, config.repo, reference.number) as ReferenceCompletionItem;
+      this.markResolvedReference(document, reference.range);
       return new vscode.Hover(this.renderReferenceHover(item), reference.range);
     } catch {
       return undefined;
@@ -343,11 +330,17 @@ export function registerReferenceLanguageFeatures(
   context: vscode.ExtensionContext,
   issueCreateWebviewProvider: IssueCreateWebviewProvider
 ): void {
-  const provider = new ForgejoReferenceLanguageProvider(issueCreateWebviewProvider);
   const selector: vscode.DocumentSelector = [
     { scheme: 'file' },
     { scheme: 'untitled' }
   ];
+  const markResolvedReference = registerReferenceDecorations(context, selector);
+  const provider = new ForgejoReferenceLanguageProvider(
+    issueCreateWebviewProvider,
+    getForgejoConfig,
+    config => new ForgejoClient(config.instanceUrl, config.token),
+    markResolvedReference
+  );
 
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(selector, provider),
@@ -357,11 +350,12 @@ export function registerReferenceLanguageFeatures(
     }),
     registerCommand('forgejo.createIssueFromTodo', (draft) => createIssueFromTodoCommand(issueCreateWebviewProvider, draft))
   );
-
-  registerReferenceDecorations(context, selector);
 }
 
-function registerReferenceDecorations(context: vscode.ExtensionContext, selector: vscode.DocumentSelector): void {
+export function registerReferenceDecorations(
+  context: vscode.ExtensionContext,
+  selector: vscode.DocumentSelector
+): (document: vscode.TextDocument, range: vscode.Range) => void {
   const decorationType = vscode.window.createTextEditorDecorationType({
     backgroundColor: new vscode.ThemeColor('editor.wordHighlightBackground'),
     textDecoration: 'underline',
@@ -369,13 +363,14 @@ function registerReferenceDecorations(context: vscode.ExtensionContext, selector
     overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.wordHighlightForeground'),
     overviewRulerLane: vscode.OverviewRulerLane.Right
   });
+  const rangesByDocument = new Map<string, vscode.Range[]>();
 
   const updateEditor = (editor: vscode.TextEditor | undefined): void => {
     if (!editor || !vscode.languages.match(selector, editor.document) || !isSupportedDocument(editor.document)) {
       return;
     }
 
-    editor.setDecorations(decorationType, findIssueReferenceRanges(editor.document, editor.visibleRanges));
+    editor.setDecorations(decorationType, rangesByDocument.get(editor.document.uri.toString()) ?? []);
   };
 
   const updateVisibleEditors = (): void => {
@@ -390,6 +385,7 @@ function registerReferenceDecorations(context: vscode.ExtensionContext, selector
     vscode.window.onDidChangeVisibleTextEditors(updateVisibleEditors),
     vscode.window.onDidChangeTextEditorVisibleRanges(event => updateEditor(event.textEditor)),
     vscode.workspace.onDidChangeTextDocument(event => {
+      rangesByDocument.delete(event.document.uri.toString());
       for (const editor of vscode.window.visibleTextEditors) {
         if (editor.document === event.document) {
           updateEditor(editor);
@@ -399,4 +395,18 @@ function registerReferenceDecorations(context: vscode.ExtensionContext, selector
   );
 
   updateVisibleEditors();
+
+  return (document: vscode.TextDocument, range: vscode.Range): void => {
+    const key = document.uri.toString();
+    const ranges = rangesByDocument.get(key) ?? [];
+    if (!ranges.some(existing => rangesEqual(existing, range))) {
+      rangesByDocument.set(key, [...ranges, range]);
+    }
+
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (editor.document === document) {
+        updateEditor(editor);
+      }
+    }
+  };
 }
