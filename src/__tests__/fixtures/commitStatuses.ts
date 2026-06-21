@@ -82,26 +82,26 @@ export const mockEmptyStatuses: CommitStatus[] = [];
  */
 export const mockDuplicateStatuses: CommitStatus[] = [
   // Final statuses (newer, should be kept after deduplication)
-  { id: 12, status: 'success', context: 'Live Integration Tests / live-test (12) (pull_request)', description: 'Successful in 8m16s',  target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/1', created_at: '2026-02-22T06:33:21Z', updated_at: '2026-02-22T06:33:21Z' },
+  { id: 12, status: 'success', context: 'Test / live-test (12) (pull_request)',                   description: 'Successful in 8m16s',  target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/1', created_at: '2026-02-22T06:33:21Z', updated_at: '2026-02-22T06:33:21Z' },
   { id: 11, status: 'success', context: 'Test / test (18) (pull_request)',                        description: 'Successful in 3m20s',  target_url: '/maxking/forgejo-vscode/actions/runs/359/jobs/0', created_at: '2026-02-22T06:32:59Z', updated_at: '2026-02-22T06:32:59Z' },
-  { id: 10, status: 'success', context: 'Live Integration Tests / live-test (13) (pull_request)', description: 'Successful in 7m36s',  target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/2', created_at: '2026-02-22T06:32:57Z', updated_at: '2026-02-22T06:32:57Z' },
+  { id: 10, status: 'success', context: 'Test / live-test (13) (pull_request)',                   description: 'Successful in 7m36s',  target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/2', created_at: '2026-02-22T06:32:57Z', updated_at: '2026-02-22T06:32:57Z' },
   { id:  9, status: 'success', context: 'Test / test (20) (pull_request)',                        description: 'Successful in 3m6s',   target_url: '/maxking/forgejo-vscode/actions/runs/359/jobs/1', created_at: '2026-02-22T06:32:52Z', updated_at: '2026-02-22T06:32:52Z' },
-  { id:  8, status: 'success', context: 'Live Integration Tests / live-test (11) (pull_request)', description: 'Successful in 8m11s',  target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/0', created_at: '2026-02-22T06:32:02Z', updated_at: '2026-02-22T06:32:02Z' },
+  { id:  8, status: 'success', context: 'Test / live-test (11) (pull_request)',                   description: 'Successful in 8m11s',  target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/0', created_at: '2026-02-22T06:32:02Z', updated_at: '2026-02-22T06:32:02Z' },
   { id:  7, status: 'failure', context: 'Test / smoke-test-vsix (pull_request)',                  description: 'Failing after 0s',     target_url: '/maxking/forgejo-vscode/actions/runs/359/jobs/2', created_at: '2026-02-22T06:30:57Z', updated_at: '2026-02-22T06:30:57Z' },
   // Initial pending statuses (older, should be removed after deduplication)
   { id:  6, status: 'pending', context: 'Test / smoke-test-vsix (pull_request)',                  description: 'Waiting to run',        target_url: '/maxking/forgejo-vscode/actions/runs/359/jobs/2', created_at: '2026-02-22T06:23:48Z', updated_at: '2026-02-22T06:23:48Z' },
   { id:  5, status: 'pending', context: 'Test / test (20) (pull_request)',                        description: 'Waiting to run',        target_url: '/maxking/forgejo-vscode/actions/runs/359/jobs/1', created_at: '2026-02-22T06:23:48Z', updated_at: '2026-02-22T06:23:48Z' },
   { id:  4, status: 'pending', context: 'Test / test (18) (pull_request)',                        description: 'Waiting to run',        target_url: '/maxking/forgejo-vscode/actions/runs/359/jobs/0', created_at: '2026-02-22T06:23:48Z', updated_at: '2026-02-22T06:23:48Z' },
-  { id:  3, status: 'pending', context: 'Live Integration Tests / live-test (13) (pull_request)', description: 'Waiting to run',        target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/2', created_at: '2026-02-22T06:23:48Z', updated_at: '2026-02-22T06:23:48Z' },
-  { id:  2, status: 'pending', context: 'Live Integration Tests / live-test (12) (pull_request)', description: 'Waiting to run',        target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/1', created_at: '2026-02-22T06:23:48Z', updated_at: '2026-02-22T06:23:48Z' },
-  { id:  1, status: 'pending', context: 'Live Integration Tests / live-test (11) (pull_request)', description: 'Waiting to run',        target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/0', created_at: '2026-02-22T06:23:48Z', updated_at: '2026-02-22T06:23:48Z' },
+  { id:  3, status: 'pending', context: 'Test / live-test (13) (pull_request)',                   description: 'Waiting to run',        target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/2', created_at: '2026-02-22T06:23:48Z', updated_at: '2026-02-22T06:23:48Z' },
+  { id:  2, status: 'pending', context: 'Test / live-test (12) (pull_request)',                   description: 'Waiting to run',        target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/1', created_at: '2026-02-22T06:23:48Z', updated_at: '2026-02-22T06:23:48Z' },
+  { id:  1, status: 'pending', context: 'Test / live-test (11) (pull_request)',                   description: 'Waiting to run',        target_url: '/maxking/forgejo-vscode/actions/runs/358/jobs/0', created_at: '2026-02-22T06:23:48Z', updated_at: '2026-02-22T06:23:48Z' },
 ];
 
 /** The 6 unique CI job contexts from PR #98 */
 export const expectedDeduplicatedContexts = [
-  'Live Integration Tests / live-test (11) (pull_request)',
-  'Live Integration Tests / live-test (12) (pull_request)',
-  'Live Integration Tests / live-test (13) (pull_request)',
+  'Test / live-test (11) (pull_request)',
+  'Test / live-test (12) (pull_request)',
+  'Test / live-test (13) (pull_request)',
   'Test / test (18) (pull_request)',
   'Test / test (20) (pull_request)',
   'Test / smoke-test-vsix (pull_request)',

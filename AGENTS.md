@@ -44,6 +44,7 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - When auto-detecting from a Git remote, never fall back to a configured default instance if the detected remote host does not match; use an HTTP(S) remote host unauthenticated or return no config for unmatched SSH remotes.
 - When adding fields to `ForgejoInstance` or `forgejo.instances`, update the package schema, onboarding/manage-instance UX, README configuration docs, and focused tests together.
 - Every change should add a README News entry under the current version and link to the public Codeberg issue or PR when one exists; user-facing releases should also bump `package.json`/`package-lock.json` together.
+- Keep pull request live-test coverage in the main `.forgejo/workflows/test.yml` workflow so merge gates include the Forgejo live matrix; do not move PR live tests into a separate workflow just to speed up merges.
 - Avoid unbounded pull request and issue fetches in tree providers; page Open/Draft/Merged/Closed PR groups and issue groups behind initial render, expansion, or explicit load-more actions.
 - Deduplicate paged tree-provider API results before rendering stable `TreeItem.id` values; overlapping pages from large repositories must not register duplicate visible items.
 - For authenticated review-requested PR queries, use `/repos/issues/search` with `review_requested=true` and filter results back to the selected repository before hydrating PR details; repository issue listing supports `created_by`/`assigned_by`/`mentioned_by` but not `review_requested_by`.
