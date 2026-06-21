@@ -13,6 +13,8 @@ import {
   type ActionTasksResponse,
   type WorkflowRun,
   type RepositoryInfo,
+  type RepositoryBranch,
+  type RepositoryContentEntry,
 } from 'forgejo-ts';
 import { vscodeLogger } from '../utils/forgejoLoggerAdapter';
 
@@ -64,24 +66,7 @@ export interface ForgejoItemQueryOptions {
   reviewRequestedBy?: string;
 }
 
-export interface RepositoryBranch {
-  name: string;
-  commit?: {
-    id?: string;
-    sha?: string;
-  };
-}
-
-export interface RepositoryContentEntry {
-  type: string;
-  name: string;
-  path: string;
-  size?: number;
-  content?: string;
-  encoding?: string;
-  html_url?: string;
-  download_url?: string;
-}
+export type { RepositoryBranch, RepositoryContentEntry };
 
 interface ForgejoUserResponse {
   login?: string;
@@ -134,14 +119,6 @@ function appendQueryParam(params: URLSearchParams, key: string, value: string | 
 
 function repoIssuePath(owner: string, repo: string, number: number): string {
   return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${encodeURIComponent(String(number))}`;
-}
-
-function repoPath(owner: string, repo: string): string {
-  return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-}
-
-function encodePathSegments(path: string): string {
-  return path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
 }
 
 async function mapInBatches<T, U>(
@@ -355,35 +332,6 @@ export class ForgejoClient extends BaseClient {
   async getAuthenticatedUserLogin(): Promise<string | null> {
     const user = await this.rawRequest<ForgejoUserResponse>('GET', '/user');
     return trimmedValue(user.login) ?? trimmedValue(user.username) ?? null;
-  }
-
-  async listBranches(owner: string, repo: string, page = 1, limit = 100): Promise<RepositoryBranch[]> {
-    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-    return this.rawRequest<RepositoryBranch[]>('GET', `${repoPath(owner, repo)}/branches?${params.toString()}`);
-  }
-
-  async getRepositoryContents(
-    owner: string,
-    repo: string,
-    path = '',
-    ref?: string,
-    page?: number,
-    limit?: number
-  ): Promise<RepositoryContentEntry | RepositoryContentEntry[]> {
-    const encodedPath = encodePathSegments(path);
-    const params = new URLSearchParams();
-    if (ref) {
-      params.set('ref', ref);
-    }
-    if (page !== undefined) {
-      params.set('page', String(page));
-    }
-    if (limit !== undefined) {
-      params.set('limit', String(limit));
-    }
-    const query = params.toString() ? `?${params.toString()}` : '';
-    const contentsPath = `${repoPath(owner, repo)}/contents${encodedPath ? `/${encodedPath}` : ''}`;
-    return this.rawRequest<RepositoryContentEntry | RepositoryContentEntry[]>('GET', `${contentsPath}${query}`);
   }
 
   private async searchPullRequestsByIssueFiltersPage(

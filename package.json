@@ -683,7 +683,7 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "forgejo-ts": "^0.4.0",
+    "forgejo-ts": "git+https://git.araj.me/maxking/forgejo-ts.git#feat/repository-contents-api",
     "yaml": "^2.8.2"
   }
 }

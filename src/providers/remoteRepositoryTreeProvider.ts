@@ -299,7 +299,7 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
 
   private async fetchBranches(instance: ForgejoInstance, owner: string, repo: string): Promise<RepositoryBranch[]> {
     const client = new ForgejoClient(normalizeUrl(instance.instanceUrl), instance.token ?? '');
-    return client.listBranches(owner, repo, 1, REMOTE_DIRECTORY_PAGE_SIZE);
+    return client.listBranches(owner, repo, { page: 1, limit: REMOTE_DIRECTORY_PAGE_SIZE });
   }
 
   private async pickBranch(branches: RepositoryBranch[], currentBranch?: string): Promise<RepositoryBranch | undefined> {
@@ -333,9 +333,11 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
         selection.owner,
         selection.repo,
         path,
-        selection.branch,
-        1,
-        REMOTE_DIRECTORY_PAGE_SIZE
+        {
+          ref: selection.branch,
+          page: 1,
+          limit: REMOTE_DIRECTORY_PAGE_SIZE
+        }
       );
       if (!Array.isArray(contents)) {
         return [new RemoteRepositoryMessageItem('Remote path is not a directory.', true, path)];

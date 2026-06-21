@@ -77,7 +77,7 @@ describe('RemoteRepositoryTreeProvider', () => {
 
     expect(selection?.branch).toBe('main');
     expect(ForgejoClient).toHaveBeenCalledWith('https://public.example.com', '');
-    expect(mockClient.listBranches).toHaveBeenCalledWith('maxking', 'forgejo-vscode', 1, 100);
+    expect(mockClient.listBranches).toHaveBeenCalledWith('maxking', 'forgejo-vscode', { page: 1, limit: 100 });
     expect(instanceChildren[1]).toBeInstanceOf(RemoteRepositoryItem);
     expect((instanceChildren[1] as RemoteRepositoryItem).selection).toMatchObject({
       instanceUrl: 'https://public.example.com',
@@ -124,7 +124,7 @@ describe('RemoteRepositoryTreeProvider', () => {
 
     const children = await provider.getChildren(repoItem);
 
-    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', 'main', 1, 100);
+    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', { ref: 'main', page: 1, limit: 100 });
     expect(children[0]).toBeInstanceOf(RemoteRepositoryDirectoryItem);
     expect(children[1]).toBeInstanceOf(RemoteRepositoryFileItem);
   });
@@ -148,7 +148,7 @@ describe('RemoteRepositoryTreeProvider', () => {
 
     const children = await provider.getChildren(repoItem);
 
-    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', 'main', 1, 100);
+    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', { ref: 'main', page: 1, limit: 100 });
     expect(children).toHaveLength(101);
     expect(String((children[100] as vscode.TreeItem).label)).toContain('Showing first 100 entries');
   });

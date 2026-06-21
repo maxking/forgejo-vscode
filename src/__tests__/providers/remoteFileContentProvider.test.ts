@@ -66,7 +66,7 @@ describe('RemoteFileContentProvider', () => {
 
     expect(content).toBe('hello world');
     expect(ForgejoClient).toHaveBeenCalledWith('https://git.example.com', 'test-token');
-    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('owner', 'repo', 'README.md', 'main');
+    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('owner', 'repo', 'README.md', { ref: 'main' });
   });
 
   test('uses no token for public repositories when no matching token exists', async () => {

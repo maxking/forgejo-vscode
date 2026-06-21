@@ -24,6 +24,7 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 ## Repo-Specific Coding Guidance
 
 - Prefer `ForgejoClient`/`forgejo-ts` methods, especially `rawRequest()`, over ad-hoc `fetch` calls so timeout, logging, auth headers, and proxy behavior stay consistent.
+- If new Forgejo/Gitea API functionality is generally useful beyond this extension, implement it in the `forgejo-ts` client library first and consume it here instead of adding extension-only wrapper methods.
 - Do not perform speculative network requests during extension activation or provider construction; defer network work until the user invokes the feature.
 - When passing remote URLs to the Git extension, filter out missing or empty URL strings using explicit TypeScript type guards (e.g., `(url): url is string => typeof url === 'string' && url.length > 0`) to satisfy strict typing.
 - VS Code authentication providers must have both manifest contribution and runtime registration, and provider disposables should be pushed to `context.subscriptions`.

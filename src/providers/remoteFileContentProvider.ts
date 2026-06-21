@@ -143,7 +143,7 @@ export class RemoteFileContentProvider implements vscode.TextDocumentContentProv
     try {
       const config = await getForgejoConfigFor(owner, repo, instanceUrl);
       const client = new ForgejoClient(instanceUrl, config?.token ?? '');
-      const entry = await client.getRepositoryContents(owner, repo, filepath, ref);
+      const entry = await client.getRepositoryContents(owner, repo, filepath, { ref });
       if (Array.isArray(entry)) {
         return fileMessage('Remote path is a directory.', uri);
       }

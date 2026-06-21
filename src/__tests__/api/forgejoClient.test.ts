@@ -447,7 +447,7 @@ describe('ForgejoClient', () => {
         json: async () => [{ name: 'main' }, { name: 'feature/browser' }]
       } as unknown as Response);
 
-      const branches = await client.listBranches('owner', 'repo', 1, 100);
+      const branches = await client.listBranches('owner', 'repo', { page: 1, limit: 100 });
 
       expect(branches.map(branch => branch.name)).toEqual(['main', 'feature/browser']);
       expect(mockFetch).toHaveBeenCalledWith(
@@ -469,7 +469,7 @@ describe('ForgejoClient', () => {
         })
       } as unknown as Response);
 
-      await client.getRepositoryContents('owner', 'repo', 'src/file with spaces.ts', 'feature/browser');
+      await client.getRepositoryContents('owner', 'repo', 'src/file with spaces.ts', { ref: 'feature/browser' });
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://git.example.com/api/v1/repos/owner/repo/contents/src/file%20with%20spaces.ts?ref=feature%2Fbrowser',
@@ -484,7 +484,7 @@ describe('ForgejoClient', () => {
         json: async () => []
       } as unknown as Response);
 
-      await client.getRepositoryContents('owner', 'repo', '', 'main', 1, 100);
+      await client.getRepositoryContents('owner', 'repo', '', { ref: 'main', page: 1, limit: 100 });
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://git.example.com/api/v1/repos/owner/repo/contents?ref=main&page=1&limit=100',
