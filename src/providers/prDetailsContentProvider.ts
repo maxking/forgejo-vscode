@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { getForgejoConfig } from '../utils/config';
-import { PullRequest, CommitStatus } from '../models/pullRequest';
+import { getPullRequestMergeability, PullRequest, CommitStatus } from '../models/pullRequest';
 
 /**
  * Custom URI scheme for PR details virtual documents
@@ -143,6 +143,10 @@ export class PRDetailsContentProvider implements vscode.TextDocumentContentProvi
     markdown += `**Created:** ${this.formatDate(pr.created_at)}  \n`;
     markdown += `**Branch:** ${pr.base.ref} ← ${pr.head.ref}  \n`;
     markdown += `**Comments:** ${pr.comments} 💬  \n`;
+    const mergeability = getPullRequestMergeability(pr);
+    if (mergeability.state !== 'notApplicable') {
+      markdown += `**Mergeability:** ${mergeability.label} - ${mergeability.description}  \n`;
+    }
 
     if (pr.merge_commit_sha) {
       markdown += `**Merge Commit:** \`${pr.merge_commit_sha.substring(0, 7)}\`  \n`;

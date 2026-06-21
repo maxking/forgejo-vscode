@@ -17,6 +17,7 @@ import {
   type RepositoryContentEntry,
 } from 'forgejo-ts';
 import { vscodeLogger } from '../utils/forgejoLoggerAdapter';
+import type { PullRequestListItemWithMergeability } from '../models/pullRequest';
 
 export interface CreateIssueOptions {
   labels?: number[];
@@ -26,7 +27,7 @@ export interface CreateIssueOptions {
 }
 
 export interface PullRequestPage {
-  items: PullRequestListItem[];
+  items: PullRequestListItemWithMergeability[];
   page: number;
   limit: number;
   hasMore: boolean;
