@@ -439,6 +439,22 @@ describe('ActionsTreeProvider', () => {
       expect(msg.contextValue).toBe('info');
     });
 
+    test('should scope empty workflow messages by repository', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([
+        { ...mockConfig, owner: 'maxking', repo: 'forgejo-vscode', label: 'maxking/forgejo-vscode' },
+        { ...mockConfig, owner: 'forgejo', repo: 'forgejo', label: 'forgejo/forgejo' }
+      ]);
+      mockClient.getWorkflowRuns.mockResolvedValue(mockEmptyActionTasksResponse);
+
+      const repositories = await provider.getChildren();
+      const firstMessages = await provider.getChildren(repositories[0] as any);
+      const secondMessages = await provider.getChildren(repositories[1] as any);
+
+      expect((firstMessages[0] as vscode.TreeItem).label).toBe('No workflow runs found');
+      expect((secondMessages[0] as vscode.TreeItem).label).toBe('No workflow runs found');
+      expect((firstMessages[0] as vscode.TreeItem).id).not.toBe((secondMessages[0] as vscode.TreeItem).id);
+    });
+
     test('should group jobs by run_number into WorkflowRunTreeItems', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
       mockClient.getWorkflowRuns.mockResolvedValue(mockActionTasksResponse);
@@ -585,6 +601,20 @@ describe('ActionsTreeProvider', () => {
       expect(children).toHaveLength(1);
       expect((children[0] as any).label).toBe('No steps found');
       expect((children[0] as any).contextValue).toBe('info');
+    });
+
+    test('should scope empty step messages by job', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getJobSteps.mockResolvedValue([]);
+
+      const firstJob = new JobTreeItem(mockWorkflowRunSuccess, 0, 'test-owner', 'test-repo', 'https://git.example.com');
+      const secondJob = new JobTreeItem(mockWorkflowRunSuccess, 0, 'other-owner', 'other-repo', 'https://git.example.com');
+      const firstMessages = await provider.getChildren(firstJob);
+      const secondMessages = await provider.getChildren(secondJob);
+
+      expect((firstMessages[0] as vscode.TreeItem).label).toBe('No steps found');
+      expect((secondMessages[0] as vscode.TreeItem).label).toBe('No steps found');
+      expect((firstMessages[0] as vscode.TreeItem).id).not.toBe((secondMessages[0] as vscode.TreeItem).id);
     });
 
     test('should return error message when step fetch fails', async () => {

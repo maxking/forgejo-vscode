@@ -311,7 +311,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       );
     }
     if (jobItem.fetchError) {
-      return [new ActionMessageItem(jobItem.fetchError, true)];
+      return [new ActionMessageItem(jobItem.fetchError, true, jobItem.id)];
     }
 
     try {
@@ -319,7 +319,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       if (!config) {
         const err = 'No Forgejo configuration found';
         jobItem.fetchError = err;
-        return [new ActionMessageItem(err, true)];
+        return [new ActionMessageItem(err, true, jobItem.id)];
       }
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
@@ -328,7 +328,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       jobItem.fetchedSteps = steps;
 
       if (steps.length === 0) {
-        return [new ActionMessageItem('No steps found', false)];
+        return [new ActionMessageItem('No steps found', false, jobItem.id)];
       }
 
       return steps.map((step, index) =>
@@ -341,7 +341,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
         : error instanceof Error ? error.message : 'Failed to fetch steps';
       jobItem.fetchError = errMsg;
       console.error('[Forgejo] Error fetching steps for job:', error);
-      return [new ActionMessageItem(errMsg, true)];
+      return [new ActionMessageItem(errMsg, true, jobItem.id)];
     }
   }
 
@@ -354,7 +354,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       const workflowRuns = await this.fetchWorkflowRuns(config);
 
       if (workflowRuns.length === 0) {
-        return [new ActionMessageItem('No workflow runs found', false)];
+        return [new ActionMessageItem('No workflow runs found', false, this.configKey(config))];
       }
 
       const runsByNumber = new Map<number, WorkflowRunListItem[]>();
@@ -370,7 +370,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       );
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Unknown error';
-      return [new ActionMessageItem(this.error, true)];
+      return [new ActionMessageItem(this.error, true, this.configKey(config))];
     }
   }
 
