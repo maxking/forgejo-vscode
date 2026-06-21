@@ -5,6 +5,7 @@
 - `AGENTS.md` already calls out stable `TreeItem.id` values for command-backed or async-loaded tree items. PR and issue trees had this covered; the Actions tree did not before the 2026-06-21 automation run.
 - Actions tree rows are backed by `/actions/tasks` task rows grouped by `run_number`; job steps are lazy-loaded by scraping through `ForgejoClient.getJobSteps()`.
 - `WorkflowRunListItem.id` is non-optional in the current types, so job tree item identity can use `job.id` directly rather than a fallback.
+- Actions tree message rows need parent context too. Repository-level messages should include config identity; job-level messages should include the parent job ID, otherwise identical labels like `No workflow runs found` or `No steps found` can still collide.
 - Remote repository browsing already uses a versioned `forgejo-remote:/v1/...` URI and base64url-encoded instance/ref fields, so future remote-file URI changes should remain versioned rather than segment-count inferred.
 
 ## Areas already checked
