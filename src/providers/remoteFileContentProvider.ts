@@ -91,6 +91,11 @@ function fileMessage(message: string, uri: vscode.Uri): string {
   return `// ${message}\n// URI: ${uri.toString()}`;
 }
 
+function decodedBase64ByteLength(value: string): number {
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  return Math.floor((value.length * 3) / 4) - padding;
+}
+
 export function decodeRemoteFileContent(entry: RepositoryContentEntry, uri: vscode.Uri): string {
   if (entry.type !== 'file') {
     return fileMessage('Remote path is not a file.', uri);
@@ -106,6 +111,10 @@ export function decodeRemoteFileContent(entry: RepositoryContentEntry, uri: vsco
 
   if (entry.encoding === 'base64') {
     const normalizedContent = entry.content.replace(/\s/g, '');
+    const decodedLength = decodedBase64ByteLength(normalizedContent);
+    if (decodedLength > MAX_REMOTE_FILE_BYTES) {
+      return fileMessage(`Remote file is too large to preview (${decodedLength} bytes).`, uri);
+    }
     const buffer = Buffer.from(normalizedContent, 'base64');
     if (buffer.length > MAX_REMOTE_FILE_BYTES) {
       return fileMessage(`Remote file is too large to preview (${buffer.length} bytes).`, uri);

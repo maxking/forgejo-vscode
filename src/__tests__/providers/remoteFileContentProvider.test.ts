@@ -108,6 +108,22 @@ describe('RemoteFileContentProvider', () => {
     expect(content).toContain(uri.toString());
   });
 
+  test('returns a bounded message for large base64 files without size metadata', async () => {
+    const uri = createRemoteFileUri('https://git.example.com', 'owner', 'repo', 'main', 'large-without-size.log');
+    mockClient.getRepositoryContents.mockResolvedValue({
+      type: 'file',
+      name: 'large-without-size.log',
+      path: 'large-without-size.log',
+      encoding: 'base64',
+      content: Buffer.alloc(MAX_REMOTE_FILE_BYTES + 1, 'a').toString('base64')
+    });
+
+    const content = await provider.provideTextDocumentContent(uri);
+
+    expect(content).toContain('too large to preview');
+    expect(content).toContain(uri.toString());
+  });
+
   test('returns a binary file message instead of decoded binary content', async () => {
     const uri = createRemoteFileUri('https://git.example.com', 'owner', 'repo', 'main', 'image.png');
     mockClient.getRepositoryContents.mockResolvedValue({

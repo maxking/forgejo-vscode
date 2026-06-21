@@ -23,15 +23,31 @@ function pathBasename(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-function splitRepositoryInput(value: string): { owner: string; repo: string } | null {
-  const parts = value.trim().replace(/^https?:\/\/[^/]+\//, '').replace(/\.git$/, '').split('/').filter(Boolean);
-  if (parts.length < 2) {
+function splitRepositoryInput(value: string, instanceUrl: string): { owner: string; repo: string } | null {
+  const trimmed = value.trim();
+  let repositoryPath = trimmed;
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      return null;
+    }
+    if (normalizeUrl(url.origin) !== normalizeUrl(instanceUrl)) {
+      return null;
+    }
+    repositoryPath = url.pathname;
+  }
+
+  const parts = repositoryPath.replace(/\.git$/, '').split('/').filter(Boolean);
+  if (parts.length !== 2) {
     return null;
   }
 
   return {
-    owner: parts[parts.length - 2],
-    repo: parts[parts.length - 1]
+    owner: parts[0],
+    repo: parts[1]
   };
 }
 
@@ -219,9 +235,9 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
       return undefined;
     }
 
-    const repository = splitRepositoryInput(repositoryInput);
+    const repository = splitRepositoryInput(repositoryInput, instance.instanceUrl);
     if (!repository) {
-      void vscode.window.showErrorMessage('Enter a repository as owner/name.');
+      void vscode.window.showErrorMessage('Enter a repository as owner/name or a URL on the selected instance.');
       return undefined;
     }
 
@@ -299,7 +315,8 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
 
   private async fetchBranches(instance: ForgejoInstance, owner: string, repo: string): Promise<RepositoryBranch[]> {
     const client = new ForgejoClient(normalizeUrl(instance.instanceUrl), instance.token ?? '');
-    return client.listBranches(owner, repo, { page: 1, limit: REMOTE_DIRECTORY_PAGE_SIZE });
+    const page = await client.listBranchesPage(owner, repo, { page: 1, limit: REMOTE_DIRECTORY_PAGE_SIZE });
+    return page.items;
   }
 
   private async pickBranch(branches: RepositoryBranch[], currentBranch?: string): Promise<RepositoryBranch | undefined> {
@@ -343,6 +360,8 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
         return [new RemoteRepositoryMessageItem('Remote path is not a directory.', true, path)];
       }
 
+      const hasMore = contents.length >= REMOTE_DIRECTORY_PAGE_SIZE
+        && await this.hasMoreDirectoryEntries(client, selection, path);
       const entries = sortEntries(contents).slice(0, REMOTE_DIRECTORY_PAGE_SIZE);
       if (entries.length === 0) {
         return [new RemoteRepositoryMessageItem('No files found', false, path)];
@@ -355,7 +374,7 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
         return new RemoteRepositoryFileItem(selection, entry);
       });
 
-      if (contents.length > REMOTE_DIRECTORY_PAGE_SIZE) {
+      if (hasMore) {
         children.push(new RemoteRepositoryMessageItem(`Showing first ${REMOTE_DIRECTORY_PAGE_SIZE} entries`, false, path));
       }
 
@@ -364,6 +383,20 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
       const message = error instanceof Error ? error.message : 'Failed to fetch remote repository contents';
       return [new RemoteRepositoryMessageItem(message, true, path)];
     }
+  }
+
+  private async hasMoreDirectoryEntries(client: ForgejoClient, selection: RemoteRepositorySelection, path: string): Promise<boolean> {
+    const nextPage = await client.getRepositoryContents(
+      selection.owner,
+      selection.repo,
+      path,
+      {
+        ref: selection.branch,
+        page: 2,
+        limit: 1
+      }
+    );
+    return Array.isArray(nextPage) && nextPage.length > 0;
   }
 }
 

@@ -43,6 +43,7 @@ describe('RemoteRepositoryTreeProvider', () => {
   beforeEach(() => {
     mockClient = {
       listBranches: jest.fn(),
+      listBranchesPage: jest.fn(),
       getRepositoryContents: jest.fn()
     } as any;
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);
@@ -50,6 +51,7 @@ describe('RemoteRepositoryTreeProvider', () => {
     mockGetAllInstances.mockResolvedValue([publicInstance, privateInstance]);
     (vscode.window.showInputBox as jest.Mock).mockReset();
     (vscode.window.showQuickPick as jest.Mock).mockReset();
+    (vscode.window.showErrorMessage as jest.Mock).mockReset();
     (vscode.workspace.openTextDocument as jest.Mock).mockReset();
     (vscode.window.showTextDocument as jest.Mock).mockReset();
     provider = new RemoteRepositoryTreeProvider();
@@ -65,7 +67,13 @@ describe('RemoteRepositoryTreeProvider', () => {
   });
 
   test('adds a public no-token repository after branch selection', async () => {
-    mockClient.listBranches.mockResolvedValue([{ name: 'main' }, { name: 'develop' }]);
+    mockClient.listBranchesPage.mockResolvedValue({
+      items: [{ name: 'main' }, { name: 'develop' }],
+      page: 1,
+      limit: 100,
+      hasMore: false,
+      totalCount: 2
+    });
     (vscode.window.showInputBox as jest.Mock).mockResolvedValue('maxking/forgejo-vscode');
     (vscode.window.showQuickPick as jest.Mock).mockResolvedValue({
       label: 'main',
@@ -77,7 +85,8 @@ describe('RemoteRepositoryTreeProvider', () => {
 
     expect(selection?.branch).toBe('main');
     expect(ForgejoClient).toHaveBeenCalledWith('https://public.example.com', '');
-    expect(mockClient.listBranches).toHaveBeenCalledWith('maxking', 'forgejo-vscode', { page: 1, limit: 100 });
+    expect(mockClient.listBranchesPage).toHaveBeenCalledWith('maxking', 'forgejo-vscode', { page: 1, limit: 100 });
+    expect(mockClient.listBranches).not.toHaveBeenCalled();
     expect(instanceChildren[1]).toBeInstanceOf(RemoteRepositoryItem);
     expect((instanceChildren[1] as RemoteRepositoryItem).selection).toMatchObject({
       instanceUrl: 'https://public.example.com',
@@ -88,10 +97,46 @@ describe('RemoteRepositoryTreeProvider', () => {
     });
   });
 
+  test('rejects full repository URLs from a different instance', async () => {
+    (vscode.window.showInputBox as jest.Mock).mockResolvedValue('https://git.example.com/maxking/forgejo-vscode');
+
+    const selection = await provider.browseRepository(new RemoteRepositoryBrowseItem(publicInstance));
+
+    expect(selection).toBeUndefined();
+    expect(ForgejoClient).not.toHaveBeenCalled();
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+      'Enter a repository as owner/name or a URL on the selected instance.'
+    );
+  });
+
+  test('rejects full repository URLs with ambiguous extra path segments', async () => {
+    (vscode.window.showInputBox as jest.Mock).mockResolvedValue('https://public.example.com/maxking/forgejo-vscode/src/branch/main');
+
+    const selection = await provider.browseRepository(new RemoteRepositoryBrowseItem(publicInstance));
+
+    expect(selection).toBeUndefined();
+    expect(ForgejoClient).not.toHaveBeenCalled();
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+      'Enter a repository as owner/name or a URL on the selected instance.'
+    );
+  });
+
   test('switches the selected branch for a remote repository', async () => {
-    mockClient.listBranches
-      .mockResolvedValueOnce([{ name: 'main' }])
-      .mockResolvedValueOnce([{ name: 'main' }, { name: 'feature/browser' }]);
+    mockClient.listBranchesPage
+      .mockResolvedValueOnce({
+        items: [{ name: 'main' }],
+        page: 1,
+        limit: 100,
+        hasMore: false,
+        totalCount: 1
+      })
+      .mockResolvedValueOnce({
+        items: [{ name: 'main' }, { name: 'feature/browser' }],
+        page: 1,
+        limit: 100,
+        hasMore: false,
+        totalCount: 2
+      });
     (vscode.window.showInputBox as jest.Mock).mockResolvedValue('maxking/forgejo-vscode');
     (vscode.window.showQuickPick as jest.Mock)
       .mockResolvedValueOnce({ label: 'main', branch: { name: 'main' } })
@@ -139,16 +184,24 @@ describe('RemoteRepositoryTreeProvider', () => {
       repo: 'forgejo-vscode',
       branch: 'main'
     });
-    mockClient.getRepositoryContents.mockResolvedValue(Array.from({ length: 101 }, (_value, index) => ({
-      type: 'file',
-      name: `file-${index}.txt`,
-      path: `file-${index}.txt`,
-      size: 1
-    })));
+    mockClient.getRepositoryContents
+      .mockResolvedValueOnce(Array.from({ length: 100 }, (_value, index) => ({
+        type: 'file',
+        name: `file-${index}.txt`,
+        path: `file-${index}.txt`,
+        size: 1
+      })))
+      .mockResolvedValueOnce([{
+        type: 'file',
+        name: 'file-100.txt',
+        path: 'file-100.txt',
+        size: 1
+      }]);
 
     const children = await provider.getChildren(repoItem);
 
     expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', { ref: 'main', page: 1, limit: 100 });
+    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', { ref: 'main', page: 2, limit: 1 });
     expect(children).toHaveLength(101);
     expect(String((children[100] as vscode.TreeItem).label)).toContain('Showing first 100 entries');
   });
