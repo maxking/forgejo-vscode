@@ -39,6 +39,7 @@ import { ForgejoAuthenticationProvider } from './auth/forgejoAuthenticationProvi
 import { createRemoteSourcePublisher, publishRepositoryFromWorkspace } from './commands/publishToForgejo';
 import { activateGitExtension } from './utils/gitExtension';
 import { registerWorkflowDiagnostics } from './diagnostics/workflowDiagnostics';
+import { registerReferenceLanguageFeatures } from './providers/referenceLanguageProvider';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -859,6 +860,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create Issue creation webview provider
   const issueCreateWebviewProvider = new IssueCreateWebviewProvider(context.extensionUri, issueTreeProvider);
+  registerReferenceLanguageFeatures(context, issueCreateWebviewProvider);
 
   // Create Action detail webview provider
   const actionDetailWebviewProvider = new ActionDetailWebviewProvider(context.extensionUri);

@@ -21,6 +21,7 @@ import type { IssueLoadMoreItem, IssueRepositoryItem, IssueTreeItem } from '../p
 import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem, PRLoadMoreItem } from '../providers/prTreeProvider';
 import type { RemoteRepositoryBrowseItem, RemoteRepositoryFileItem, RemoteRepositoryInstanceItem, RemoteRepositoryItem } from '../providers/remoteRepositoryTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
+import type { TodoIssueDraft } from '../providers/referenceLanguageProvider';
 
 // ---------------------------------------------------------------------------
 // Command argument map
@@ -58,6 +59,7 @@ export interface CommandMap {
   'forgejo.openRemoteFile': [item?: RemoteRepositoryFileItem];
   'forgejo.createIssue': [];
   'forgejo.createIssueForRepository': [repositoryItem: IssueRepositoryItem];
+  'forgejo.createIssueFromTodo': [draft: TodoIssueDraft];
   'forgejo.createPullRequest': [];
   'forgejo.createPullRequestForRepository': [repositoryItem: PRRepositoryItem];
   'forgejo.createRelease': [];

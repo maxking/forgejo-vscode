@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoConfig, getForgejoConfig } from '../utils/config';
-import { IssueCreateWebviewProvider } from '../webview/issueCreate/provider';
+import { IssueCreateWebviewProvider, type InitialIssueDraft } from '../webview/issueCreate/provider';
 
 /**
  * Handles the forgejo.createIssue command.
@@ -8,7 +8,8 @@ import { IssueCreateWebviewProvider } from '../webview/issueCreate/provider';
  */
 export async function createIssueCommand(
 	issueCreateWebviewProvider: IssueCreateWebviewProvider,
-	repositoryConfig?: ForgejoConfig
+	repositoryConfig?: ForgejoConfig,
+	initialDraft?: InitialIssueDraft
 ): Promise<void> {
 	const config = repositoryConfig ?? await getForgejoConfig();
 	if (!config) {
@@ -18,6 +19,11 @@ export async function createIssueCommand(
 
 	if (!config.token) {
 		void vscode.window.showErrorMessage('A Forgejo token is required to create issues. Please configure your token first.');
+		return;
+	}
+
+	if (initialDraft) {
+		issueCreateWebviewProvider.showCreateIssue(config, initialDraft);
 		return;
 	}
 

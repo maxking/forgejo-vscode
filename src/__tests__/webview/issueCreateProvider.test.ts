@@ -32,7 +32,7 @@ describe('IssueCreateWebviewProvider', () => {
   let postMessage: jest.Mock;
   let refresh: jest.Mock;
   let createIssue: jest.Mock;
-  let panel: { webview: { postMessage: jest.Mock } };
+  let panel: { webview: { postMessage: jest.Mock }; reveal: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -43,7 +43,8 @@ describe('IssueCreateWebviewProvider', () => {
     mockGetForgejoConfigFor.mockResolvedValue(mockConfig);
     provider = new IssueCreateWebviewProvider(vscode.Uri.file('/extension'), { refresh } as any);
     panel = {
-      webview: { postMessage }
+      webview: { postMessage },
+      reveal: jest.fn()
     };
     (provider as any)._panels.set('https://git.example.com/test-owner/test-repo', {
       config: mockConfig,
@@ -205,5 +206,44 @@ describe('IssueCreateWebviewProvider', () => {
     expect(panels[1].webview.html).toContain('other-owner/other-repo');
     expect(panels[1].webview.html).not.toContain('test-owner/test-repo');
     expect((provider as any)._panels.size).toBe(2);
+  });
+
+  it('prefills title and body when opening from an editor TODO', () => {
+    (vscode.window as any).createWebviewPanel = jest.fn(() => ({
+      webview: {
+        html: '',
+        asWebviewUri: jest.fn((uri: vscode.Uri) => uri),
+        onDidReceiveMessage: jest.fn(),
+        postMessage: jest.fn()
+      },
+      reveal: jest.fn(),
+      onDidDispose: jest.fn()
+    }));
+
+    provider = new IssueCreateWebviewProvider(vscode.Uri.file('/extension'), { refresh } as any);
+    provider.showCreateIssue(mockConfig, {
+      title: 'Handle empty state',
+      body: 'Created from TODO\n\n```ts\n// TODO: Handle empty state\n```'
+    });
+
+    const createdPanel = (vscode.window.createWebviewPanel as jest.Mock).mock.results[0].value;
+    expect(createdPanel.webview.html).toContain('value="Handle empty state"');
+    expect(createdPanel.webview.html).toContain('Created from TODO');
+    expect(createdPanel.webview.html).toContain('// TODO: Handle empty state');
+  });
+
+  it('sends prefill data to an existing create issue panel', () => {
+    provider.showCreateIssue(mockConfig, {
+      title: 'Refresh existing panel',
+      body: 'Body preview'
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'prefill',
+      data: {
+        title: 'Refresh existing panel',
+        body: 'Body preview'
+      }
+    });
   });
 });

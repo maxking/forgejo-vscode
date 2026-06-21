@@ -69,6 +69,12 @@
         case 'theme':
           document.body.dataset.theme = message.theme;
           break;
+        case 'prefill':
+          titleInput.value = message.data.title || '';
+          bodyInput.value = message.data.body || '';
+          clearMessages();
+          titleInput.focus();
+          break;
         case 'submitting':
           setSubmitting(message.show);
           break;
