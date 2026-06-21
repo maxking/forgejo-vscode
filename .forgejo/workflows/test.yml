@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ master, dev ]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
@@ -46,6 +49,91 @@ jobs:
       run: |
         npm run compile
         xvfb-run -a npm run test:integration
+
+  build-live-test-image:
+    runs-on: docker
+    env:
+      LIVE_TEST_IMAGE: forgejo-vscode-live-test-node20:${{ github.sha }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build live-test image
+      run: docker build -f .forgejo/ci/live-test-node20.Dockerfile -t "$LIVE_TEST_IMAGE" .
+
+  live-test:
+    needs: build-live-test-image
+    strategy:
+      matrix:
+        forgejo-version: ['11', '12', '13']
+
+    runs-on: docker
+    container: forgejo-vscode-live-test-node20:${{ github.sha }}
+
+    services:
+      forgejo:
+        image: codeberg.org/forgejo/forgejo:${{ matrix.forgejo-version }}
+        env:
+          FORGEJO__security__INSTALL_LOCK: "true"
+          FORGEJO__server__ROOT_URL: "http://forgejo:3000"
+          FORGEJO__database__DB_TYPE: sqlite3
+          FORGEJO__service__DISABLE_REGISTRATION: "false"
+          FORGEJO__service__REQUIRE_SIGNIN_VIEW: "false"
+
+    env:
+      FORGEJO_TEST_URL: http://forgejo:3000
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # ~/.npm holds downloaded tarballs, which are node-version agnostic, so a
+    # single lockfile-keyed cache is shared across the forgejo-version matrix.
+    - name: Cache npm download cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-
+
+    - name: Install dependencies
+      run: |
+        command -v jq
+        command -v curl
+        command -v xvfb-run
+        npm ci
+
+    - name: Wait for Forgejo & setup test data
+      run: bash scripts/setup-forgejo-test.sh
+
+    - name: Run live integration tests
+      run: npm run test:live
+
+    # API compatibility is covered across the full Forgejo matrix above.
+    # Run the expensive VS Code UI smoke suite only once, against the newest version.
+    - name: Create test workspace for Playwright
+      if: matrix.forgejo-version == '13'
+      run: |
+        mkdir -p /tmp/forgejo-test-workspace
+        cd /tmp/forgejo-test-workspace
+        git init
+        git remote add origin http://forgejo:3000/testuser/test-repo.git
+
+    - name: Compile extension
+      if: matrix.forgejo-version == '13'
+      run: npm run compile
+
+    # The live-test Docker image pre-downloads VS Code to /opt/vscode-test.
+    # Symlink it to the path @mshanemc/vscode-test-playwright looks at
+    # (process.cwd()/.vscode-test/worker-0) so the 241 MB download is skipped.
+    - name: Use pre-baked VS Code install
+      if: matrix.forgejo-version == '13'
+      run: ln -sfn /opt/vscode-test .vscode-test
+
+    - name: Run Playwright VS Code live tests
+      if: matrix.forgejo-version == '13'
+      run: xvfb-run -a npm run test:e2e:live
+      env:
+        FORGEJO_LIVE_WORKSPACE: /tmp/forgejo-test-workspace
 
   smoke-test-vsix:
     runs-on: docker
