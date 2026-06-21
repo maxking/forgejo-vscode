@@ -36,7 +36,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - **Issue comment composer ([#200](https://git.araj.me/maxking/forgejo-vscode/issues/200)):** issue detail views now show the comment text box immediately when the selected repository has a configured token, instead of requiring a separate "+ Comment" reveal button.
 - **Issue time tracking ([#194](https://git.araj.me/maxking/forgejo-vscode/issues/194)):** issue detail pages now show tracked time, running stopwatch state, and controls to start, stop, cancel, or manually add time.
 - **Issue timeline specificity ([#212](https://git.araj.me/maxking/forgejo-vscode/issues/212)):** issue and pull request detail timelines now show added or removed label actions and include exact tracked-time durations when Forgejo reports them.
-- **Editor references ([#190](https://git.araj.me/maxking/forgejo-vscode/issues/190)):** code and Markdown editors now show Forgejo hovers for `#123` references, bounded cached `#`/`@` completions, and TODO/FIXME code actions that prefill the create-issue form.
+- **Editor references ([#190](https://git.araj.me/maxking/forgejo-vscode/issues/190)):** code and Markdown editors now visually highlight `#123` references with Forgejo hovers, bounded cached `#`/`@` completions, and TODO/FIXME code actions that prefill the create-issue form.
 
 ### 0.3.23
 

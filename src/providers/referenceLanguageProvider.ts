@@ -8,6 +8,7 @@ const REFERENCE_PATTERN = /(^|[^\w/])#(\d+)\b/g;
 const TODO_COMMENT_PATTERN = /(?:^|[\s{(;])(?:(?:\/\/+)|#|--|;|\/\*+|\*|<!--)\s*\b(TODO|FIXME)\b(?:\([^)]+\))?\s*:?\s*(.*?)(?:\s*\*\/|\s*-->)?\s*$/i;
 const COMPLETION_LIMIT = 10;
 const CACHE_TTL_MS = 60_000;
+const MAX_DECORATED_VISIBLE_LINES = 1_000;
 
 type CacheKind = 'reference' | 'user';
 
@@ -86,6 +87,31 @@ export function findIssueReferenceAtPosition(document: vscode.TextDocument, posi
   }
 
   return undefined;
+}
+
+export function findIssueReferenceRanges(document: vscode.TextDocument, visibleRanges?: readonly vscode.Range[]): vscode.Range[] {
+  const ranges: vscode.Range[] = [];
+  const scanRanges = visibleRanges && visibleRanges.length > 0
+    ? visibleRanges
+    : [new vscode.Range(0, 0, Math.max(0, document.lineCount - 1), Number.MAX_SAFE_INTEGER)];
+
+  for (const visibleRange of scanRanges) {
+    const startLine = Math.max(0, visibleRange.start.line);
+    const endLine = Math.min(document.lineCount - 1, visibleRange.end.line, startLine + MAX_DECORATED_VISIBLE_LINES - 1);
+
+    for (let lineNumber = startLine; lineNumber <= endLine; lineNumber++) {
+      const line = document.lineAt(lineNumber).text;
+      REFERENCE_PATTERN.lastIndex = 0;
+
+      for (let match = REFERENCE_PATTERN.exec(line); match; match = REFERENCE_PATTERN.exec(line)) {
+        const referenceStart = match.index + match[1].length;
+        const referenceEnd = referenceStart + match[0].length - match[1].length;
+        ranges.push(new vscode.Range(lineNumber, referenceStart, lineNumber, referenceEnd));
+      }
+    }
+  }
+
+  return ranges;
 }
 
 export function todoDraftFromLine(document: vscode.TextDocument, lineNumber: number): TodoIssueDraft | undefined {
@@ -331,4 +357,46 @@ export function registerReferenceLanguageFeatures(
     }),
     registerCommand('forgejo.createIssueFromTodo', (draft) => createIssueFromTodoCommand(issueCreateWebviewProvider, draft))
   );
+
+  registerReferenceDecorations(context, selector);
+}
+
+function registerReferenceDecorations(context: vscode.ExtensionContext, selector: vscode.DocumentSelector): void {
+  const decorationType = vscode.window.createTextEditorDecorationType({
+    backgroundColor: new vscode.ThemeColor('editor.wordHighlightBackground'),
+    textDecoration: 'underline',
+    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+    overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.wordHighlightForeground'),
+    overviewRulerLane: vscode.OverviewRulerLane.Right
+  });
+
+  const updateEditor = (editor: vscode.TextEditor | undefined): void => {
+    if (!editor || !vscode.languages.match(selector, editor.document) || !isSupportedDocument(editor.document)) {
+      return;
+    }
+
+    editor.setDecorations(decorationType, findIssueReferenceRanges(editor.document, editor.visibleRanges));
+  };
+
+  const updateVisibleEditors = (): void => {
+    for (const editor of vscode.window.visibleTextEditors) {
+      updateEditor(editor);
+    }
+  };
+
+  context.subscriptions.push(
+    decorationType,
+    vscode.window.onDidChangeActiveTextEditor(updateEditor),
+    vscode.window.onDidChangeVisibleTextEditors(updateVisibleEditors),
+    vscode.window.onDidChangeTextEditorVisibleRanges(event => updateEditor(event.textEditor)),
+    vscode.workspace.onDidChangeTextDocument(event => {
+      for (const editor of vscode.window.visibleTextEditors) {
+        if (editor.document === event.document) {
+          updateEditor(editor);
+        }
+      }
+    })
+  );
+
+  updateVisibleEditors();
 }

@@ -2,7 +2,9 @@ import * as vscode from 'vscode';
 import {
   createIssueFromTodoCommand,
   findIssueReferenceAtPosition,
+  findIssueReferenceRanges,
   ForgejoReferenceLanguageProvider,
+  registerReferenceLanguageFeatures,
   todoDraftFromLine
 } from '../../providers/referenceLanguageProvider';
 import type { ForgejoConfig } from '../../utils/config';
@@ -17,6 +19,7 @@ const config: ForgejoConfig = {
 function documentWithLines(lines: string[], path = '/workspace/file.ts'): vscode.TextDocument {
   return {
     uri: vscode.Uri.file(path),
+    lineCount: lines.length,
     lineAt: (line: number) => ({ text: lines[line] }),
   } as unknown as vscode.TextDocument;
 }
@@ -35,6 +38,7 @@ describe('ForgejoReferenceLanguageProvider', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (vscode.window.visibleTextEditors as any) = [];
     issueCreateProvider = { showCreateIssue: jest.fn() };
     client = {
       getIssueDetails: jest.fn(),
@@ -56,6 +60,50 @@ describe('ForgejoReferenceLanguageProvider', () => {
       number: 190,
       range: new vscode.Range(0, 4, 0, 8)
     });
+  });
+
+  it('finds all issue reference ranges in visible document lines', () => {
+    const document = documentWithLines([
+      'See #190 and owner/repo#12',
+      'No reference here',
+      'Fixes (#215)'
+    ]);
+
+    const ranges = findIssueReferenceRanges(document, [new vscode.Range(0, 0, 2, 20)]);
+
+    expect(ranges).toEqual([
+      new vscode.Range(0, 4, 0, 8),
+      new vscode.Range(2, 7, 2, 11)
+    ]);
+  });
+
+  it('registers issue reference decorations for editor changes without network lookups', () => {
+    const document = documentWithLines(['See #190']);
+    const setDecorations = jest.fn();
+    const decorationType = { dispose: jest.fn() };
+    const context = { subscriptions: [] as vscode.Disposable[] } as vscode.ExtensionContext;
+    const editor = {
+      document,
+      visibleRanges: [new vscode.Range(0, 0, 0, 8)],
+      setDecorations
+    };
+    (vscode.languages.match as jest.Mock).mockReturnValue(1);
+    (vscode.window.createTextEditorDecorationType as jest.Mock).mockReturnValue(decorationType);
+
+    registerReferenceLanguageFeatures(context, issueCreateProvider as any);
+    const updateEditor = (vscode.window.onDidChangeActiveTextEditor as jest.Mock).mock.calls[0][0];
+    updateEditor(editor);
+
+    expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith(expect.objectContaining({
+      backgroundColor: expect.any(vscode.ThemeColor),
+      textDecoration: 'underline'
+    }));
+    expect(setDecorations).toHaveBeenCalledWith(
+      decorationType,
+      [new vscode.Range(0, 4, 0, 8)]
+    );
+    expect(client.getIssueDetails).not.toHaveBeenCalled();
+    expect(client.getIssueReferencesPage).not.toHaveBeenCalled();
   });
 
   it('renders public no-auth issue hovers with title, state, author, labels, and link', async () => {

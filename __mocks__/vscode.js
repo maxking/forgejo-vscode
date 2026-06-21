@@ -248,6 +248,20 @@ const DiagnosticSeverity = {
   Hint: 3
 };
 
+const DecorationRangeBehavior = {
+  OpenOpen: 0,
+  ClosedClosed: 1,
+  OpenClosed: 2,
+  ClosedOpen: 3
+};
+
+const OverviewRulerLane = {
+  Left: 1,
+  Center: 2,
+  Right: 4,
+  Full: 7
+};
+
 const comments = {
   createCommentController: jest.fn(() => ({
     commentingRangeProvider: null,
@@ -275,9 +289,15 @@ const window = {
   showInputBox: jest.fn(),
   showQuickPick: jest.fn(),
   createTreeView: jest.fn(),
+  createTextEditorDecorationType: jest.fn(() => ({ dispose: jest.fn() })),
   createWebviewPanel: jest.fn(),
   activeColorTheme: { kind: ColorThemeKind.Dark },
+  activeTextEditor: undefined,
+  visibleTextEditors: [],
   showTextDocument: jest.fn(),
+  onDidChangeActiveTextEditor: jest.fn(() => ({ dispose: jest.fn() })),
+  onDidChangeVisibleTextEditors: jest.fn(() => ({ dispose: jest.fn() })),
+  onDidChangeTextEditorVisibleRanges: jest.fn(() => ({ dispose: jest.fn() })),
   createOutputChannel: jest.fn().mockImplementation(() => ({
     append: jest.fn(),
     appendLine: jest.fn(),
@@ -306,6 +326,7 @@ const workspace = {
 };
 
 const languages = {
+  match: jest.fn(() => 1),
   createDiagnosticCollection: jest.fn(() => ({
     set: jest.fn(),
     delete: jest.fn(),
@@ -350,6 +371,8 @@ module.exports = {
   Range,
   Diagnostic,
   DiagnosticSeverity,
+  DecorationRangeBehavior,
+  OverviewRulerLane,
   comments,
   window,
   workspace,
