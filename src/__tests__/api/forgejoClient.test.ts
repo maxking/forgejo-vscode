@@ -439,6 +439,60 @@ describe('ForgejoClient', () => {
     });
   });
 
+  describe('remote repository browsing helpers', () => {
+    test('listBranches should request a bounded branch page', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ name: 'main' }, { name: 'feature/browser' }]
+      } as unknown as Response);
+
+      const branches = await client.listBranches('owner', 'repo', { page: 1, limit: 100 });
+
+      expect(branches.map(branch => branch.name)).toEqual(['main', 'feature/browser']);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/branches?page=1&limit=100',
+        expect.any(Object)
+      );
+    });
+
+    test('getRepositoryContents should encode nested paths and refs', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          type: 'file',
+          name: 'file with spaces.ts',
+          path: 'src/file with spaces.ts',
+          content: '',
+          encoding: 'base64'
+        })
+      } as unknown as Response);
+
+      await client.getRepositoryContents('owner', 'repo', 'src/file with spaces.ts', { ref: 'feature/browser' });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/contents/src/file%20with%20spaces.ts?ref=feature%2Fbrowser',
+        expect.any(Object)
+      );
+    });
+
+    test('getRepositoryContents should include optional page and limit bounds', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => []
+      } as unknown as Response);
+
+      await client.getRepositoryContents('owner', 'repo', '', { ref: 'main', page: 1, limit: 100 });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/contents?ref=main&page=1&limit=100',
+        expect.any(Object)
+      );
+    });
+  });
+
   describe('getPullRequestRefs', () => {
     test('should extract base and head refs from PR details', async () => {
       mockFetch.mockResolvedValueOnce({

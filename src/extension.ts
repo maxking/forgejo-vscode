@@ -3,9 +3,11 @@ import { PRTreeProvider, PRTreeItem, PROverviewItem } from './providers/prTreePr
 import { IssueTreeProvider, IssueTreeItem } from './providers/issueTreeProvider';
 import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from './providers/actionsTreeProvider';
 import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
+import { RemoteRepositoryTreeProvider, RemoteRepositoryItem, openRemoteFile } from './providers/remoteRepositoryTreeProvider';
 import { WorkflowRunListItem, WorkflowJob } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
+import { RemoteFileContentProvider, REMOTE_FILE_SCHEME } from './providers/remoteFileContentProvider';
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
 import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
 import { IssueCreateWebviewProvider } from './webview/issueCreate/provider';
@@ -57,6 +59,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const issueTreeProvider = new IssueTreeProvider();
   const actionsTreeProvider = new ActionsTreeProvider();
   const releaseTreeProvider = new ReleaseTreeProvider();
+  const remoteRepositoryTreeProvider = new RemoteRepositoryTreeProvider();
   const workflowDiagnostics = registerWorkflowDiagnostics(context);
 
   // Late-bound so addInstance/manageInstances can trigger a re-registration
@@ -103,6 +106,11 @@ export async function activate(context: vscode.ExtensionContext) {
     showCollapseAll: true
   });
 
+  const remoteRepositoryTreeView = vscode.window.createTreeView('forgejoRemoteRepositories', {
+    treeDataProvider: remoteRepositoryTreeProvider,
+    showCollapseAll: true
+  });
+
   // Create virtual document provider for PR diffs
   const prDiffProvider = new PRDiffContentProvider();
   context.subscriptions.push(
@@ -128,6 +136,12 @@ export async function activate(context: vscode.ExtensionContext) {
     prDetailsProvider
   );
 
+  const remoteFileProvider = new RemoteFileContentProvider();
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(REMOTE_FILE_SCHEME, remoteFileProvider),
+    remoteFileProvider
+  );
+
   // Register instance management commands
   context.subscriptions.push(
     registerCommand('forgejo.addInstance', async () => {
@@ -138,6 +152,7 @@ export async function activate(context: vscode.ExtensionContext) {
         issueTreeProvider.refresh();
         actionsTreeProvider.refresh();
         releaseTreeProvider.refresh();
+        remoteRepositoryTreeProvider.refresh();
         await refreshRemoteSourceProviders();
       }
     })
@@ -151,6 +166,7 @@ export async function activate(context: vscode.ExtensionContext) {
       issueTreeProvider.refresh();
       actionsTreeProvider.refresh();
       releaseTreeProvider.refresh();
+      remoteRepositoryTreeProvider.refresh();
       await refreshRemoteSourceProviders();
     })
   );
@@ -179,6 +195,31 @@ export async function activate(context: vscode.ExtensionContext) {
       prTreeProvider.refresh();
       void vscode.window.showInformationMessage('Pull Requests refreshed');
     })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.refreshRemoteRepositories', () => {
+      remoteRepositoryTreeProvider.refresh();
+      void vscode.window.showInformationMessage('Remote repositories refreshed');
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.browseRemoteRepository', item => remoteRepositoryTreeProvider.browseRepository(item))
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.selectRemoteRepositoryBranch', async (item?: RemoteRepositoryItem) => {
+      if (!item) {
+        void vscode.window.showInformationMessage('Select a remote repository from the Forgejo Repositories view to change branches.');
+        return;
+      }
+      await remoteRepositoryTreeProvider.selectBranch(item);
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.openRemoteFile', openRemoteFile)
   );
 
   context.subscriptions.push(
@@ -808,6 +849,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(prTreeView);
   context.subscriptions.push(issueTreeView);
   context.subscriptions.push(actionsTreeView);
+  context.subscriptions.push(remoteRepositoryTreeView);
 
   // Create PR detail webview provider (not registered as WebviewViewProvider since we use WebviewPanel)
   const prDetailWebviewProvider = new PRDetailWebviewProvider(context.extensionUri);

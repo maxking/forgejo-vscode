@@ -62,6 +62,10 @@
     "views": {
       "forgejoExplorer": [
         {
+          "id": "forgejoRemoteRepositories",
+          "name": "Repositories"
+        },
+        {
           "id": "forgejoPullRequests",
           "name": "Pull Requests"
         },
@@ -149,6 +153,26 @@
         "command": "forgejo.refreshIssues",
         "title": "Forgejo: Refresh Issues",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.browseRemoteRepository",
+        "title": "Forgejo: Browse Remote Repository",
+        "icon": "$(search)"
+      },
+      {
+        "command": "forgejo.refreshRemoteRepositories",
+        "title": "Forgejo: Refresh Remote Repositories",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.selectRemoteRepositoryBranch",
+        "title": "Select Branch",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "forgejo.openRemoteFile",
+        "title": "Open Remote File",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "forgejo.searchIssues",
@@ -303,6 +327,21 @@
     "menus": {
       "view/title": [
         {
+          "command": "forgejo.browseRemoteRepository",
+          "when": "view == forgejoRemoteRepositories",
+          "group": "navigation@0"
+        },
+        {
+          "command": "forgejo.refreshRemoteRepositories",
+          "when": "view == forgejoRemoteRepositories",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.manageInstances",
+          "when": "view == forgejoRemoteRepositories",
+          "group": "navigation@2"
+        },
+        {
           "command": "forgejo.createPullRequest",
           "when": "view == forgejoPullRequests && !forgejo.multipleRepositories",
           "group": "navigation@0"
@@ -368,7 +407,32 @@
           "group": "navigation@2"
         }
       ],
+      "commandPalette": [
+        {
+          "command": "forgejo.selectRemoteRepositoryBranch",
+          "when": "false"
+        },
+        {
+          "command": "forgejo.openRemoteFile",
+          "when": "false"
+        }
+      ],
       "view/item/context": [
+        {
+          "command": "forgejo.browseRemoteRepository",
+          "when": "viewItem == forgejoRemoteInstance",
+          "group": "inline@0"
+        },
+        {
+          "command": "forgejo.selectRemoteRepositoryBranch",
+          "when": "viewItem == forgejoRemoteRepository",
+          "group": "inline@0"
+        },
+        {
+          "command": "forgejo.openRemoteFile",
+          "when": "viewItem == forgejoRemoteFile",
+          "group": "navigation@0"
+        },
         {
           "command": "forgejo.createPullRequestForRepository",
           "when": "viewItem == forgejoPrRepository",
@@ -472,6 +536,11 @@
         "view": "scm",
         "contents": "You can push any of the current folders to a new Forgejo repository.\n[$(forgejo-logo) Publish to Forgejo](command:forgejo.publishToForgejo)",
         "when": "config.git.enabled && git.state == initialized && workbenchState == workspace"
+      },
+      {
+        "view": "forgejoRemoteRepositories",
+        "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)",
+        "when": "forgejo.noInstanceConfigured"
       },
       {
         "view": "forgejoPullRequests",
@@ -614,7 +683,7 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "forgejo-ts": "^0.4.0",
+    "forgejo-ts": "^0.4.1",
     "yaml": "^2.8.2"
   }
 }

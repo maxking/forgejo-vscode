@@ -13,6 +13,8 @@ import {
   type ActionTasksResponse,
   type WorkflowRun,
   type RepositoryInfo,
+  type RepositoryBranch,
+  type RepositoryContentEntry,
 } from 'forgejo-ts';
 import { vscodeLogger } from '../utils/forgejoLoggerAdapter';
 
@@ -63,6 +65,8 @@ export interface ForgejoItemQueryOptions {
   mentionedBy?: string;
   reviewRequestedBy?: string;
 }
+
+export type { RepositoryBranch, RepositoryContentEntry };
 
 interface ForgejoUserResponse {
   login?: string;

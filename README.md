@@ -26,6 +26,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ### 0.3.24
 
+- **Remote repository browsing ([#192](https://git.araj.me/maxking/forgejo-vscode/issues/192)):** configured Forgejo and Gitea instances now have a Repositories view for browsing remote branches, directories, and read-only virtual files without cloning locally, including public no-token repositories.
 - **Faster CI dependency installs:** all test/publish/live-test jobs now cache the npm download cache (`~/.npm`) keyed on `package-lock.json`, so the ~740-package `npm ci` reinstall reuses cached tarballs instead of re-fetching them from the registry on every run.
 - **Start work on issue ([#188](https://git.araj.me/maxking/forgejo-vscode/issues/188)):** issue rows now offer a start-work action that picks a local Git repository, suggests branch names from the issue number and title, and checks out the branch through VS Code's Git extension from the configured base ref.
 - **Start work target clarity ([#188](https://git.araj.me/maxking/forgejo-vscode/issues/188)):** when multiple matching local worktrees exist, Start Work now asks which path to use and its success message names the existing local worktree where the branch was checked out.
