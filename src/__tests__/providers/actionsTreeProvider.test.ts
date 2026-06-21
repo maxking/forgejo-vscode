@@ -101,6 +101,11 @@ describe('ActionsTreeProvider', () => {
       expect(item.command).toBeUndefined();
     });
 
+    test('should set stable id with repository identity', () => {
+      const item = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], owner, repo, 'https://git.example.com');
+      expect(item.id).toBe('workflow-run/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42');
+    });
+
     test('should show running icon when any job is in_progress', () => {
       const item = new WorkflowRunTreeItem(44, [mockWorkflowRunInProgress, mockWorkflowRunSuccess], owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
@@ -273,6 +278,11 @@ describe('ActionsTreeProvider', () => {
       expect(item.fetchedSteps).toBeUndefined();
       expect(item.fetchError).toBeUndefined();
     });
+
+    test('should set stable id with repository and job identity', () => {
+      const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo, 'https://git.example.com');
+      expect(item.id).toBe('workflow-job/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42/123');
+    });
   });
 
   describe('StepTreeItem', () => {
@@ -371,6 +381,19 @@ describe('ActionsTreeProvider', () => {
       expect(item.owner).toBe(owner);
       expect(item.repo).toBe(repo);
     });
+
+    test('should set stable id with repository, job, and step identity', () => {
+      const item = new StepTreeItem(
+        mockScrapedStepCheckout,
+        { jobId: 123, jobIndex: 2 },
+        42,
+        owner,
+        repo,
+        'https://git.example.com',
+        3
+      );
+      expect(item.id).toBe('workflow-step/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42/123/3/Checkout');
+    });
   });
 
   describe('Provider getChildren - Root level', () => {
@@ -386,6 +409,8 @@ describe('ActionsTreeProvider', () => {
         'maxking/forgejo-vscode',
         'forgejo/forgejo'
       ]);
+      expect((children[0] as vscode.TreeItem).id).toBe('action-repository/https%3A%2F%2Fgit.example.com/maxking/forgejo-vscode/');
+      expect((children[1] as vscode.TreeItem).id).toBe('action-repository/https%3A%2F%2Fgit.example.com/forgejo/forgejo/');
       expect(mockClient.getWorkflowRuns).not.toHaveBeenCalled();
     });
 
@@ -618,6 +643,20 @@ describe('ActionsTreeProvider', () => {
       expect(stepItem.runNumber).toBe(42); // mockWorkflowRunSuccess.run_number
       expect(stepItem.owner).toBe('test-owner');
       expect(stepItem.repo).toBe('test-repo');
+    });
+
+    test('should give duplicate step names unique ids by index', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getJobSteps.mockResolvedValue([
+        { summary: 'Run', duration: '1s', status: 'success' },
+        { summary: 'Run', duration: '2s', status: 'success' }
+      ]);
+
+      const jobItem = new JobTreeItem(mockWorkflowRunSuccess, 0, 'test-owner', 'test-repo', 'https://git.example.com');
+      const children = await provider.getChildren(jobItem);
+
+      expect((children[0] as StepTreeItem).id).toBe('workflow-step/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42/123/0/Run');
+      expect((children[1] as StepTreeItem).id).toBe('workflow-step/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42/123/1/Run');
     });
   });
 
