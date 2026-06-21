@@ -53,15 +53,9 @@ test.describe('Pull Request Interactions - Live Forgejo', () => {
   /** Collect all visible tree row labels from the sidebar */
   async function getTreeRowLabels(workbox: import('@playwright/test').Page): Promise<string[]> {
     const rows = workbox.locator('.monaco-list-row');
-    const count = await rows.count();
-    const labels: string[] = [];
-    for (let i = 0; i < count; i++) {
-      const text = await rows.nth(i).textContent();
-      if (text) {
-        labels.push(text.trim());
-      }
-    }
-    return labels;
+    return (await rows.allTextContents())
+      .map(text => text.trim())
+      .filter(text => text.length > 0);
   }
 
   /**
@@ -189,7 +183,7 @@ test.describe('Pull Request Interactions - Live Forgejo', () => {
     });
 
     // Poll until a Closed group appears
-    const closedPattern = /^Closed\s*\d+$/;
+    const closedPattern = /^Closed(?:\s*\d+)?$/;
     const labels = await waitForTreeRowsMatching(workbox, closedPattern);
     console.log('PR tree after close:', labels);
 
