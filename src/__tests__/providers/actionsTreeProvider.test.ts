@@ -101,6 +101,11 @@ describe('ActionsTreeProvider', () => {
       expect(item.command).toBeUndefined();
     });
 
+    test('should set stable id with repository identity', () => {
+      const item = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], owner, repo, 'https://git.example.com');
+      expect(item.id).toBe('workflow-run/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42');
+    });
+
     test('should show running icon when any job is in_progress', () => {
       const item = new WorkflowRunTreeItem(44, [mockWorkflowRunInProgress, mockWorkflowRunSuccess], owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
@@ -273,6 +278,11 @@ describe('ActionsTreeProvider', () => {
       expect(item.fetchedSteps).toBeUndefined();
       expect(item.fetchError).toBeUndefined();
     });
+
+    test('should set stable id with repository and job identity', () => {
+      const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo, 'https://git.example.com');
+      expect(item.id).toBe('workflow-job/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42/123');
+    });
   });
 
   describe('StepTreeItem', () => {
@@ -371,6 +381,19 @@ describe('ActionsTreeProvider', () => {
       expect(item.owner).toBe(owner);
       expect(item.repo).toBe(repo);
     });
+
+    test('should set stable id with repository, job, and step identity', () => {
+      const item = new StepTreeItem(
+        mockScrapedStepCheckout,
+        { jobId: 123, jobIndex: 2 },
+        42,
+        owner,
+        repo,
+        'https://git.example.com',
+        3
+      );
+      expect(item.id).toBe('workflow-step/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42/123/3/Checkout');
+    });
   });
 
   describe('Provider getChildren - Root level', () => {
@@ -386,6 +409,8 @@ describe('ActionsTreeProvider', () => {
         'maxking/forgejo-vscode',
         'forgejo/forgejo'
       ]);
+      expect((children[0] as vscode.TreeItem).id).toBe('action-repository/https%3A%2F%2Fgit.example.com/maxking/forgejo-vscode/');
+      expect((children[1] as vscode.TreeItem).id).toBe('action-repository/https%3A%2F%2Fgit.example.com/forgejo/forgejo/');
       expect(mockClient.getWorkflowRuns).not.toHaveBeenCalled();
     });
 
@@ -412,6 +437,22 @@ describe('ActionsTreeProvider', () => {
       const msg = children[0] as any;
       expect(msg.label).toBe('No workflow runs found');
       expect(msg.contextValue).toBe('info');
+    });
+
+    test('should scope empty workflow messages by repository', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([
+        { ...mockConfig, owner: 'maxking', repo: 'forgejo-vscode', label: 'maxking/forgejo-vscode' },
+        { ...mockConfig, owner: 'forgejo', repo: 'forgejo', label: 'forgejo/forgejo' }
+      ]);
+      mockClient.getWorkflowRuns.mockResolvedValue(mockEmptyActionTasksResponse);
+
+      const repositories = await provider.getChildren();
+      const firstMessages = await provider.getChildren(repositories[0] as any);
+      const secondMessages = await provider.getChildren(repositories[1] as any);
+
+      expect((firstMessages[0] as vscode.TreeItem).label).toBe('No workflow runs found');
+      expect((secondMessages[0] as vscode.TreeItem).label).toBe('No workflow runs found');
+      expect((firstMessages[0] as vscode.TreeItem).id).not.toBe((secondMessages[0] as vscode.TreeItem).id);
     });
 
     test('should group jobs by run_number into WorkflowRunTreeItems', async () => {
@@ -562,6 +603,20 @@ describe('ActionsTreeProvider', () => {
       expect((children[0] as any).contextValue).toBe('info');
     });
 
+    test('should scope empty step messages by job', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getJobSteps.mockResolvedValue([]);
+
+      const firstJob = new JobTreeItem(mockWorkflowRunSuccess, 0, 'test-owner', 'test-repo', 'https://git.example.com');
+      const secondJob = new JobTreeItem(mockWorkflowRunSuccess, 0, 'other-owner', 'other-repo', 'https://git.example.com');
+      const firstMessages = await provider.getChildren(firstJob);
+      const secondMessages = await provider.getChildren(secondJob);
+
+      expect((firstMessages[0] as vscode.TreeItem).label).toBe('No steps found');
+      expect((secondMessages[0] as vscode.TreeItem).label).toBe('No steps found');
+      expect((firstMessages[0] as vscode.TreeItem).id).not.toBe((secondMessages[0] as vscode.TreeItem).id);
+    });
+
     test('should return error message when step fetch fails', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
       mockClient.getJobSteps.mockRejectedValue(new Error('Page not found'));
@@ -618,6 +673,20 @@ describe('ActionsTreeProvider', () => {
       expect(stepItem.runNumber).toBe(42); // mockWorkflowRunSuccess.run_number
       expect(stepItem.owner).toBe('test-owner');
       expect(stepItem.repo).toBe('test-repo');
+    });
+
+    test('should give duplicate step names unique ids by index', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getJobSteps.mockResolvedValue([
+        { summary: 'Run', duration: '1s', status: 'success' },
+        { summary: 'Run', duration: '2s', status: 'success' }
+      ]);
+
+      const jobItem = new JobTreeItem(mockWorkflowRunSuccess, 0, 'test-owner', 'test-repo', 'https://git.example.com');
+      const children = await provider.getChildren(jobItem);
+
+      expect((children[0] as StepTreeItem).id).toBe('workflow-step/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42/123/0/Run');
+      expect((children[1] as StepTreeItem).id).toBe('workflow-step/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42/123/1/Run');
     });
   });
 
