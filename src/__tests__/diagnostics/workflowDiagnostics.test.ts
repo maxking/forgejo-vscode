@@ -145,6 +145,42 @@ describe('workflowDiagnostics', () => {
     ]));
   });
 
+  test('accepts startsWith and the built-in status functions as known expression functions', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      "    if: startsWith(github.ref, 'refs/tags/v')",
+      '    steps:',
+      '      - run: npm test',
+      '      - if: success() && !cancelled()',
+      '        run: echo ok',
+      '      - if: failure()',
+      '        run: echo fail',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('reports startsWith arity like other expression functions', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      "    if: startsWith('only-one')",
+      '    steps:',
+      '      - run: npm test',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        message: 'Missing parameters for startsWith expected >= 2 got 1',
+      }),
+    ]));
+  });
+
   test('accepts aliases like the runner schema checker', () => {
     const issues = validateWorkflowText([
       'on: push',

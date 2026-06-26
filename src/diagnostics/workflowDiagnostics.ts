@@ -27,11 +27,17 @@ const WORKFLOW_GLOBS = [
 const WORKFLOW_SCHEMA_ROOT = 'workflow-root';
 const DEFAULT_EXPRESSION_FUNCTIONS = [
   'contains(2,2)',
+  'startsWith(2,2)',
   'endsWith(2,2)',
   'format(1,255)',
   'join(1,2)',
   'toJson(1,1)',
   'fromJson(1,1)',
+  'hashFiles(1,255)',
+  'success(0,0)',
+  'failure(0,0)',
+  'always(0,0)',
+  'cancelled(0,0)',
 ];
 
 export interface WorkflowValidationIssue {
