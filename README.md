@@ -26,6 +26,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ### 0.3.24
 
+- **Workflow expression function diagnostics fix ([#27](https://codeberg.org/maxking/forgejo-vscode/issues/27)):** the workflow validator no longer flags valid `startsWith(...)` expressions as "Unknown Function Call", and `hashFiles`, `success`, `failure`, `always`, and `cancelled` are now recognized as built-in expression functions in every expression context rather than only where the schema declares them.
 - **Remote repository browsing ([#192](https://git.araj.me/maxking/forgejo-vscode/issues/192)):** configured Forgejo and Gitea instances now have a Repositories view for browsing remote branches, directories, and read-only virtual files without cloning locally, including public no-token repositories.
 - **Pull request mergeability ([#209](https://git.araj.me/maxking/forgejo-vscode/issues/209)):** PR tree rows and detail views now show whether Forgejo reports a pull request as ready to merge, conflicted, or unknown, and conflicted PR detail pages disable the merge button.
 - **Faster CI dependency installs:** all test/publish/live-test jobs now cache the npm download cache (`~/.npm`) keyed on `package-lock.json`, so the ~740-package `npm ci` reinstall reuses cached tarballs instead of re-fetching them from the registry on every run.
