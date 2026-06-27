@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PRDiffContentProvider, createPRFileUri, PR_DIFF_SCHEME } from '../../providers/prDiffContentProvider';
+import { PRDiffContentProvider, createPRFileUri, PR_DIFF_SCHEME, parsePRFileUri, PR_DIFF_URI_VERSION } from '../../providers/prDiffContentProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoConfigFor } from '../../utils/config';
 import { mockPlainTextContent, mockModifiedContent } from '../fixtures/fileContents';
@@ -387,6 +387,89 @@ describe('PRDiffContentProvider', () => {
         'src/utils/config.ts',
         'feature/2024/january/new-feature'
       );
+    });
+  });
+
+  describe('Instance-aware URI format (Issue #225)', () => {
+    test('createPRFileUri emits a v1-prefixed self-identifying URI when instanceUrl is provided', () => {
+      const uri = createPRFileUri('owner', 'repo', 'main', 'src/file.ts', 'https://git.example.com');
+      const encodedInstance = Buffer.from('https://git.example.com').toString('base64url');
+      const encodedRef = Buffer.from('main').toString('base64url');
+
+      expect(uri.scheme).toBe(PR_DIFF_SCHEME);
+      expect(uri.path).toBe(`/${PR_DIFF_URI_VERSION}/${encodedInstance}/owner/repo/${encodedRef}/src/file.ts`);
+      expect(uri.query).toBe('');
+    });
+
+    test('createPRFileUri omits the version prefix when no instanceUrl is provided (legacy format)', () => {
+      const uri = createPRFileUri('owner', 'repo', 'main', 'src/file.ts');
+      const encodedRef = Buffer.from('main').toString('base64url');
+
+      expect(uri.path).toBe(`/owner/repo/${encodedRef}/src/file.ts`);
+      expect(uri.path).not.toContain(`/${PR_DIFF_URI_VERSION}/`);
+    });
+
+    test('parses instance-aware URI and carries instanceUrl through to config lookup', async () => {
+      const uri = createPRFileUri('owner', 'repo', 'main', 'src/file.ts', 'https://git.example.com');
+      mockGetForgejoConfig.mockResolvedValue({
+        instanceUrl: 'https://git.example.com',
+        owner: 'owner',
+        repo: 'repo',
+        token: 'test-token'
+      });
+      mockClient.getFileContents.mockResolvedValue(mockPlainTextContent);
+
+      await provider.provideTextDocumentContent(uri);
+
+      expect(mockGetForgejoConfigFor).toHaveBeenCalledWith('owner', 'repo', 'https://git.example.com');
+      expect(mockClient.getFileContents).toHaveBeenCalledWith('owner', 'repo', 'src/file.ts', 'main');
+    });
+
+    test('a base64url-looking owner name is NOT mistaken for an instance segment', () => {
+      // This is the exact reproduction from issue #225: an owner whose name is
+      // the base64url encoding of an HTTP(S) URL must be treated as the owner
+      // in the legacy no-instance format, not as an instance-aware URI.
+      const ownerSegment = Buffer.from('https://git.example.com').toString('base64url');
+      const encodedRef = Buffer.from('main').toString('base64url');
+      const path = `/${ownerSegment}/repo/${encodedRef}/src/file.ts`;
+      const uri = vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
+
+      const parsed = parsePRFileUri(uri);
+
+      expect(parsed.owner).toBe(ownerSegment);
+      expect(parsed.repo).toBe('repo');
+      expect(parsed.ref).toBe('main');
+      expect(parsed.filepath).toBe('src/file.ts');
+      expect(parsed.instanceUrl).toBeUndefined();
+    });
+
+    test('a v1 owner name with a non-URL repo segment falls back to legacy parsing', () => {
+      // Owner literally named "v1" in a no-instance URI must still parse as the
+      // legacy format because parts[1] does not decode to an HTTP(S) URL.
+      const encodedRef = Buffer.from('main').toString('base64url');
+      const path = `/v1/repo/${encodedRef}/src/file.ts`;
+      const uri = vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
+
+      const parsed = parsePRFileUri(uri);
+
+      expect(parsed.owner).toBe('v1');
+      expect(parsed.repo).toBe('repo');
+      expect(parsed.ref).toBe('main');
+      expect(parsed.filepath).toBe('src/file.ts');
+      expect(parsed.instanceUrl).toBeUndefined();
+    });
+
+    test('round-trips an instance-aware URI with a slash-containing ref', () => {
+      const uri = createPRFileUri('maxking', 'forgejo-vscode', 'feat/auto-publish-workflow', 'research/marketing-analysis.md', 'https://codeberg.org');
+      const parsed = parsePRFileUri(uri);
+
+      expect(parsed).toEqual({
+        owner: 'maxking',
+        repo: 'forgejo-vscode',
+        ref: 'feat/auto-publish-workflow',
+        filepath: 'research/marketing-analysis.md',
+        instanceUrl: 'https://codeberg.org'
+      });
     });
   });
 });

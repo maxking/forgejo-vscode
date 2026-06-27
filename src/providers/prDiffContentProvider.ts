@@ -3,14 +3,29 @@ import { ForgejoClient } from '../api/forgejoClient';
 import { getForgejoConfigFor } from '../utils/config';
 
 /**
- * Custom URI scheme for PR diff virtual documents
- * Format: forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
+ * Custom URI scheme for PR diff virtual documents.
  *
- * The ref (branch/tag/SHA) is base64url-encoded into a path segment to:
+ * Two self-identifying formats are supported:
+ *
+ * 1. Instance-aware (versioned, current):
+ *    forgejo-pr:/v1/{base64url_instanceUrl}/{owner}/{repo}/{base64url_ref}/{filepath}
+ *
+ * 2. Legacy no-instance:
+ *    forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
+ *
+ * The ref (branch/tag/SHA) is base64url-encoded into a single path segment to:
  * 1. Avoid ambiguity with branch names that contain slashes (e.g., feature/branch)
  * 2. Survive VS Code tab serialization, which strips query parameters from custom scheme URIs
+ *
+ * The instance-aware format is prefixed with a `v1` version marker so it is
+ * self-identifying. We must NOT infer the instance-aware format from segment
+ * count or by attempting to base64url-decode the first segment: a repository
+ * owner whose name happens to be a base64url string that decodes to an
+ * HTTP(S) URL (e.g. `aHR0cHM6Ly9naXQuZXhhbXBsZS5jb20`) would otherwise shift
+ * every parsed field and break owner/repo/ref/file identity. See issue #225.
  */
 export const PR_DIFF_SCHEME = 'forgejo-pr';
+export const PR_DIFF_URI_VERSION = 'v1';
 
 export interface ParsedPRFileUri {
   owner: string;
@@ -24,31 +39,37 @@ function decodeBase64Url(value: string): string {
   return Buffer.from(value, 'base64url').toString();
 }
 
-function decodeInstanceSegment(value: string): string | undefined {
-  const decoded = decodeBase64Url(value);
-  return /^https?:\/\//i.test(decoded) ? decoded : undefined;
-}
-
 export function parsePRFileUri(uri: vscode.Uri): ParsedPRFileUri {
   const parts = uri.path.split('/').filter(p => p);
   if (parts.length < 4) {
     throw new Error('Invalid PR diff URI format');
   }
 
-  const instanceUrl = parts.length >= 5 ? decodeInstanceSegment(parts[0]) : undefined;
-  const offset = instanceUrl ? 1 : 0;
-
-  if (parts.length - offset < 4) {
-    throw new Error('Invalid PR diff URI format');
+  // Self-identifying versioned, instance-aware format:
+  //   forgejo-pr:/v1/{base64url_instanceUrl}/{owner}/{repo}/{base64url_ref}/{filepath}
+  // The `v1` marker plus a URL-shaped decoded instance segment makes this
+  // unambiguous. If parts[0] is `v1` but parts[1] does not decode to an
+  // HTTP(S) URL, fall through to the legacy parser: the owner is simply named
+  // "v1" in a no-instance URI.
+  if (parts[0] === PR_DIFF_URI_VERSION && parts.length >= 6) {
+    const candidateInstanceUrl = decodeBase64Url(parts[1]);
+    if (/^https?:\/\//i.test(candidateInstanceUrl)) {
+      const owner = parts[2];
+      const repo = parts[3];
+      const ref = decodeBase64Url(parts[4]);
+      const filepath = decodeURIComponent(parts.slice(5).join('/'));
+      return { owner, repo, ref, filepath, instanceUrl: candidateInstanceUrl };
+    }
   }
 
-  const owner = parts[offset];
-  const repo = parts[offset + 1];
-  const encodedRef = parts[offset + 2];
-  const filepath = decodeURIComponent(parts.slice(offset + 3).join('/'));
-  const ref = decodeBase64Url(encodedRef);
+  // Legacy no-instance format:
+  //   forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
+  const owner = parts[0];
+  const repo = parts[1];
+  const ref = decodeBase64Url(parts[2]);
+  const filepath = decodeURIComponent(parts.slice(3).join('/'));
 
-  return { owner, repo, ref, filepath, instanceUrl };
+  return { owner, repo, ref, filepath };
 }
 
 /**
@@ -125,7 +146,12 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
 }
 
 /**
- * Helper to create forgejo-pr:// URIs
+ * Helper to create forgejo-pr URIs.
+ *
+ * When `instanceUrl` is provided, emits the self-identifying versioned format:
+ *   forgejo-pr:/v1/{base64url_instanceUrl}/{owner}/{repo}/{base64url_ref}/{filepath}
+ * Otherwise emits the legacy no-instance format:
+ *   forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
  */
 export function createPRFileUri(
   owner: string,
@@ -137,9 +163,15 @@ export function createPRFileUri(
   // Base64url-encode the ref and instance URL so each is a single path segment
   // and survives VS Code tab serialization (which strips query parameters).
   const encodedRef = Buffer.from(ref).toString('base64url');
-  const encodedInstanceUrl = instanceUrl ? `${Buffer.from(instanceUrl).toString('base64url')}/` : '';
   // Encode each filepath segment to handle special characters (#, &, spaces, etc.)
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  const path = `/${encodedInstanceUrl}${owner}/${repo}/${encodedRef}/${encodedPath}`;
+
+  if (instanceUrl) {
+    const encodedInstanceUrl = Buffer.from(instanceUrl).toString('base64url');
+    const path = `/${PR_DIFF_URI_VERSION}/${encodedInstanceUrl}/${owner}/${repo}/${encodedRef}/${encodedPath}`;
+    return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
+  }
+
+  const path = `/${owner}/${repo}/${encodedRef}/${encodedPath}`;
   return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
 }
