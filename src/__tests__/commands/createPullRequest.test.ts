@@ -3,6 +3,7 @@ import { execSync, spawnSync } from 'child_process';
 import { branchNameToTitle, createPullRequestCommand } from '../../commands/createPullRequest';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
+import { activateGitExtension } from '../../utils/gitExtension';
 
 // Mock dependencies
 jest.mock('child_process', () => ({
@@ -11,15 +12,44 @@ jest.mock('child_process', () => ({
 }));
 jest.mock('../../api/forgejoClient');
 jest.mock('../../utils/config');
+jest.mock('../../utils/gitExtension');
 jest.mock('../../utils/logger', () => ({
   logInfo: jest.fn(),
   logError: jest.fn(),
 }));
 
 const mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
+const mockActivateGitExtension = activateGitExtension as jest.MockedFunction<typeof activateGitExtension>;
 const MockForgejoClient = ForgejoClient as jest.MockedClass<typeof ForgejoClient>;
 const mockedExecSync = execSync as jest.MockedFunction<typeof execSync>;
 const mockedSpawnSync = spawnSync as jest.MockedFunction<typeof spawnSync>;
+
+function createRepository(rootPath: string, remoteUrl: string) {
+  return {
+    rootUri: vscode.Uri.file(rootPath),
+    state: {
+      HEAD: { name: 'main' },
+      remotes: [{ name: 'origin', fetchUrl: remoteUrl }],
+      indexChanges: [],
+      workingTreeChanges: [],
+      mergeChanges: [],
+    },
+  };
+}
+
+function mockGitApi(repositories: any[], activeRepository: any = null) {
+  mockActivateGitExtension.mockResolvedValue({
+    enabled: true,
+    getAPI: () => ({
+      repositories,
+      getRepository: jest.fn(() => activeRepository),
+    }),
+  } as any);
+}
+
+function mockNoGitExtension() {
+  mockActivateGitExtension.mockResolvedValue(undefined as any);
+}
 
 const mockConfig = {
   instanceUrl: 'https://git.example.com',
@@ -75,6 +105,10 @@ describe('createPullRequestCommand', () => {
     MockForgejoClient.mockImplementation(() => ({
       createPullRequest: mockCreatePullRequest,
     } as any));
+
+    // Default: no VS Code Git extension available, so resolveWorkspaceRoot
+    // falls back to the single unambiguous workspace folder.
+    mockNoGitExtension();
 
     // Default workspace
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/workspace' } }];
@@ -147,14 +181,14 @@ describe('createPullRequestCommand', () => {
     );
   });
 
-  it('shows error and returns early when no workspace folder is open', async () => {
+  it('shows error and returns early when no workspace folder is open and no Git repository matches', async () => {
     mockGetForgejoConfig.mockResolvedValue(mockConfig);
     (vscode.workspace as any).workspaceFolders = undefined;
 
     await createPullRequestCommand(mockPRTreeProvider as any);
 
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-      'No workspace folder open.'
+      'Could not determine which local repository to create the pull request from. Open a single repository, or use the Create Pull Request action on a repository in the Forgejo view.'
     );
     expect(mockCreatePullRequest).not.toHaveBeenCalled();
   });
@@ -396,5 +430,105 @@ describe('createPullRequestCommand', () => {
       'Failed to create pull request: API error'
     );
     expect(mockPRTreeProvider.refresh).not.toHaveBeenCalled();
+  });
+
+  // ── workspace root resolution (multi-root / nested repository safety) ───────
+
+  it('reads the branch from the Git repository that matches the resolved config, not workspaceFolders[0]', async () => {
+    // Multi-root workspace: folder 0 is a different checkout than the resolved
+    // Forgejo repository. The branch must be read from the matching repository.
+    (vscode.workspace as any).workspaceFolders = [
+      { uri: { fsPath: '/workspace/unrelated' } },
+      { uri: { fsPath: '/workspace/repo' } },
+    ];
+    const matching = createRepository('/workspace/repo', 'https://git.example.com/test-owner/test-repo.git');
+    const unrelated = createRepository('/workspace/unrelated', 'https://git.example.com/other/other.git');
+    mockGitApi([unrelated, matching]);
+    mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockedExecSync.mockReset();
+    mockedSpawnSync.mockReset();
+    mockedExecSync.mockReturnValueOnce('feat/issue-221\n' as any);
+    mockedSpawnSync.mockReturnValueOnce({ status: 0, stdout: 'refs/remotes/origin/main\n', stderr: '', pid: 0, output: [], signal: null } as any);
+    (vscode.window.showInputBox as jest.Mock)
+      .mockResolvedValueOnce('Fix multi-root PR')
+      .mockResolvedValueOnce('body')
+      .mockResolvedValueOnce('main');
+    (vscode.window.showInformationMessage as jest.Mock).mockResolvedValueOnce(undefined);
+
+    await createPullRequestCommand(mockPRTreeProvider as any);
+
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      'git rev-parse --abbrev-ref HEAD',
+      expect.objectContaining({ cwd: '/workspace/repo' })
+    );
+    expect(mockedExecSync).not.toHaveBeenCalledWith(
+      'git rev-parse --abbrev-ref HEAD',
+      expect.objectContaining({ cwd: '/workspace/unrelated' })
+    );
+    expect(mockCreatePullRequest).toHaveBeenCalledWith(
+      mockConfig.owner, mockConfig.repo, 'Fix multi-root PR', 'feat/issue-221', 'main', 'body'
+    );
+  });
+
+  it('prompts for a repository when multiple checkouts match the resolved config', async () => {
+    const first = createRepository('/workspace/one', 'https://git.example.com/test-owner/test-repo.git');
+    const second = createRepository('/workspace/two', 'https://git.example.com/test-owner/test-repo.git');
+    mockGitApi([first, second]);
+    mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockedExecSync.mockReset();
+    mockedSpawnSync.mockReset();
+    mockedExecSync.mockReturnValueOnce('feat/pick\n' as any);
+    mockedSpawnSync.mockReturnValueOnce({ status: 0, stdout: 'refs/remotes/origin/main\n', stderr: '', pid: 0, output: [], signal: null } as any);
+    (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce({ repository: second });
+    (vscode.window.showInputBox as jest.Mock)
+      .mockResolvedValueOnce('Picked repo')
+      .mockResolvedValueOnce('body')
+      .mockResolvedValueOnce('main');
+    (vscode.window.showInformationMessage as jest.Mock).mockResolvedValueOnce(undefined);
+
+    await createPullRequestCommand(mockPRTreeProvider as any);
+
+    expect(vscode.window.showQuickPick).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ detail: '/workspace/one', repository: first }),
+        expect.objectContaining({ detail: '/workspace/two', repository: second }),
+      ]),
+      expect.objectContaining({ placeHolder: 'Select the local repository to read the branch from' })
+    );
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      'git rev-parse --abbrev-ref HEAD',
+      expect.objectContaining({ cwd: '/workspace/two' })
+    );
+  });
+
+  it('returns early without creating a PR when the repository picker is cancelled', async () => {
+    const first = createRepository('/workspace/one', 'https://git.example.com/test-owner/test-repo.git');
+    const second = createRepository('/workspace/two', 'https://git.example.com/test-owner/test-repo.git');
+    mockGitApi([first, second]);
+    mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    (vscode.window.showQuickPick as jest.Mock).mockResolvedValueOnce(undefined);
+
+    await createPullRequestCommand(mockPRTreeProvider as any);
+
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+    expect(mockedExecSync).not.toHaveBeenCalled();
+  });
+
+  it('shows an error when no Git repository matches and multiple workspace folders are open', async () => {
+    (vscode.workspace as any).workspaceFolders = [
+      { uri: { fsPath: '/workspace/a' } },
+      { uri: { fsPath: '/workspace/b' } },
+    ];
+    const unrelated = createRepository('/workspace/a', 'https://git.example.com/other/other.git');
+    mockGitApi([unrelated]);
+    mockGetForgejoConfig.mockResolvedValue(mockConfig);
+
+    await createPullRequestCommand(mockPRTreeProvider as any);
+
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+      'Could not determine which local repository to create the pull request from. Open a single repository, or use the Create Pull Request action on a repository in the Forgejo view.'
+    );
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+    expect(mockedExecSync).not.toHaveBeenCalled();
   });
 });
