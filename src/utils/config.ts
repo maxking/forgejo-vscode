@@ -101,9 +101,14 @@ async function configFromGitInfo(gitInfo: GitRemoteInfo, instances: ForgejoInsta
 
 /**
  * Get Forgejo configuration from VS Code settings
+ * @param sourceUri Optional document URI whose owning Git repository should be
+ *   preferred when resolving the Forgejo config. In multi-root or
+ *   nested-repository workspaces this keeps commands resolved against the
+ *   originating file instead of an unrelated active editor or first detected
+ *   repository.
  */
-export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
-	logDebug('Getting configuration...');
+export async function getForgejoConfig(sourceUri?: vscode.Uri): Promise<ForgejoConfig | null> {
+	logDebug('Getting configuration...', sourceUri ? sourceUri.toString() : undefined);
 
 	// Get all configured instances
 	const instances = await getAllInstances();
@@ -114,7 +119,7 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 	const autoDetectFromRemote = forgejoSettings.get<boolean>('autoDetectFromRemote') !== false;
 
 	// Get git remote info, using preferred remote if configured
-	const gitInfo = detectGitRemote(preferredRemote || undefined);
+	const gitInfo = detectGitRemote(preferredRemote || undefined, sourceUri);
 
 	if (!gitInfo) {
 		logInfo('Could not determine owner/repo from git remote');

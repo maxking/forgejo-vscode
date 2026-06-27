@@ -130,9 +130,9 @@ export function todoDraftFromLine(document: vscode.TextDocument, lineNumber: num
 export async function createIssueFromTodoCommand(
   issueCreateWebviewProvider: IssueCreateWebviewProvider,
   draft: TodoIssueDraft,
-  getConfig: () => Promise<ForgejoConfig | null> = getForgejoConfig
+  getConfig: (sourceUri?: vscode.Uri) => Promise<ForgejoConfig | null> = getForgejoConfig
 ): Promise<void> {
-  const config = await getConfig();
+  const config = await getConfig(draft.sourceUri);
   if (!config) {
     void vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
     return;
@@ -151,7 +151,7 @@ export class ForgejoReferenceLanguageProvider implements vscode.HoverProvider, v
 
   constructor(
     private readonly issueCreateWebviewProvider: IssueCreateWebviewProvider,
-    private readonly getConfig: () => Promise<ForgejoConfig | null> = getForgejoConfig,
+    private readonly getConfig: (sourceUri?: vscode.Uri) => Promise<ForgejoConfig | null> = getForgejoConfig,
     private readonly createClient: (config: ForgejoConfig) => ForgejoClient = config => new ForgejoClient(config.instanceUrl, config.token),
     private readonly markResolvedReference: (document: vscode.TextDocument, range: vscode.Range) => void = noopMarkResolvedReference
   ) {}
@@ -166,7 +166,7 @@ export class ForgejoReferenceLanguageProvider implements vscode.HoverProvider, v
       return undefined;
     }
 
-    const config = await this.getConfig();
+    const config = await this.getConfig(document.uri);
     if (!config) {
       return undefined;
     }
@@ -195,7 +195,7 @@ export class ForgejoReferenceLanguageProvider implements vscode.HoverProvider, v
     const query = match[3];
     const start = position.character - trigger.length - query.length;
     const range = new vscode.Range(position.line, start, position.line, position.character);
-    const config = await this.getConfig();
+    const config = await this.getConfig(document.uri);
     if (!config) {
       return [];
     }
