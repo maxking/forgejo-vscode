@@ -64,6 +64,18 @@ function isFailedStatus(status: string): boolean {
   return status === 'failure' || status === 'error';
 }
 
+function treeIdPart(value: string | number | undefined): string {
+  return encodeURIComponent(String(value ?? ''));
+}
+
+function actionTreeItemId(parts: (string | number | undefined)[]): string {
+  return parts.map(treeIdPart).join('/');
+}
+
+function jobRefIdPart(jobRef: WorkflowJobRef): string | number | undefined {
+  return jobRef.jobId ?? jobRef.jobIndex ?? jobRef.jobName;
+}
+
 /**
  * Represents a grouped workflow run (parent of jobs).
  * Jobs come from the /actions/tasks endpoint data, no lazy-loading needed.
@@ -92,6 +104,7 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
 
     // Icon based on aggregate status
     this.iconPath = this.getAggregateStatusIcon(jobs);
+    this.id = actionTreeItemId(['workflow-run', instanceUrl, owner, repo, runNumber]);
   }
 
   private getAggregateStatusIcon(jobs: WorkflowRunListItem[]): vscode.ThemeIcon {
@@ -144,6 +157,7 @@ export class JobTreeItem extends vscode.TreeItem {
 
     // Set icon based on status
     this.iconPath = getStatusIcon(job.status);
+    this.id = actionTreeItemId(['workflow-job', instanceUrl, owner, repo, job.run_number, job.id]);
 
     if (isFailedStatus(job.status)) {
       this.command = {
@@ -170,7 +184,8 @@ export class StepTreeItem extends vscode.TreeItem {
     public readonly runNumber: number,
     public readonly owner: string,
     public readonly repo: string,
-    public readonly instanceUrl?: string
+    public readonly instanceUrl?: string,
+    public readonly stepIndex = 0
   ) {
     super(step.summary, vscode.TreeItemCollapsibleState.None);
 
@@ -179,6 +194,16 @@ export class StepTreeItem extends vscode.TreeItem {
     this.contextValue = 'workflowStep';
 
     this.iconPath = getStatusIcon(step.status);
+    this.id = actionTreeItemId([
+      'workflow-step',
+      instanceUrl,
+      owner,
+      repo,
+      runNumber,
+      jobRefIdPart(jobRef),
+      stepIndex,
+      step.summary
+    ]);
 
     // Click to view step logs — pass a plain serializable object to avoid
     // circular JSON (StepTreeItem.command.arguments[0] → StepTreeItem).
@@ -208,17 +233,20 @@ class ActionRepositoryItem extends vscode.TreeItem {
     this.tooltip = config.rootPath ? `${config.label}\n${config.rootPath}` : config.label;
     this.contextValue = 'forgejoRepository';
     this.iconPath = new vscode.ThemeIcon('repo');
+    this.id = actionTreeItemId(['action-repository', config.instanceUrl, config.owner, config.repo, config.rootPath]);
   }
 }
 
 class ActionMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
-    public readonly isError = false
+    public readonly isError = false,
+    public readonly idContext?: string
   ) {
     super(message, vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(isError ? 'error' : 'info');
     this.contextValue = isError ? 'error' : 'info';
+    this.id = actionTreeItemId(['action-message', isError ? 'error' : 'info', idContext, message]);
   }
 }
 
@@ -278,12 +306,12 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
   private async getJobSteps(jobItem: JobTreeItem): Promise<ActionTreeElement[]> {
     // Return cached result if available
     if (jobItem.fetchedSteps) {
-      return jobItem.fetchedSteps.map(step =>
-        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo, jobItem.instanceUrl)
+      return jobItem.fetchedSteps.map((step, index) =>
+        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo, jobItem.instanceUrl, index)
       );
     }
     if (jobItem.fetchError) {
-      return [new ActionMessageItem(jobItem.fetchError, true)];
+      return [new ActionMessageItem(jobItem.fetchError, true, jobItem.id)];
     }
 
     try {
@@ -291,7 +319,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       if (!config) {
         const err = 'No Forgejo configuration found';
         jobItem.fetchError = err;
-        return [new ActionMessageItem(err, true)];
+        return [new ActionMessageItem(err, true, jobItem.id)];
       }
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
@@ -300,11 +328,11 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       jobItem.fetchedSteps = steps;
 
       if (steps.length === 0) {
-        return [new ActionMessageItem('No steps found', false)];
+        return [new ActionMessageItem('No steps found', false, jobItem.id)];
       }
 
-      return steps.map(step =>
-        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo, jobItem.instanceUrl)
+      return steps.map((step, index) =>
+        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo, jobItem.instanceUrl, index)
       );
     } catch (error) {
       const is404 = error instanceof Error && error.message.includes('404');
@@ -313,7 +341,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
         : error instanceof Error ? error.message : 'Failed to fetch steps';
       jobItem.fetchError = errMsg;
       console.error('[Forgejo] Error fetching steps for job:', error);
-      return [new ActionMessageItem(errMsg, true)];
+      return [new ActionMessageItem(errMsg, true, jobItem.id)];
     }
   }
 
@@ -326,7 +354,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       const workflowRuns = await this.fetchWorkflowRuns(config);
 
       if (workflowRuns.length === 0) {
-        return [new ActionMessageItem('No workflow runs found', false)];
+        return [new ActionMessageItem('No workflow runs found', false, this.configKey(config))];
       }
 
       const runsByNumber = new Map<number, WorkflowRunListItem[]>();
@@ -342,7 +370,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       );
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Unknown error';
-      return [new ActionMessageItem(this.error, true)];
+      return [new ActionMessageItem(this.error, true, this.configKey(config))];
     }
   }
 
