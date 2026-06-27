@@ -312,4 +312,30 @@ describe('ForgejoReferenceLanguageProvider', () => {
       'A Forgejo token is required to create issues. Please configure your token first.'
     );
   });
+
+  it('resolves the Forgejo config from the TODO draft source URI instead of the active editor', async () => {
+    const repoAConfig: ForgejoConfig = {
+      instanceUrl: 'https://git.example.com',
+      owner: 'repo-a-owner',
+      repo: 'repo-a',
+      token: 'token-a'
+    };
+    const repoBConfig: ForgejoConfig = {
+      instanceUrl: 'https://git.example.com',
+      owner: 'repo-b-owner',
+      repo: 'repo-b',
+      token: 'token-b'
+    };
+    const getConfig = jest.fn(async (sourceUri?: vscode.Uri) =>
+      sourceUri?.fsPath.includes('repo-b') ? repoBConfig : repoAConfig);
+    const draft = todoDraftFromLine(
+      documentWithLines(['// TODO: file bug from repo B'], '/workspace/repo-b/src/file.ts'),
+      0
+    )!;
+
+    await createIssueFromTodoCommand(issueCreateProvider as any, draft, getConfig);
+
+    expect(getConfig).toHaveBeenCalledWith(draft.sourceUri);
+    expect(issueCreateProvider.showCreateIssue).toHaveBeenCalledWith(repoBConfig, draft);
+  });
 });

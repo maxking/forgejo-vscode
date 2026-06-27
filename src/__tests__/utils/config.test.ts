@@ -289,5 +289,20 @@ describe('config', () => {
                 matchConfidence: 'exact'
             });
         });
+
+        it('should forward the source URI to detectGitRemote so the originating repository is resolved', async () => {
+            mockConfig(mockInstances);
+            (detectGitRemote as jest.Mock).mockReturnValue({
+                instanceUrl: 'https://git.company.com',
+                remoteHost: 'git.company.com',
+                owner: 'myorg',
+                repo: 'myrepo'
+            });
+
+            const sourceUri = vscode.Uri.file('/workspace/repo-b/src/file.ts');
+            await getForgejoConfig(sourceUri);
+
+            expect(detectGitRemote).toHaveBeenCalledWith(undefined, sourceUri);
+        });
     });
 });

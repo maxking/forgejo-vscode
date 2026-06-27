@@ -82,13 +82,13 @@ function parseRepositoryRemote(repository: Repository, remoteName?: string): Git
   return parsed ? { ...parsed, rootPath: repository.rootUri.fsPath, remoteName: selectedRemote.name } : null;
 }
 
-function detectGitRemoteFromGitExtension(remoteName?: string): GitRemoteInfo | null {
+function detectGitRemoteFromGitExtension(remoteName?: string, sourceUri?: vscode.Uri): GitRemoteInfo | null {
   const git = getGitExtensionApi();
   if (!git) {
     return null;
   }
 
-  const activeUri = vscode.window.activeTextEditor?.document.uri;
+  const activeUri = sourceUri ?? vscode.window.activeTextEditor?.document.uri;
   const activeRepository = activeUri ? git.getRepository(activeUri) : null;
   const [firstRepository] = git.repositories as readonly (Repository | undefined)[];
   const repository = activeRepository ?? firstRepository;
@@ -176,9 +176,13 @@ export async function detectGitRepositoriesAsync(remoteName?: string): Promise<G
 /**
  * Detect git repository and extract remote information
  * @param remoteName Optional remote name to use instead of 'origin'
+ * @param sourceUri Optional document URI whose owning Git repository should be
+ *   preferred over the active editor or first detected repository. This keeps
+ *   multi-root/nested-repository workflows resolved against the originating
+ *   file instead of an unrelated workspace default.
  */
-export function detectGitRemote(remoteName?: string): GitRemoteInfo | null {
-  const gitExtensionRemote = detectGitRemoteFromGitExtension(remoteName);
+export function detectGitRemote(remoteName?: string, sourceUri?: vscode.Uri): GitRemoteInfo | null {
+  const gitExtensionRemote = detectGitRemoteFromGitExtension(remoteName, sourceUri);
   if (gitExtensionRemote) {
     return gitExtensionRemote;
   }
