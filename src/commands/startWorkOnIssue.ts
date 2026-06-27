@@ -2,9 +2,9 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import type { IssueListItem } from '../models/issue';
 import type { IssueTreeItem } from '../providers/issueTreeProvider';
-import type { API, GitExtension, Remote, Repository } from '../types/git';
+import type { API, GitExtension, Repository } from '../types/git';
 import { activateGitExtension } from '../utils/gitExtension';
-import { parseRemoteUrl } from '../utils/gitUtils';
+import { repositoryMatchesConfig } from '../utils/gitRepositoryMatch';
 import { logError, logInfo } from '../utils/logger';
 
 const CUSTOM_BRANCH_PICK = '__custom__';
@@ -22,39 +22,7 @@ type CheckoutResult =
   | { kind: 'created'; baseRef: string }
   | { kind: 'checkedOutExisting' };
 
-function remoteUrl(remote: Remote): string | undefined {
-  return [remote.fetchUrl, remote.pushUrl].find((url): url is string => typeof url === 'string' && url.length > 0);
-}
 
-function hostForInstanceUrl(instanceUrl?: string): { host: string; hostname: string } | undefined {
-  if (!instanceUrl) {
-    return undefined;
-  }
-
-  try {
-    const parsed = new URL(instanceUrl);
-    return { host: parsed.host, hostname: parsed.hostname };
-  } catch {
-    return undefined;
-  }
-}
-
-function repositoryMatchesIssue(repository: Repository, owner: string, repo: string, instanceUrl?: string): boolean {
-  const expectedHost = hostForInstanceUrl(instanceUrl);
-
-  return repository.state.remotes.some(remote => {
-    const url = remoteUrl(remote);
-    const parsed = url ? parseRemoteUrl(url) : null;
-    if (!parsed || parsed.owner !== owner || parsed.repo !== repo) {
-      return false;
-    }
-
-    return !expectedHost
-      || parsed.instanceUrl === instanceUrl
-      || parsed.remoteHost === expectedHost.host
-      || parsed.remoteHost === expectedHost.hostname;
-  });
-}
 
 function repositoryIsDirty(repository: Repository): boolean {
   return (repository.state.indexChanges?.length ?? 0) > 0
@@ -290,7 +258,7 @@ export async function startWorkOnIssueCommand(
     }
 
     const matchingRepositories = git.repositories.filter(repository =>
-      repositoryMatchesIssue(repository, issueOwner, issueRepo, issueInstanceUrl)
+      repositoryMatchesConfig(repository, issueOwner, issueRepo, issueInstanceUrl)
     );
     if (matchingRepositories.length === 0) {
       void vscode.window.showErrorMessage(`No local Git repository found for ${issueOwner}/${issueRepo}.`);

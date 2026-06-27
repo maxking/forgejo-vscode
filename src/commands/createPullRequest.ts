@@ -1,7 +1,11 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { execSync, spawnSync } from 'child_process';
 import { ForgejoClient } from '../api/forgejoClient';
 import { ForgejoConfig, getForgejoConfig } from '../utils/config';
+import type { API, GitExtension, Repository } from '../types/git';
+import { activateGitExtension } from '../utils/gitExtension';
+import { repositoryMatchesConfig } from '../utils/gitRepositoryMatch';
 import { logInfo, logError } from '../utils/logger';
 import { PRTreeProvider } from '../providers/prTreeProvider';
 
@@ -14,6 +18,105 @@ export function branchNameToTitle(branchName: string): string {
 	return branchName
 		.replace(/[-_]/g, ' ')
 		.replace(/^\w/, (c) => c.toUpperCase());
+}
+
+interface RepositoryPick extends vscode.QuickPickItem {
+	repository: Repository;
+}
+
+async function getGitApi(): Promise<API | undefined> {
+	const gitExtension: GitExtension | undefined = await activateGitExtension();
+	if (!gitExtension?.enabled) {
+		return undefined;
+	}
+
+	return gitExtension.getAPI(1);
+}
+
+function activeRepository(git: API): Repository | null {
+	const activeUri = vscode.window.activeTextEditor?.document.uri;
+	return activeUri ? git.getRepository(activeUri) : null;
+}
+
+function repositorySelectionPriority(repository: Repository, active: Repository | null, preferredRootPath?: string): number {
+	let priority = 0;
+	if (preferredRootPath && repository.rootUri.fsPath === preferredRootPath) {
+		priority += 2;
+	}
+	if (repository === active) {
+		priority += 1;
+	}
+	return priority;
+}
+
+/**
+ * Resolve the local checkout to read branch state from when no explicit
+ * repository root was passed (i.e. the command-palette / view-title path).
+ *
+ * The branch must be read from the SAME local repository that the resolved
+ * Forgejo config (owner/repo/instanceUrl) refers to. Previously this fell back
+ * to `workspaceFolders[0]`, which can be a different checkout in multi-root or
+ * nested-repository workspaces and produced PRs with the wrong head/base branch.
+ *
+ * Resolution order:
+ *  1. VS Code Git repositories whose remotes match the resolved config.
+ *     - single match -> use it
+ *     - multiple matches -> prefer active editor / preferred root, else prompt
+ *  2. A single unambiguous workspace folder (only when exactly one is open and
+ *     no Git-extension repository matched).
+ *  3. Otherwise surface an error so the user invokes the command from the tree.
+ *
+ * Returns `undefined` when the user cancelled a picker or no root could be
+ * resolved safely; an error message is shown in that case.
+ */
+async function resolveWorkspaceRoot(
+	config: ForgejoConfig,
+	preferredRootPath?: string
+): Promise<string | undefined> {
+	const git = await getGitApi();
+	if (git) {
+		const matching = git.repositories.filter(repository =>
+			repositoryMatchesConfig(repository, config.owner, config.repo, config.instanceUrl)
+		);
+
+		if (matching.length === 1) {
+			return matching[0].rootUri.fsPath;
+		}
+
+		if (matching.length > 1) {
+			const active = activeRepository(git);
+			const sorted = [...matching].sort((left, right) =>
+				repositorySelectionPriority(right, active, preferredRootPath)
+					- repositorySelectionPriority(left, active, preferredRootPath)
+			);
+			const picks: RepositoryPick[] = sorted.map(repository => ({
+				label: path.basename(repository.rootUri.fsPath),
+				description: repository === active ? 'active editor' : undefined,
+				detail: repository.rootUri.fsPath,
+				repository
+			}));
+
+			const selected = await vscode.window.showQuickPick(picks, {
+				title: 'Create Pull Request',
+				placeHolder: 'Select the local repository to read the branch from'
+			});
+
+			return selected?.repository.rootUri.fsPath;
+		}
+	}
+
+	// No matching Git-extension repository. Only fall back to a workspace folder
+	// when it is unambiguous (exactly one folder open), so we never silently read
+	// branch state from an unrelated checkout in a multi-root workspace.
+	const workspaceFolders = vscode.workspace.workspaceFolders;
+	if (workspaceFolders && workspaceFolders.length === 1) {
+		return workspaceFolders[0].uri.fsPath;
+	}
+
+	void vscode.window.showErrorMessage(
+		'Could not determine which local repository to create the pull request from. Open a single repository, or use the Create Pull Request action on a repository in the Forgejo view.'
+	);
+	return undefined;
 }
 
 /**
@@ -33,9 +136,10 @@ export async function createPullRequestCommand(prTreeProvider: PRTreeProvider, r
 			return;
 		}
 
-		const workspaceRoot = repositoryConfig?.rootPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+		const workspaceRoot = repositoryConfig?.rootPath
+			?? await resolveWorkspaceRoot(config, repositoryConfig?.rootPath);
 		if (!workspaceRoot) {
-			void vscode.window.showErrorMessage('No workspace folder open.');
+			// resolveWorkspaceRoot already surfaced an error or the user cancelled.
 			return;
 		}
 
