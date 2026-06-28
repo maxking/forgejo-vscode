@@ -24,6 +24,10 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ## News
 
+### 0.3.25
+
+- Development version after the 0.3.24 release.
+
 ### 0.3.24
 
 - **TODO quick fix repository targeting ([#223](https://git.araj.me/maxking/forgejo-vscode/issues/223)):** the `Create Forgejo issue from TODO` quick fix now resolves the Forgejo config from the TODO source file's owning Git repository instead of the active editor or first detected repository, so in multi-root or nested-repository workspaces the create-issue form targets the repository that actually contains the TODO. Reference hovers and completions also resolve per-document.
