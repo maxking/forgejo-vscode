@@ -59,6 +59,7 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - Start-work-on-issue branch creation should call the VS Code Git extension's `createBranch(name, checkout, ref)` API, using `forgejo.startWorkOnIssueBaseRef` as the parent ref.
 - Start-work-on-issue must not silently choose among multiple matching local worktrees; show a repository picker with full paths so the user intentionally selects the target worktree before checkout.
 - Remote repository browsing must keep instance URL, owner, repo, branch, and path identity in tree items and virtual document URIs, and public no-token access must not fall back to unrelated configured instances or tokens.
+- PR detail commands that open local files must preserve the PR's instance, owner, and repo identity when resolving local Git repositories; do not fall back to workspace-wide file searches when that explicit identity has no matching local checkout.
 
 ## Architecture & Code Patterns
 
