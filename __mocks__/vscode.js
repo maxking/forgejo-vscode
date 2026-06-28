@@ -99,6 +99,13 @@ class Uri {
   }
 }
 
+class RelativePattern {
+  constructor(base, pattern) {
+    this.base = base;
+    this.pattern = pattern;
+  }
+}
+
 class TreeItem {
   constructor(label, collapsibleState) {
     this.label = label;
@@ -354,6 +361,7 @@ const env = {
 module.exports = {
   EventEmitter,
   Uri,
+  RelativePattern,
   TreeItem,
   TreeItemCollapsibleState,
   ConfigurationTarget,

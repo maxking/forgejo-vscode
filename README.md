@@ -27,6 +27,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.25
 
 - Development version after the 0.3.24 release.
+- **PR detail workflow-file targeting ([#229](https://git.araj.me/maxking/forgejo-vscode/issues/229)):** the CI status `Workflow` button in pull request detail pages now searches local workflow YAML files only inside the Git repository whose remote matches the pull request's instance, owner, and repository, so multi-root or nested-repository workspaces no longer open unrelated same-named workflow files.
 
 ### 0.3.24
 

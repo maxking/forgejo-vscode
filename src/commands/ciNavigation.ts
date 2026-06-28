@@ -4,6 +4,9 @@ import { CommitStatus } from '../models/pullRequest';
 import { WorkflowJobRef } from '../models/action';
 import { getForgejoConfigFor } from '../utils/config';
 import { isWorkflowFilePath, validateWorkspaceWorkflows } from '../diagnostics/workflowDiagnostics';
+import { activateGitExtension } from '../utils/gitExtension';
+import { repositoryMatchesConfig } from '../utils/gitRepositoryMatch';
+import type { API } from '../types/git';
 
 export interface CIStatusArgs {
   status: CommitStatus;
@@ -84,12 +87,50 @@ function getWorkflowName(text: string): string | null {
   return null;
 }
 
-async function findWorkflowFiles(): Promise<vscode.Uri[]> {
-  const groups = await Promise.all([
-    vscode.workspace.findFiles('**/.forgejo/workflows/*.{yml,yaml}', '**/node_modules/**', 100),
-    vscode.workspace.findFiles('**/.gitea/workflows/*.{yml,yaml}', '**/node_modules/**', 100),
-    vscode.workspace.findFiles('**/.github/workflows/*.{yml,yaml}', '**/node_modules/**', 100),
-  ]);
+const WORKFLOW_GLOBS = [
+  '.forgejo/workflows/*.{yml,yaml}',
+  '.gitea/workflows/*.{yml,yaml}',
+  '.github/workflows/*.{yml,yaml}',
+] as const;
+
+async function getGitApi(): Promise<API | undefined> {
+  const gitExtension = await activateGitExtension();
+  if (!gitExtension?.enabled) {
+    return undefined;
+  }
+
+  return gitExtension.getAPI(1);
+}
+
+async function resolveWorkflowSearchRoots(args: CIStatusArgs): Promise<vscode.Uri[]> {
+  const git = await getGitApi();
+  if (!git) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  return git.repositories
+    .filter(repository => repositoryMatchesConfig(repository, args.owner, args.repo, args.instanceUrl))
+    .map(repository => repository.rootUri)
+    .filter(uri => {
+      if (seen.has(uri.fsPath)) {
+        return false;
+      }
+      seen.add(uri.fsPath);
+      return true;
+    });
+}
+
+async function findWorkflowFiles(searchRoots?: readonly vscode.Uri[]): Promise<vscode.Uri[]> {
+  const groups = searchRoots && searchRoots.length > 0
+    ? await Promise.all(searchRoots.flatMap(root =>
+      WORKFLOW_GLOBS.map(pattern =>
+        vscode.workspace.findFiles(new vscode.RelativePattern(root.fsPath, pattern), '**/node_modules/**', 100)
+      )
+    ))
+    : await Promise.all(WORKFLOW_GLOBS.map(pattern =>
+      vscode.workspace.findFiles(`**/${pattern}`, '**/node_modules/**', 100)
+    ));
 
   const seen = new Set<string>();
   return groups.flat().filter(uri => {
@@ -101,10 +142,10 @@ async function findWorkflowFiles(): Promise<vscode.Uri[]> {
   });
 }
 
-export async function findWorkflowFileForStatus(status: CommitStatus): Promise<vscode.Uri | null> {
+export async function findWorkflowFileForStatus(status: CommitStatus, searchRoots?: readonly vscode.Uri[]): Promise<vscode.Uri | null> {
   const workflowName = inferWorkflowNameFromStatusContext(status.context);
   const workflowSlug = slugify(workflowName);
-  const files = await findWorkflowFiles();
+  const files = await findWorkflowFiles(searchRoots);
   const matches: vscode.Uri[] = [];
 
   for (const uri of files) {
@@ -193,7 +234,10 @@ export async function viewCIStatusLogs(args: CIStatusArgs): Promise<void> {
 }
 
 export async function openWorkflowFileForCIStatus(args: CIStatusArgs): Promise<void> {
-  const uri = await findWorkflowFileForStatus(args.status);
+  const searchRoots = await resolveWorkflowSearchRoots(args);
+  const uri = searchRoots.length > 0
+    ? await findWorkflowFileForStatus(args.status, searchRoots)
+    : null;
   if (!uri) {
     void vscode.window.showInformationMessage(`No local workflow file matched "${inferWorkflowNameFromStatusContext(args.status.context)}".`);
     return;

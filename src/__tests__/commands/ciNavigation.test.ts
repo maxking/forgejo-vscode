@@ -3,14 +3,42 @@ import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
 import {
   findWorkflowFileForStatus,
+  openWorkflowFileForCIStatus,
   parseActionJobTarget,
   resolveStatusTargetUrl,
   viewCIStatusLogs,
 } from '../../commands/ciNavigation';
 import { CommitStatus } from '../../models/pullRequest';
+import { activateGitExtension } from '../../utils/gitExtension';
 
 jest.mock('../../api/forgejoClient');
 jest.mock('../../utils/config');
+jest.mock('../../utils/gitExtension');
+
+const mockActivateGitExtension = activateGitExtension as jest.MockedFunction<typeof activateGitExtension>;
+
+function createRepository(rootPath: string, remoteUrl: string) {
+  return {
+    rootUri: vscode.Uri.file(rootPath),
+    state: {
+      HEAD: { name: 'main' },
+      remotes: [{ name: 'origin', fetchUrl: remoteUrl }],
+      indexChanges: [],
+      workingTreeChanges: [],
+      mergeChanges: [],
+    },
+  };
+}
+
+function mockGitApi(repositories: any[]) {
+  mockActivateGitExtension.mockResolvedValue({
+    enabled: true,
+    getAPI: () => ({
+      repositories,
+      getRepository: jest.fn(),
+    }),
+  } as any);
+}
 
 describe('ciNavigation', () => {
   const status: CommitStatus = {
@@ -39,6 +67,7 @@ describe('ciNavigation', () => {
       getWorkflowLogs: jest.fn().mockResolvedValue('failed log output')
     } as any;
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);
+    mockActivateGitExtension.mockResolvedValue(undefined as any);
     (vscode.window.withProgress as jest.Mock).mockImplementation(async (_options, task) => task());
     (vscode.workspace.openTextDocument as jest.Mock).mockImplementation(async (input) => {
       if (typeof input === 'object' && 'content' in input) {
@@ -98,5 +127,66 @@ describe('ciNavigation', () => {
 
     await expect(findWorkflowFileForStatus(status)).resolves.toBe(uri);
   });
-});
 
+  test('opens the workflow file from the matching PR repository root', async () => {
+    const repoA = createRepository('/workspace/repo-a', 'git@git.example.com:owner/repo-a.git');
+    const repoB = createRepository('/workspace/repo-b', 'git@git.example.com:owner/repo-b.git');
+    const repoAWorkflow = vscode.Uri.file('/workspace/repo-a/.forgejo/workflows/test.yml');
+    const repoBWorkflow = vscode.Uri.file('/workspace/repo-b/.forgejo/workflows/test.yml');
+    mockGitApi([repoA, repoB]);
+    (vscode.workspace.findFiles as jest.Mock).mockImplementation(async (pattern) => {
+      if (pattern.base === '/workspace/repo-a') {
+        return [repoAWorkflow];
+      }
+      if (pattern.base === '/workspace/repo-b') {
+        return [repoBWorkflow];
+      }
+      return [];
+    });
+    (vscode.workspace.openTextDocument as jest.Mock).mockImplementation(async (input) => ({
+      uri: input,
+      getText: () => 'name: Test\non: push\njobs:\n  test:\n    runs-on: docker\n    steps:\n      - run: npm test\n'
+    }));
+
+    await openWorkflowFileForCIStatus({
+      status,
+      owner: 'owner',
+      repo: 'repo-b',
+      instanceUrl: 'https://git.example.com'
+    });
+
+    expect(vscode.workspace.findFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ base: '/workspace/repo-b' }),
+      '**/node_modules/**',
+      100
+    );
+    expect(vscode.workspace.findFiles).not.toHaveBeenCalledWith(
+      expect.objectContaining({ base: '/workspace/repo-a' }),
+      expect.anything(),
+      expect.anything()
+    );
+    expect(vscode.window.showTextDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: repoBWorkflow }),
+      { preview: true }
+    );
+  });
+
+  test('does not open unrelated workflow files when no local repository matches the PR identity', async () => {
+    const repoA = createRepository('/workspace/repo-a', 'git@git.example.com:owner/repo-a.git');
+    mockGitApi([repoA]);
+    (vscode.workspace.findFiles as jest.Mock).mockResolvedValue([
+      vscode.Uri.file('/workspace/repo-a/.forgejo/workflows/test.yml')
+    ]);
+
+    await openWorkflowFileForCIStatus({
+      status,
+      owner: 'owner',
+      repo: 'repo-b',
+      instanceUrl: 'https://git.example.com'
+    });
+
+    expect(vscode.workspace.findFiles).not.toHaveBeenCalled();
+    expect(vscode.window.showTextDocument).not.toHaveBeenCalled();
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith('No local workflow file matched "Test".');
+  });
+});
