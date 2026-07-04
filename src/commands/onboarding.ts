@@ -167,18 +167,18 @@ export async function startOnboarding(): Promise<boolean> {
 
 	logInfo('Instance name received:', name.trim());
 
-	// Step 6: Ask for optional SSH port
-	const sshPortInput = await vscode.window.showInputBox({
-		prompt: 'Step 4 of 4: SSH port for clone URLs (optional)',
-		placeHolder: '22',
+	// Step 6: Ask for optional SSH host
+	const sshHostInput = await vscode.window.showInputBox({
+		prompt: 'Step 4 of 4: SSH host for this instance (optional)',
+		placeHolder: 'leave blank if SSH and HTTPS share the same host',
 		ignoreFocusOut: true,
-		validateInput: validateSshPortInput
+		validateInput: validateSshHostInput
 	});
-	if (sshPortInput === undefined) {
-		logInfo('Onboarding cancelled by user at step 4 (SSH port)');
+	if (sshHostInput === undefined) {
+		logInfo('Onboarding cancelled by user at step 4 (SSH host)');
 		return false;
 	}
-	const sshPort = parseSshPortInput(sshPortInput);
+	const sshHost = parseSshHostInput(sshHostInput);
 
 	// Step 7: Save instance
 	const instance: ForgejoInstance = {
@@ -187,7 +187,7 @@ export async function startOnboarding(): Promise<boolean> {
 		instanceUrl: normalizedUrl,
 		token: token.trim(),
 		username,
-		...(sshPort !== undefined ? { sshPort } : {}),
+		...(sshHost !== undefined ? { sshHost } : {}),
 		lastConnectionTest: tempInstance.lastConnectionTest
 	};
 
@@ -238,24 +238,33 @@ export async function startOnboarding(): Promise<boolean> {
 	}
 }
 
-function parseSshPortInput(value: string | undefined): number | undefined {
+function parseSshHostInput(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	if (!trimmed) {
 		return undefined;
 	}
 
-	return Number(trimmed);
+	return trimmed;
 }
 
-function validateSshPortInput(value: string | undefined): string | undefined {
+function validateSshHostInput(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	if (!trimmed) {
 		return undefined;
 	}
 
-	const port = Number(trimmed);
-	if (!Number.isInteger(port) || port < 1 || port > 65535) {
-		return 'SSH port must be a whole number between 1 and 65535';
+	// A bare hostname must not contain a scheme, path, or `@` user component.
+	// It may include a port for readability but SSH-port rewriting is not applied,
+	// so steer users toward a plain host.
+	if (trimmed.includes('://') || trimmed.includes('/') || trimmed.includes('@')) {
+		return 'Enter a bare SSH hostname (e.g. ssh.example.com), without a scheme, path, or user';
+	}
+
+	// Reject anything that doesn't look like a bare hostname. `sshHost` is a
+	// pure hostname (no port) so it can match the SSH git remote host and drive
+	// clone-URL host rewriting consistently.
+	if (!/^[a-zA-Z0-9.-]+$/.test(trimmed)) {
+		return 'Enter a valid SSH hostname (e.g. ssh.example.com), without a port, scheme, or path';
 	}
 
 	return undefined;

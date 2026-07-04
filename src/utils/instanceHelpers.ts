@@ -323,7 +323,20 @@ export function findBestInstanceMatch(
 			}
 		}
 	} catch {
-		// Invalid URL, fall through
+		// remoteUrl is a bare host (SSH transport), not a full URL.
+		// Fall through to the SSH-host match below.
+	}
+
+	// SSH-transport host match: for SSH git remotes the match target is the bare
+	// SSH hostname (e.g. `ssh.example.com`), which may differ from the web/API
+	// host. Match it against any instance that explicitly declares an `sshHost`.
+	// Hostnames are case-insensitive (RFC 4343), so compare on lowercased,
+	// trimmed values — the onboarding/schema allow uppercase input.
+	const normalizedRemoteHost = remoteUrl.trim().toLowerCase();
+	for (const instance of instances) {
+		if (instance.sshHost && instance.sshHost.trim().toLowerCase() === normalizedRemoteHost) {
+			return { instance, confidence: 'domain' };
+		}
 	}
 
 	return null;

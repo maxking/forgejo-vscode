@@ -46,7 +46,71 @@ describe('ForgejoRemoteSourceProvider', () => {
 		}]);
 	});
 
-	test('rewrites scp-style SSH clone URLs with the configured SSH port', async () => {
+	test('rewrites scp-style SSH clone URLs with the configured SSH host', async () => {
+		listUserRepos.mockResolvedValueOnce([{
+			full_name: 'owner/repo',
+			description: 'Repository description',
+			ssh_url: 'git@git.araj.me:owner/repo.git',
+			clone_url: 'https://git.araj.me/owner/repo.git',
+		}]);
+		const provider = new ForgejoRemoteSourceProvider({ ...instance, sshHost: 'ssh.araj.me' });
+
+		await expect(provider.getRemoteSources()).resolves.toEqual([{
+			name: '$(repo) owner/repo',
+			description: 'Repository description',
+			url: ['git@ssh.araj.me:owner/repo.git', 'https://git.araj.me/owner/repo.git'],
+		}]);
+	});
+
+	test('rewrites ssh protocol clone URLs with the configured SSH host', async () => {
+		listUserRepos.mockResolvedValueOnce([{
+			full_name: 'owner/repo',
+			description: '',
+			ssh_url: 'ssh://git@git.araj.me/owner/repo.git',
+			clone_url: 'https://git.araj.me/owner/repo.git',
+		}]);
+		const provider = new ForgejoRemoteSourceProvider({ ...instance, sshHost: 'ssh.araj.me' });
+
+		await expect(provider.getRemoteSources()).resolves.toEqual([{
+			name: '$(repo) owner/repo',
+			description: undefined,
+			url: ['ssh://git@ssh.araj.me/owner/repo.git', 'https://git.araj.me/owner/repo.git'],
+		}]);
+	});
+
+	test('preserves the SSH port when rewriting the ssh protocol host', async () => {
+		listUserRepos.mockResolvedValueOnce([{
+			full_name: 'owner/repo',
+			description: '',
+			ssh_url: 'ssh://git@git.araj.me:2200/owner/repo.git',
+			clone_url: 'https://git.araj.me/owner/repo.git',
+		}]);
+		const provider = new ForgejoRemoteSourceProvider({ ...instance, sshHost: 'ssh.araj.me' });
+
+		await expect(provider.getRemoteSources()).resolves.toEqual([{
+			name: '$(repo) owner/repo',
+			description: undefined,
+			url: ['ssh://git@ssh.araj.me:2200/owner/repo.git', 'https://git.araj.me/owner/repo.git'],
+		}]);
+	});
+
+	test('applies both sshHost and sshPort when both are configured (scp-style source)', async () => {
+		listUserRepos.mockResolvedValueOnce([{
+			full_name: 'owner/repo',
+			description: '',
+			ssh_url: 'git@git.araj.me:owner/repo.git',
+			clone_url: 'https://git.araj.me/owner/repo.git',
+		}]);
+		const provider = new ForgejoRemoteSourceProvider({ ...instance, sshHost: 'ssh.araj.me', sshPort: 2222 });
+
+		await expect(provider.getRemoteSources()).resolves.toEqual([{
+			name: '$(repo) owner/repo',
+			description: undefined,
+			url: ['ssh://git@ssh.araj.me:2222/owner/repo.git', 'https://git.araj.me/owner/repo.git'],
+		}]);
+	});
+
+	test('rewrites scp-style SSH clone URLs with the legacy sshPort when no sshHost is set', async () => {
 		listUserRepos.mockResolvedValueOnce([{
 			full_name: 'owner/repo',
 			description: 'Repository description',
@@ -62,7 +126,7 @@ describe('ForgejoRemoteSourceProvider', () => {
 		}]);
 	});
 
-	test('rewrites ssh protocol clone URLs with the configured SSH port', async () => {
+	test('rewrites ssh protocol clone URLs with the legacy sshPort when no sshHost is set', async () => {
 		listUserRepos.mockResolvedValueOnce([{
 			full_name: 'owner/repo',
 			description: '',
@@ -78,7 +142,7 @@ describe('ForgejoRemoteSourceProvider', () => {
 		}]);
 	});
 
-	test('leaves SSH clone URLs unchanged when they already include a port', async () => {
+	test('leaves SSH clone URLs unchanged when they already include a port (legacy sshPort)', async () => {
 		listUserRepos.mockResolvedValueOnce([{
 			full_name: 'owner/repo',
 			description: '',

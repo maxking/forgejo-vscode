@@ -46,7 +46,11 @@ export async function manageInstances(): Promise<void> {
 			} as InstanceQuickPickItem,
 			...validInstances.map(i => ({
 				label: `${i.isDefault ? '$(star-full)' : '$(server)'} ${i.name}`,
-				description: i.sshPort ? `${i.instanceUrl} (SSH port ${String(i.sshPort)})` : i.instanceUrl,
+				description: i.sshHost
+					? `${i.instanceUrl} (SSH host ${i.sshHost})`
+					: i.sshPort
+						? `${i.instanceUrl} (SSH port ${String(i.sshPort)})`
+						: i.instanceUrl,
 				detail: getConnectionStatus(i),
 				instanceId: i.id
 			}))
@@ -113,7 +117,7 @@ async function showInstanceActions(instanceId: string): Promise<void> {
 	}
 
 	interface ActionQuickPickItem extends vscode.QuickPickItem {
-		action: 'test' | 'default' | 'edit' | 'editSshPort' | 'remove' | 'back';
+		action: 'test' | 'default' | 'edit' | 'editSshHost' | 'editSshPort' | 'remove' | 'back';
 	}
 
 	const actions: ActionQuickPickItem[] = [
@@ -137,8 +141,13 @@ async function showInstanceActions(instanceId: string): Promise<void> {
 			action: 'edit'
 		},
 		{
+			label: '$(remote) Edit SSH Host',
+			description: 'Set or clear the SSH hostname used to match git remotes and rewrite clone URLs',
+			action: 'editSshHost'
+		},
+		{
 			label: '$(remote) Edit SSH Port',
-			description: 'Set or clear the SSH port used for clone URLs',
+			description: 'SSH port for clone URLs (independent of SSH host)',
 			action: 'editSshPort'
 		}
 	];
@@ -180,6 +189,10 @@ async function showInstanceActions(instanceId: string): Promise<void> {
 			break;
 		case 'edit':
 			await handleEditToken(instanceId);
+			await showInstanceActions(instanceId);
+			break;
+		case 'editSshHost':
+			await handleEditSshHost(instanceId);
 			await showInstanceActions(instanceId);
 			break;
 		case 'editSshPort':
@@ -305,7 +318,47 @@ async function handleEditToken(instanceId: string): Promise<void> {
 }
 
 /**
- * Handles editing an instance's SSH clone port
+ * Handles editing an instance's SSH host
+ */
+async function handleEditSshHost(instanceId: string): Promise<void> {
+	const instance = await getInstanceById(instanceId);
+	if (!instance) {
+		return;
+	}
+
+	const sshHostInput = await vscode.window.showInputBox({
+		prompt: `Enter SSH host for ${instance.name} (leave blank if SSH and HTTPS share the same host)`,
+		placeHolder: 'ssh.example.com',
+		value: instance.sshHost ?? '',
+		ignoreFocusOut: true,
+		validateInput: validateSshHostInput
+	});
+
+	if (sshHostInput === undefined) {
+		return;
+	}
+
+	const sshHost = parseSshHostInput(sshHostInput);
+	const updatedInstance = { ...instance };
+	if (sshHost === undefined) {
+		delete updatedInstance.sshHost;
+	} else {
+		updatedInstance.sshHost = sshHost;
+	}
+
+	await updateInstance(updatedInstance);
+	void vscode.window.showInformationMessage(
+		sshHost === undefined
+			? `SSH host cleared for ${instance.name}`
+			: `SSH host for ${instance.name} set to ${sshHost}`
+	);
+	console.log(`[Forgejo] Updated SSH host for: ${instance.name}`);
+}
+
+/**
+ * Handles editing an instance's SSH clone port.
+ * Independent of `sshHost`: both may be set simultaneously (e.g. SSH on
+ * `ssh.example.com:2222`).
  */
 async function handleEditSshPort(instanceId: string): Promise<void> {
 	const instance = await getInstanceById(instanceId);
@@ -367,6 +420,32 @@ async function handleRemoveInstance(instanceId: string): Promise<void> {
 		`$(trash) Removed instance: ${instance.name}`
 	);
 	console.log(`[Forgejo] Removed instance: ${instance.name}`);
+}
+
+function parseSshHostInput(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	if (!trimmed) {
+		return undefined;
+	}
+
+	return trimmed;
+}
+
+function validateSshHostInput(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	if (!trimmed) {
+		return undefined;
+	}
+
+	if (trimmed.includes('://') || trimmed.includes('/') || trimmed.includes('@')) {
+		return 'Enter a bare SSH hostname (e.g. ssh.example.com), without a scheme, path, or user';
+	}
+
+	if (!/^[a-zA-Z0-9.-]+$/.test(trimmed)) {
+		return 'Enter a valid SSH hostname (e.g. ssh.example.com), without a port, scheme, or path';
+	}
+
+	return undefined;
 }
 
 function parseSshPortInput(value: string | undefined): number | undefined {

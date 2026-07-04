@@ -428,6 +428,87 @@ describe('instanceHelpers', () => {
 			expect(result?.instance.id).toBe('1');
 			expect(result?.confidence).toBe('exact');
 		});
+
+		it('should match a bare SSH remote host against a configured sshHost', () => {
+			const splitInstances: ForgejoInstance[] = [
+				{
+					id: '1',
+					name: 'Split',
+					instanceUrl: 'https://forgejo.example.com',
+					sshHost: 'ssh.example.com'
+				}
+			];
+
+			// SSH remotes arrive as the bare transport host, not a full URL.
+			const result = findBestInstanceMatch(splitInstances, 'ssh.example.com');
+			expect(result).not.toBeNull();
+			expect(result?.instance.id).toBe('1');
+			expect(result?.confidence).toBe('domain');
+		});
+
+		it('should match an SSH remote host case-insensitively against sshHost', () => {
+			const splitInstances: ForgejoInstance[] = [
+				{
+					id: '1',
+					name: 'Split',
+					instanceUrl: 'https://forgejo.example.com',
+					sshHost: 'SSH.EXAMPLE.COM'
+				}
+			];
+
+			// git remotes are conventionally lowercase, but the configured sshHost
+			// may be uppercase since the onboarding/schema allow it. Hostnames are
+			// case-insensitive (RFC 4343) and must still match.
+			const result = findBestInstanceMatch(splitInstances, 'ssh.example.com');
+			expect(result).not.toBeNull();
+			expect(result?.instance.id).toBe('1');
+			expect(result?.confidence).toBe('domain');
+		});
+
+		it('should match an SSH remote host with surrounding whitespace against sshHost', () => {
+			const splitInstances: ForgejoInstance[] = [
+				{
+					id: '1',
+					name: 'Split',
+					instanceUrl: 'https://forgejo.example.com',
+					sshHost: '  ssh.example.com  '
+				}
+			];
+
+			const result = findBestInstanceMatch(splitInstances, 'ssh.example.com');
+			expect(result).not.toBeNull();
+			expect(result?.instance.id).toBe('1');
+			expect(result?.confidence).toBe('domain');
+		});
+
+		it('should not match a bare SSH host against an instance without sshHost', () => {
+			const noSshHostInstances: ForgejoInstance[] = [
+				{
+					id: '1',
+					name: 'WebOnly',
+					instanceUrl: 'https://forgejo.example.com'
+				}
+			];
+
+			const result = findBestInstanceMatch(noSshHostInstances, 'ssh.example.com');
+			expect(result).toBeNull();
+		});
+
+		it('should prefer an exact web-URL match over an sshHost match for the same host', () => {
+			const instances: ForgejoInstance[] = [
+				{
+					id: '1',
+					name: 'Unified',
+					instanceUrl: 'https://codeberg.org',
+					sshHost: 'codeberg.org'
+				}
+			];
+
+			const result = findBestInstanceMatch(instances, 'https://codeberg.org');
+			expect(result).not.toBeNull();
+			expect(result?.instance.id).toBe('1');
+			expect(result?.confidence).toBe('exact');
+		});
 	});
 
 	describe('getDefaultInstanceName', () => {

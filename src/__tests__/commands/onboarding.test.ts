@@ -120,12 +120,12 @@ describe('onboarding', () => {
       );
     });
 
-    it('should save optional SSH port when configured', async () => {
+    it('should save optional SSH host when configured', async () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://git.example.com')
         .mockResolvedValueOnce('test-token')
         .mockResolvedValueOnce('My Forgejo')
-        .mockResolvedValueOnce(' 2222 ');
+        .mockResolvedValueOnce(' ssh.example.com ');
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
@@ -139,12 +139,12 @@ describe('onboarding', () => {
       expect(mockAddInstance).toHaveBeenCalledWith(
         expect.objectContaining({
           instanceUrl: 'https://git.example.com',
-          sshPort: 2222
+          sshHost: 'ssh.example.com'
         })
       );
     });
 
-    it('should return false when user cancels optional SSH port input', async () => {
+    it('should return false when user cancels optional SSH host input', async () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://git.example.com')
         .mockResolvedValueOnce('test-token')
@@ -161,7 +161,7 @@ describe('onboarding', () => {
       expect(mockAddInstance).not.toHaveBeenCalled();
     });
 
-    it('should validate optional SSH port input', async () => {
+    it('should validate optional SSH host input', async () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://git.example.com')
         .mockResolvedValueOnce('test-token')
@@ -176,12 +176,13 @@ describe('onboarding', () => {
 
       await runOnboarding();
 
-      const portPromptOptions = (vscode.window.showInputBox as jest.Mock).mock.calls[3][0];
-      expect(portPromptOptions.validateInput('')).toBeUndefined();
-      expect(portPromptOptions.validateInput('22')).toBeUndefined();
-      expect(portPromptOptions.validateInput('0')).toContain('between 1 and 65535');
-      expect(portPromptOptions.validateInput('65536')).toContain('between 1 and 65535');
-      expect(portPromptOptions.validateInput('22.5')).toContain('between 1 and 65535');
+      const hostPromptOptions = (vscode.window.showInputBox as jest.Mock).mock.calls[3][0];
+      expect(hostPromptOptions.validateInput('')).toBeUndefined();
+      expect(hostPromptOptions.validateInput('ssh.example.com')).toBeUndefined();
+      expect(hostPromptOptions.validateInput('https://ssh.example.com')).toContain('bare SSH hostname');
+      expect(hostPromptOptions.validateInput('git@ssh.example.com')).toContain('bare SSH hostname');
+      expect(hostPromptOptions.validateInput('ssh.example.com:2222')).toContain('without a port');
+      expect(hostPromptOptions.validateInput('ssh.example.com/repo.git')).toContain('bare SSH hostname');
     });
 
     it('should show success message when connection test passes', async () => {

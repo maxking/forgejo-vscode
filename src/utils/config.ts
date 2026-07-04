@@ -58,7 +58,7 @@ async function configFromGitInfo(gitInfo: GitRemoteInfo, instances: ForgejoInsta
 					};
 				}
 
-				logInfo('No configured instance matched SSH git remote; cannot infer API URL safely');
+				logInfo(`No configured instance matched SSH git remote host '${gitInfo.remoteHost}'; cannot infer API URL safely. If your SSH host differs from the Forgejo web URL, add an instance and set its SSH host via "Forgejo: Manage Instances".`);
 				return null;
 			}
 		}
@@ -75,7 +75,7 @@ async function configFromGitInfo(gitInfo: GitRemoteInfo, instances: ForgejoInsta
 
 	if (!selectedInstance) {
 		if (!gitInfo.instanceUrl) {
-			logInfo('Git remote is SSH-based and no configured Forgejo instance matched; cannot infer API URL safely');
+			logInfo(`Git remote is SSH-based (host '${gitInfo.remoteHost}') and no configured Forgejo instance matched; cannot infer API URL safely. If your SSH host differs from the Forgejo web URL, add an instance and set its SSH host via "Forgejo: Manage Instances".`);
 			return null;
 		}
 
