@@ -27,6 +27,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.25
 
 - Development version after the 0.3.24 release.
+- **Split SSH/HTTPS host support ([#28](https://codeberg.org/maxking/forgejo-vscode/issues/28)):** Forgejo instances whose SSH service runs on a different host than the web/API URL (for example SSH exposed directly as a Kubernetes Service and HTTPS behind an API gateway) can now be configured with an `sshHost`. The extension matches SSH git remotes against `sshHost` and rewrites clone URLs to point at the reachable SSH service, instead of refusing to act. The legacy `sshPort` field is retained for backward compatibility but is ignored when `sshHost` is set.
 - **PR detail workflow-file targeting ([#229](https://git.araj.me/maxking/forgejo-vscode/issues/229)):** the CI status `Workflow` button in pull request detail pages now searches local workflow YAML files only inside the Git repository whose remote matches the pull request's instance, owner, and repository, so multi-root or nested-repository workspaces no longer open unrelated same-named workflow files.
 
 ### 0.3.24
@@ -170,7 +171,7 @@ Authentication is **optional for public repositories** but required for private 
 4. Paste your token when prompted
 5. The extension tests the connection
 6. Enter a friendly name (e.g., "Codeberg")
-7. Enter an SSH port if your self-hosted instance does not use port 22, or leave it blank
+7. Enter an SSH host if your SSH git remote uses a different hostname than the web URL (e.g. when SSH is exposed directly and HTTPS is behind a gateway), or leave it blank
 8. The extension saves the instance
 
 **Option B: Using Settings UI**
@@ -308,18 +309,20 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 | `forgejo.debug` | `false` | Enable debug logging |
 | `forgejo.showFileStatusNotifications` | `true` | Show notifications for added/deleted files |
 
-Per-instance entries in `forgejo.instances` also support `sshPort` for self-hosted servers whose SSH service does not listen on port 22:
+Per-instance entries in `forgejo.instances` also support `sshHost` for self-hosted servers whose SSH service runs on a different host than the web/API URL (for example SSH as a direct Kubernetes Service and HTTPS behind an API gateway):
 
 ```json
 {
   "id": "my-forgejo",
   "name": "My Forgejo",
   "instanceUrl": "https://git.example.com",
-  "sshPort": 2222
+  "sshHost": "ssh.example.com"
 }
 ```
 
-For existing instances, run **"Forgejo: Manage Instances"**, select the instance, then choose **"Edit SSH Port"**.
+When `sshHost` is set, the extension matches SSH git remotes against it and rewrites SSH clone URLs to use that host. The legacy `sshPort` field (for instances where only the SSH port differs) is still honored when `sshHost` is not set, but is ignored once `sshHost` is configured.
+
+For existing instances, run **"Forgejo: Manage Instances"**, select the instance, then choose **"Edit SSH Host"** (or **"Edit SSH Port"** for the legacy port-only setting).
 
 ## Troubleshooting
 

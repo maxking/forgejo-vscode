@@ -588,11 +588,16 @@
               "instanceUrl": {
                 "type": "string"
               },
+              "sshHost": {
+                "type": "string",
+                "description": "Optional hostname used by SSH git remotes for this instance, when it differs from the web/API host (instanceUrl). Used for matching SSH git remotes to this instance and for rewriting SSH clone URLs so they point at the reachable SSH service host."
+              },
               "sshPort": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 65535,
-                "description": "Optional SSH port to use for clone URLs from this instance"
+                "description": "[Deprecated] Prefer sshHost. Optional SSH port to use for clone URLs from this instance. Ignored when sshHost is set.",
+                "deprecationMessage": "Prefer sshHost for split-host deployments. When sshHost is set, sshPort is ignored."
               },
               "token": {
                 "type": "string",
