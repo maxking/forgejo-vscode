@@ -14,9 +14,8 @@ export class ForgejoRemoteSourceProvider implements RemoteSourceProvider {
 	constructor(instance: ForgejoInstance) {
 		this.name = `Forgejo (${instance.name})`;
 		this.#client = new ForgejoClient(instance.instanceUrl, instance.token ?? '');
-		// sshHost takes precedence: when set, sshPort is ignored entirely.
 		this.#sshHost = instance.sshHost;
-		this.#sshPort = instance.sshHost ? undefined : instance.sshPort;
+		this.#sshPort = instance.sshPort;
 	}
 
 	async getRemoteSources(query?: string): Promise<RemoteSource[]> {
@@ -41,26 +40,27 @@ export class ForgejoRemoteSourceProvider implements RemoteSourceProvider {
 /**
  * Rewrites an SSH clone URL to match the user's reachable SSH service.
  *
- * When `sshHost` is set, the clone URL host is swapped to it (the SSH service
- * lives on a different host than the web/API URL — e.g. SSH as a direct
- * Kubernetes Service and HTTPS behind an API gateway). When only the legacy
- * `sshPort` is set, the port is injected instead. `sshHost` takes precedence
- * and `sshPort` is ignored when both are present.
+ * `sshHost` and `sshPort` are independent options and compose:
+ * - `sshHost` swaps the hostname (for split SSH/HTTPS host deployments,
+ *   e.g. SSH as a direct Kubernetes Service and HTTPS behind an API gateway).
+ * - `sshPort` injects the port when the clone URL doesn't already specify one.
+ * Both may be set at once (e.g. SSH on `ssh.example.com:2222`).
  */
 function rewriteSshCloneUrl(sshUrl: string | undefined, sshHost: string | undefined, sshPort: number | undefined): string | undefined {
 	if (!sshUrl) {
 		return sshUrl;
 	}
 
+	let result = sshUrl;
 	if (sshHost) {
-		return applySshHost(sshUrl, sshHost);
+		result = applySshHost(result, sshHost);
 	}
 
 	if (isValidSshPort(sshPort)) {
-		return applySshPort(sshUrl, sshPort);
+		result = applySshPort(result, sshPort);
 	}
 
-	return sshUrl;
+	return result;
 }
 
 function applySshHost(sshUrl: string, sshHost: string): string {

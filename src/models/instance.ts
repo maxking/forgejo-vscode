@@ -17,10 +17,9 @@ export interface ForgejoInstance {
 	sshHost?: string;
 
 	/** Optional SSH port to use when cloning repositories from this instance.
-	 *  @deprecated Prefer `sshHost` for split-host deployments. When `sshHost`
-	 *  is set, `sshPort` is ignored. Kept for backward compatibility with
-	 *  existing configurations where only the SSH port differs from the web
-	 *  host.
+	 *  Independent of `sshHost`: both may be set simultaneously (e.g. SSH on
+	 *  `ssh.example.com:2222`). The port is injected only when the clone URL
+	 *  does not already specify one.
 	 */
 	sshPort?: number;
 	/** Personal access token for authentication (hydrated from SecretStorage at runtime) */

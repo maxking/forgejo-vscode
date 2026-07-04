@@ -147,7 +147,7 @@ async function showInstanceActions(instanceId: string): Promise<void> {
 		},
 		{
 			label: '$(remote) Edit SSH Port',
-			description: 'Legacy: SSH port for clone URLs (ignored when SSH host is set)',
+			description: 'SSH port for clone URLs (independent of SSH host)',
 			action: 'editSshPort'
 		}
 	];
@@ -356,19 +356,13 @@ async function handleEditSshHost(instanceId: string): Promise<void> {
 }
 
 /**
- * Handles editing an instance's legacy SSH clone port.
- * Ignored when an SSH host is also configured.
+ * Handles editing an instance's SSH clone port.
+ * Independent of `sshHost`: both may be set simultaneously (e.g. SSH on
+ * `ssh.example.com:2222`).
  */
 async function handleEditSshPort(instanceId: string): Promise<void> {
 	const instance = await getInstanceById(instanceId);
 	if (!instance) {
-		return;
-	}
-
-	if (instance.sshHost) {
-		void vscode.window.showWarningMessage(
-			`SSH port is ignored for ${instance.name} because an SSH host is configured. Clear the SSH host first to use the legacy SSH port setting.`
-		);
 		return;
 	}
 

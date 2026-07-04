@@ -387,22 +387,25 @@ describe('instanceManager', () => {
       );
     });
 
-    it('should warn and skip SSH port edit when an SSH host is configured', async () => {
+    it('should update SSH port even when an SSH host is also configured', async () => {
       const instance = { id: '1', name: 'Test', instanceUrl: 'https://test.com', token: 'tok', isDefault: false, sshHost: 'ssh.test.com' };
       mockGetAllInstances.mockResolvedValue([instance]);
       mockGetInstanceById.mockResolvedValue(instance);
+      mockUpdateInstance.mockResolvedValue(undefined);
 
       (vscode.window.showQuickPick as jest.Mock)
         .mockResolvedValueOnce({ instanceId: '1' })
         .mockResolvedValueOnce({ action: 'editSshPort' })
         .mockResolvedValueOnce(undefined);
 
+      (vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce('2222');
+
       await manageInstances();
 
-      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
-        expect.stringContaining('SSH port is ignored')
+      expect(mockUpdateInstance).toHaveBeenCalledWith(
+        expect.objectContaining({ id: '1', sshHost: 'ssh.test.com', sshPort: 2222 })
       );
-      expect(mockUpdateInstance).not.toHaveBeenCalled();
+      expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
     });
 
     it('should clear SSH port when input is blank', async () => {

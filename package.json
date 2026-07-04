@@ -596,8 +596,7 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 65535,
-                "description": "[Deprecated] Prefer sshHost. Optional SSH port to use for clone URLs from this instance. Ignored when sshHost is set.",
-                "deprecationMessage": "Prefer sshHost for split-host deployments. When sshHost is set, sshPort is ignored."
+                "description": "Optional SSH port for clone URLs from this instance. Independent of sshHost: both may be set simultaneously. Injected only when the clone URL does not already specify a port."
               },
               "token": {
                 "type": "string",

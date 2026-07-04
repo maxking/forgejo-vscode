@@ -27,7 +27,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.25
 
 - Development version after the 0.3.24 release.
-- **Split SSH/HTTPS host support ([#28](https://codeberg.org/maxking/forgejo-vscode/issues/28)):** Forgejo instances whose SSH service runs on a different host than the web/API URL (for example SSH exposed directly as a Kubernetes Service and HTTPS behind an API gateway) can now be configured with an `sshHost`. The extension matches SSH git remotes against `sshHost` and rewrites clone URLs to point at the reachable SSH service, instead of refusing to act. The legacy `sshPort` field is retained for backward compatibility but is ignored when `sshHost` is set.
+- **Split SSH/HTTPS host support ([#28](https://codeberg.org/maxking/forgejo-vscode/issues/28)):** Forgejo instances whose SSH service runs on a different host than the web/API URL (for example SSH exposed directly as a Kubernetes Service and HTTPS behind an API gateway) can now be configured with an `sshHost`. The extension matches SSH git remotes against `sshHost` and rewrites clone URLs to point at the reachable SSH service, instead of refusing to act. The `sshPort` field remains an independent option and composes with `sshHost` (e.g. SSH on `ssh.example.com:2222`).
 - **PR detail workflow-file targeting ([#229](https://git.araj.me/maxking/forgejo-vscode/issues/229)):** the CI status `Workflow` button in pull request detail pages now searches local workflow YAML files only inside the Git repository whose remote matches the pull request's instance, owner, and repository, so multi-root or nested-repository workspaces no longer open unrelated same-named workflow files.
 
 ### 0.3.24
@@ -320,9 +320,9 @@ Per-instance entries in `forgejo.instances` also support `sshHost` for self-host
 }
 ```
 
-When `sshHost` is set, the extension matches SSH git remotes against it and rewrites SSH clone URLs to use that host. The legacy `sshPort` field (for instances where only the SSH port differs) is still honored when `sshHost` is not set, but is ignored once `sshHost` is configured.
+When `sshHost` is set, the extension matches SSH git remotes against it and rewrites SSH clone URLs to use that host. The `sshPort` field (for instances where the SSH port differs from the default 22) is an independent option and composes with `sshHost` — both may be set at once (e.g. SSH on `ssh.example.com:2222`). The port is injected only when the clone URL does not already specify one.
 
-For existing instances, run **"Forgejo: Manage Instances"**, select the instance, then choose **"Edit SSH Host"** (or **"Edit SSH Port"** for the legacy port-only setting).
+For existing instances, run **"Forgejo: Manage Instances"**, select the instance, then choose **"Edit SSH Host"** or **"Edit SSH Port"**.
 
 ## Troubleshooting
 

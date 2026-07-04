@@ -94,7 +94,7 @@ describe('ForgejoRemoteSourceProvider', () => {
 		}]);
 	});
 
-	test('ignores legacy sshPort when sshHost is configured', async () => {
+	test('applies both sshHost and sshPort when both are configured (scp-style source)', async () => {
 		listUserRepos.mockResolvedValueOnce([{
 			full_name: 'owner/repo',
 			description: '',
@@ -106,7 +106,7 @@ describe('ForgejoRemoteSourceProvider', () => {
 		await expect(provider.getRemoteSources()).resolves.toEqual([{
 			name: '$(repo) owner/repo',
 			description: undefined,
-			url: ['git@ssh.araj.me:owner/repo.git', 'https://git.araj.me/owner/repo.git'],
+			url: ['ssh://git@ssh.araj.me:2222/owner/repo.git', 'https://git.araj.me/owner/repo.git'],
 		}]);
 	});
 
