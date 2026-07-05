@@ -97,6 +97,43 @@ describe('RemoteRepositoryTreeProvider', () => {
     });
   });
 
+  test('loads additional branch pages from the branch picker', async () => {
+    const firstPageBranches = Array.from({ length: 100 }, (_value, index) => ({ name: `branch-${index}` }));
+    mockClient.listBranchesPage
+      .mockResolvedValueOnce({
+        items: firstPageBranches,
+        page: 1,
+        limit: 100,
+        hasMore: true,
+        totalCount: 101
+      })
+      .mockResolvedValueOnce({
+        items: [{ name: 'release/next' }],
+        page: 2,
+        limit: 100,
+        hasMore: false,
+        totalCount: 101
+      });
+    (vscode.window.showInputBox as jest.Mock).mockResolvedValue('maxking/forgejo-vscode');
+    (vscode.window.showQuickPick as jest.Mock)
+      .mockImplementationOnce(async items => {
+        expect(items.some((item: vscode.QuickPickItem) => item.label === 'release/next')).toBe(false);
+        return items.find((item: vscode.QuickPickItem) => item.label === 'Load more branches...');
+      })
+      .mockImplementationOnce(async items => {
+        expect(items.some((item: vscode.QuickPickItem) => item.label === 'Load more branches...')).toBe(false);
+        expect(items.some((item: vscode.QuickPickItem) => item.label === 'branch-0')).toBe(false);
+        expect(items.some((item: vscode.QuickPickItem) => item.label === 'Previous branch page')).toBe(true);
+        return items.find((item: vscode.QuickPickItem) => item.label === 'release/next');
+      });
+
+    const selection = await provider.browseRepository(new RemoteRepositoryBrowseItem(publicInstance));
+
+    expect(selection?.branch).toBe('release/next');
+    expect(mockClient.listBranchesPage).toHaveBeenNthCalledWith(1, 'maxking', 'forgejo-vscode', { page: 1, limit: 100 });
+    expect(mockClient.listBranchesPage).toHaveBeenNthCalledWith(2, 'maxking', 'forgejo-vscode', { page: 2, limit: 100 });
+  });
+
   test('rejects full repository URLs from a different instance', async () => {
     (vscode.window.showInputBox as jest.Mock).mockResolvedValue('https://git.example.com/maxking/forgejo-vscode');
 

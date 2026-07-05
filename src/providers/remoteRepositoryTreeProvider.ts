@@ -5,6 +5,22 @@ import { getAllInstances, normalizeUrl } from '../utils/instanceHelpers';
 import { createRemoteFileUri } from './remoteFileContentProvider';
 
 const REMOTE_DIRECTORY_PAGE_SIZE = 100;
+const LOAD_MORE_BRANCHES_LABEL = 'Load more branches...';
+const NEXT_BRANCH_PAGE_LABEL = 'Next branch page';
+const PREVIOUS_BRANCH_PAGE_LABEL = 'Previous branch page';
+
+interface BranchPage {
+  items: RepositoryBranch[];
+  page: number;
+  hasMore: boolean;
+}
+
+interface BranchQuickPickItem extends vscode.QuickPickItem {
+  branch?: RepositoryBranch;
+  loadMore?: true;
+  nextPage?: true;
+  previousPage?: true;
+}
 
 function treeIdPart(value: string | number | undefined): string {
   return encodeURIComponent(String(value ?? ''));
@@ -241,13 +257,17 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
       return undefined;
     }
 
-    const branches = await this.fetchBranches(instance, repository.owner, repository.repo);
-    if (branches.length === 0) {
+    const client = this.createClient(instance);
+    const firstBranchPage = await this.fetchBranchesPage(client, repository.owner, repository.repo);
+    if (firstBranchPage.items.length === 0) {
       void vscode.window.showErrorMessage(`No branches found for ${repositoryLabel(repository.owner, repository.repo)}.`);
       return undefined;
     }
 
-    const pickedBranch = await this.pickBranch(branches);
+    const pickedBranch = await this.pickBranch(
+      firstBranchPage,
+      page => this.fetchBranchesPage(client, repository.owner, repository.repo, page)
+    );
     if (!pickedBranch) {
       return undefined;
     }
@@ -273,8 +293,13 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
       return;
     }
 
-    const branches = await this.fetchBranches(instance, repositoryItem.selection.owner, repositoryItem.selection.repo);
-    const pickedBranch = await this.pickBranch(branches, repositoryItem.selection.branch);
+    const client = this.createClient(instance);
+    const firstBranchPage = await this.fetchBranchesPage(client, repositoryItem.selection.owner, repositoryItem.selection.repo);
+    const pickedBranch = await this.pickBranch(
+      firstBranchPage,
+      page => this.fetchBranchesPage(client, repositoryItem.selection.owner, repositoryItem.selection.repo, page),
+      repositoryItem.selection.branch
+    );
     if (!pickedBranch || pickedBranch.name === repositoryItem.selection.branch) {
       return;
     }
@@ -313,22 +338,113 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
       ?? instances.find(instance => normalizeUrl(instance.instanceUrl) === selection.instanceUrl);
   }
 
-  private async fetchBranches(instance: ForgejoInstance, owner: string, repo: string): Promise<RepositoryBranch[]> {
-    const client = new ForgejoClient(normalizeUrl(instance.instanceUrl), instance.token ?? '');
-    const page = await client.listBranchesPage(owner, repo, { page: 1, limit: REMOTE_DIRECTORY_PAGE_SIZE });
-    return page.items;
+  private createClient(instance: ForgejoInstance): ForgejoClient {
+    return new ForgejoClient(normalizeUrl(instance.instanceUrl), instance.token ?? '');
   }
 
-  private async pickBranch(branches: RepositoryBranch[], currentBranch?: string): Promise<RepositoryBranch | undefined> {
-    const picked = await vscode.window.showQuickPick(
-      branches.map(branch => ({
+  private async fetchBranchesPage(client: ForgejoClient, owner: string, repo: string, page = 1): Promise<BranchPage> {
+    const branchPage = await client.listBranchesPage(owner, repo, { page, limit: REMOTE_DIRECTORY_PAGE_SIZE });
+    return {
+      items: branchPage.items,
+      page: branchPage.page,
+      hasMore: branchPage.hasMore
+    };
+  }
+
+  private async pickBranch(
+    firstPage: BranchPage,
+    fetchPage: (page: number) => Promise<BranchPage>,
+    currentBranch?: string
+  ): Promise<RepositoryBranch | undefined> {
+    const branchPages: RepositoryBranch[][] = [];
+    const seenBranches = new Set<string>();
+    let hasMore = firstPage.hasMore;
+    let nextPage = firstPage.page + 1;
+    let currentPageIndex = 0;
+
+    const addBranches = (page: BranchPage): void => {
+      const pageBranches: RepositoryBranch[] = [];
+      for (const branch of page.items) {
+        if (!seenBranches.has(branch.name)) {
+          seenBranches.add(branch.name);
+          pageBranches.push(branch);
+        }
+      }
+      if (pageBranches.length > 0) {
+        branchPages.push(pageBranches);
+      }
+    };
+
+    addBranches(firstPage);
+
+    while (branchPages.length > 0) {
+      const visibleBranches = branchPages[currentPageIndex] ?? [];
+      const items: BranchQuickPickItem[] = visibleBranches.map(branch => ({
         label: branch.name,
         description: branch.name === currentBranch ? 'current' : undefined,
         branch
-      })),
-      { title: 'Select Branch' }
-    );
-    return picked?.branch;
+      }));
+
+      if (currentPageIndex > 0) {
+        items.push({
+          label: PREVIOUS_BRANCH_PAGE_LABEL,
+          description: `Page ${currentPageIndex}`,
+          previousPage: true,
+          alwaysShow: true
+        });
+      }
+
+      if (currentPageIndex < branchPages.length - 1) {
+        items.push({
+          label: NEXT_BRANCH_PAGE_LABEL,
+          description: `Page ${currentPageIndex + 2}`,
+          nextPage: true,
+          alwaysShow: true
+        });
+      } else if (hasMore) {
+        items.push({
+          label: LOAD_MORE_BRANCHES_LABEL,
+          description: `Page ${currentPageIndex + 2}`,
+          loadMore: true,
+          alwaysShow: true
+        });
+      }
+
+      const picked = await vscode.window.showQuickPick(items, {
+        title: 'Select Branch',
+        matchOnDescription: true
+      });
+
+      if (!picked) {
+        return undefined;
+      }
+
+      if (picked.previousPage) {
+        currentPageIndex -= 1;
+        continue;
+      }
+
+      if (picked.nextPage) {
+        currentPageIndex += 1;
+        continue;
+      }
+
+      if (picked.loadMore) {
+        const previousPageCount = branchPages.length;
+        const page = await fetchPage(nextPage);
+        addBranches(page);
+        hasMore = page.hasMore;
+        nextPage = page.page + 1;
+        if (branchPages.length > previousPageCount) {
+          currentPageIndex = branchPages.length - 1;
+        }
+        continue;
+      }
+
+      return picked.branch;
+    }
+
+    return undefined;
   }
 
   private upsertSelection(selection: RemoteRepositorySelection): void {
