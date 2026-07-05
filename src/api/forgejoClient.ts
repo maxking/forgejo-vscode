@@ -40,6 +40,13 @@ export interface IssuePage {
   hasMore: boolean;
 }
 
+export interface WorkflowRunPage {
+  items: ActionTasksResponse['workflow_runs'];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
 export interface ForgejoReferencePage {
   items: IssueListItem[];
   page: number;
@@ -342,6 +349,20 @@ export class ForgejoClient extends BaseClient {
 
   async getWorkflowRuns(owner: string, repo: string, status?: string): Promise<ActionTasksResponse> {
     return this.listWorkflowRuns(owner, repo, status ? { status } : undefined);
+  }
+
+  async getWorkflowRunsPage(owner: string, repo: string, page = 1, limit = 50, status?: string): Promise<WorkflowRunPage> {
+    const response = await this.listWorkflowRunsPage(owner, repo, {
+      page,
+      limit,
+      ...(status ? { status } : {})
+    });
+    return {
+      items: response.items,
+      page: response.page,
+      limit: response.limit,
+      hasMore: response.hasMore
+    };
   }
 
   async getWorkflowRunDetails(owner: string, repo: string, runId: number): Promise<WorkflowRun> {

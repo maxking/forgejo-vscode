@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, ActionsTreeProvider, ScrapedStep } from '../../providers/actionsTreeProvider';
+import { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, ActionsTreeProvider, ScrapedStep, ActionLoadMoreItem } from '../../providers/actionsTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { WorkflowRunListItem } from '../../models/action';
@@ -39,6 +39,7 @@ describe('ActionsTreeProvider', () => {
   beforeEach(() => {
     mockClient = {
       getWorkflowRuns: jest.fn(),
+      getWorkflowRunsPage: jest.fn(),
       getJobSteps: jest.fn()
     } as any;
 
@@ -50,7 +51,12 @@ describe('ActionsTreeProvider', () => {
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => mockClient);
 
     // Default: return empty so constructor's refresh doesn't blow up
-    mockClient.getWorkflowRuns.mockResolvedValue(mockEmptyActionTasksResponse);
+    mockClient.getWorkflowRunsPage.mockResolvedValue({
+      items: [],
+      page: 1,
+      limit: 50,
+      hasMore: false
+    });
 
     provider = new ActionsTreeProvider();
 
@@ -411,13 +417,13 @@ describe('ActionsTreeProvider', () => {
       ]);
       expect((children[0] as vscode.TreeItem).id).toBe('action-repository/https%3A%2F%2Fgit.example.com/maxking/forgejo-vscode/');
       expect((children[1] as vscode.TreeItem).id).toBe('action-repository/https%3A%2F%2Fgit.example.com/forgejo/forgejo/');
-      expect(mockClient.getWorkflowRuns).not.toHaveBeenCalled();
+      expect(mockClient.getWorkflowRunsPage).not.toHaveBeenCalled();
     });
 
     test('should return error message when no config', async () => {
       mockGetForgejoConfig.mockResolvedValue(null as any);
       mockGetForgejoRepositoryConfigs.mockResolvedValue([]);
-      mockClient.getWorkflowRuns.mockResolvedValue(mockEmptyActionTasksResponse);
+      mockClient.getWorkflowRunsPage.mockResolvedValue({ items: [], page: 1, limit: 50, hasMore: false });
 
       const children = await provider.getChildren();
 
@@ -429,7 +435,7 @@ describe('ActionsTreeProvider', () => {
 
     test('should return empty message when no workflow runs', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getWorkflowRuns.mockResolvedValue(mockEmptyActionTasksResponse);
+      mockClient.getWorkflowRunsPage.mockResolvedValue({ items: [], page: 1, limit: 50, hasMore: false });
 
       const children = await provider.getChildren();
 
@@ -444,7 +450,7 @@ describe('ActionsTreeProvider', () => {
         { ...mockConfig, owner: 'maxking', repo: 'forgejo-vscode', label: 'maxking/forgejo-vscode' },
         { ...mockConfig, owner: 'forgejo', repo: 'forgejo', label: 'forgejo/forgejo' }
       ]);
-      mockClient.getWorkflowRuns.mockResolvedValue(mockEmptyActionTasksResponse);
+      mockClient.getWorkflowRunsPage.mockResolvedValue({ items: [], page: 1, limit: 50, hasMore: false });
 
       const repositories = await provider.getChildren();
       const firstMessages = await provider.getChildren(repositories[0] as any);
@@ -457,7 +463,7 @@ describe('ActionsTreeProvider', () => {
 
     test('should group jobs by run_number into WorkflowRunTreeItems', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getWorkflowRuns.mockResolvedValue(mockActionTasksResponse);
+      mockClient.getWorkflowRunsPage.mockResolvedValue({ items: mockActionTasksResponse.workflow_runs, page: 1, limit: 50, hasMore: false });
 
       const children = await provider.getChildren();
 
@@ -470,7 +476,7 @@ describe('ActionsTreeProvider', () => {
 
     test('should sort runs by run_number descending (newest first)', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getWorkflowRuns.mockResolvedValue(mockActionTasksResponse);
+      mockClient.getWorkflowRunsPage.mockResolvedValue({ items: mockActionTasksResponse.workflow_runs, page: 1, limit: 50, hasMore: false });
 
       const children = await provider.getChildren();
 
@@ -481,11 +487,66 @@ describe('ActionsTreeProvider', () => {
       expect((children[3] as WorkflowRunTreeItem).runNumber).toBe(42);
     });
 
+    test('should fetch only the first workflow run page on initial render', async () => {
+      const pageRuns = Array.from({ length: 50 }, (_, index) => ({
+        ...mockWorkflowRunSuccess,
+        id: index + 1,
+        run_number: index + 1
+      }));
+      mockClient.getWorkflowRunsPage.mockResolvedValue({ items: pageRuns, page: 1, limit: 50, hasMore: true });
+
+      const children = await provider.getChildren();
+
+      expect(mockClient.getWorkflowRunsPage).toHaveBeenCalledTimes(1);
+      expect(mockClient.getWorkflowRunsPage).toHaveBeenCalledWith('test-owner', 'test-repo', 1, 50);
+      expect(children).toHaveLength(51);
+      expect(children[50]).toBeInstanceOf(ActionLoadMoreItem);
+    });
+
+    test('should load the next workflow run page through the load more item', async () => {
+      mockClient.getWorkflowRunsPage
+        .mockResolvedValueOnce({ items: [mockWorkflowRunSuccess], page: 1, limit: 50, hasMore: true })
+        .mockResolvedValueOnce({ items: [mockWorkflowRunFailed], page: 2, limit: 50, hasMore: false });
+
+      const initialChildren = await provider.getChildren();
+      const loadMoreItem = initialChildren.find(child => child instanceof ActionLoadMoreItem) as ActionLoadMoreItem;
+
+      expect(loadMoreItem).toBeInstanceOf(ActionLoadMoreItem);
+
+      await provider.loadMoreActions(loadMoreItem);
+      const loadedChildren = await provider.getChildren();
+
+      expect(mockClient.getWorkflowRunsPage).toHaveBeenCalledTimes(2);
+      expect(mockClient.getWorkflowRunsPage).toHaveBeenNthCalledWith(1, 'test-owner', 'test-repo', 1, 50);
+      expect(mockClient.getWorkflowRunsPage).toHaveBeenNthCalledWith(2, 'test-owner', 'test-repo', 2, 50);
+      expect(loadedChildren.some(child => child instanceof ActionLoadMoreItem)).toBe(false);
+      expect(loadedChildren.map(child => child instanceof WorkflowRunTreeItem ? child.runNumber : 0)).toEqual([43, 42]);
+    });
+
+    test('should deduplicate overlapping workflow run pages before rendering', async () => {
+      mockClient.getWorkflowRunsPage
+        .mockResolvedValueOnce({ items: [mockWorkflowRunSuccess], page: 1, limit: 50, hasMore: true })
+        .mockResolvedValueOnce({ items: [mockWorkflowRunSuccess, mockWorkflowRunSuccessJob2], page: 2, limit: 50, hasMore: false });
+
+      const initialChildren = await provider.getChildren();
+      const loadMoreItem = initialChildren.find(child => child instanceof ActionLoadMoreItem) as ActionLoadMoreItem;
+
+      await provider.loadMoreActions(loadMoreItem);
+      const loadedChildren = await provider.getChildren();
+
+      expect(loadedChildren).toHaveLength(1);
+      const runItem = loadedChildren[0] as WorkflowRunTreeItem;
+      expect(runItem.jobs).toHaveLength(2);
+      expect(runItem.jobs.map(job => job.id)).toEqual([123, 127]);
+    });
+
     test('should group multiple jobs with same run_number into one run', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getWorkflowRuns.mockResolvedValue({
-        total_count: 2,
-        workflow_runs: [mockWorkflowRunSuccess, mockWorkflowRunSuccessJob2] // both run_number 42
+      mockClient.getWorkflowRunsPage.mockResolvedValue({
+        items: [mockWorkflowRunSuccess, mockWorkflowRunSuccessJob2], // both run_number 42
+        page: 1,
+        limit: 50,
+        hasMore: false
       });
 
       const children = await provider.getChildren();
@@ -498,7 +559,7 @@ describe('ActionsTreeProvider', () => {
 
     test('should return error message on fetch failure', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
-      mockClient.getWorkflowRuns.mockRejectedValue(new Error('Network error'));
+      mockClient.getWorkflowRunsPage.mockRejectedValue(new Error('Network error'));
 
       const children = await provider.getChildren();
 
@@ -550,7 +611,7 @@ describe('ActionsTreeProvider', () => {
 
       // No API calls should be made - jobs come from task data
       expect(mockClient.getJobSteps).not.toHaveBeenCalled();
-      expect(mockClient.getWorkflowRuns).not.toHaveBeenCalled();
+      expect(mockClient.getWorkflowRunsPage).not.toHaveBeenCalled();
     });
   });
 

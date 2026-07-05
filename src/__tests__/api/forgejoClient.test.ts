@@ -1237,6 +1237,56 @@ describe('ForgejoClient', () => {
     });
   });
 
+  describe('getWorkflowRunsPage', () => {
+    test('should fetch one bounded workflow run page', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockActionTasksResponse
+      } as unknown as Response);
+
+      const result = await client.getWorkflowRunsPage('owner', 'repo', 2, 25);
+
+      expect(result).toEqual({
+        items: mockActionTasksResponse.workflow_runs,
+        page: 2,
+        limit: 25,
+        hasMore: false
+      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/actions/tasks?page=2&limit=25',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            'Authorization': 'token test-token'
+          })
+        })
+      );
+    });
+
+    test('should report more workflow run pages when a full page is returned', async () => {
+      const pageRuns = Array.from({ length: 50 }, (_, index) => ({
+        ...mockActionTasksResponse.workflow_runs[0],
+        id: index + 1,
+        run_number: index + 1
+      }));
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ total_count: 100, workflow_runs: pageRuns })
+      } as unknown as Response);
+
+      const result = await client.getWorkflowRunsPage('owner', 'repo', 1, 50, 'success');
+
+      expect(result.items).toHaveLength(50);
+      expect(result.hasMore).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/actions/tasks?status=success&page=1&limit=50',
+        expect.any(Object)
+      );
+    });
+  });
+
   describe('getWorkflowRunDetails', () => {
     test('should fetch workflow run details successfully', async () => {
       mockFetch.mockResolvedValueOnce({
