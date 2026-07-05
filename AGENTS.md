@@ -112,6 +112,7 @@ Use the shared logger adapter (`src/utils/forgejoLoggerAdapter.ts`) when the cal
 - Command IDs must match the IDs declared in `package.json` `contributes.commands`. Register them in `activate()` and push the resulting `vscode.Disposable` to `context.subscriptions`.
 - View IDs must match `package.json` `contributes.views`. Register providers with `vscode.window.createTreeView()` and add the returned view to `context.subscriptions`.
 - Settings belong in `package.json` under `contributes.configuration`. Read them via `vscode.workspace.getConfiguration('forgejo')` and write with `config.update(key, value, ConfigurationTarget.Global)`.
+- Keep `package.json` manifest object keys unique. When adding menu contributions such as `contributes.menus.commandPalette`, extend the existing array instead of adding a second key because JSON parsing silently keeps only the later entry.
 
 ### Testing strategy
 
