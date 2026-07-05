@@ -22,6 +22,7 @@ import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem, PRLoadMo
 import type { RemoteRepositoryBrowseItem, RemoteRepositoryFileItem, RemoteRepositoryInstanceItem, RemoteRepositoryItem } from '../providers/remoteRepositoryTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
 import type { TodoIssueDraft } from '../providers/referenceLanguageProvider';
+import type { ReleaseGroupItem, ReleaseRepositoryItem } from '../providers/releaseTreeProvider';
 
 // ---------------------------------------------------------------------------
 // Command argument map
@@ -62,7 +63,7 @@ export interface CommandMap {
   'forgejo.createIssueFromTodo': [draft: TodoIssueDraft];
   'forgejo.createPullRequest': [];
   'forgejo.createPullRequestForRepository': [repositoryItem: PRRepositoryItem];
-  'forgejo.createRelease': [];
+  'forgejo.createRelease': [target?: ReleaseRepositoryItem | ReleaseGroupItem];
   'forgejo.publishToForgejo': [];
 
   // -- Simple URL commands -------------------------------------------------

@@ -1,16 +1,66 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { getForgejoConfig } from '../utils/config';
+import { ForgejoConfig, getForgejoConfig, getForgejoRepositoryConfigs } from '../utils/config';
 import { logInfo, logError } from '../utils/logger';
-import { ReleaseTreeProvider } from '../providers/releaseTreeProvider';
+import { ReleaseGroupItem, ReleaseRepositoryItem, ReleaseTreeProvider } from '../providers/releaseTreeProvider';
+
+type CreateReleaseTarget = ForgejoConfig | ReleaseRepositoryItem | ReleaseGroupItem | undefined;
+
+function isRepositoryConfig(value: unknown): value is ForgejoConfig {
+	return Boolean(
+		value
+		&& typeof value === 'object'
+		&& 'instanceUrl' in value
+		&& 'owner' in value
+		&& 'repo' in value
+	);
+}
+
+function configFromTarget(target: CreateReleaseTarget): ForgejoConfig | undefined {
+	if (!target) {
+		return undefined;
+	}
+
+	if (target instanceof ReleaseRepositoryItem || target instanceof ReleaseGroupItem) {
+		return target.config;
+	}
+
+	return isRepositoryConfig(target) ? target : undefined;
+}
+
+async function pickRepositoryConfig(): Promise<ForgejoConfig | null> {
+	const configs = await getForgejoRepositoryConfigs();
+	if (configs.length === 1) {
+		return configs[0];
+	}
+
+	if (configs.length > 1) {
+		const picked = await vscode.window.showQuickPick(
+			configs.map(config => ({
+				label: config.label,
+				description: config.rootPath,
+				detail: `${config.instanceUrl}/${config.owner}/${config.repo}`,
+				config,
+			})),
+			{ placeHolder: 'Select repository for the new release', title: 'Create Release: Repository' }
+		);
+		return picked?.config ?? null;
+	}
+
+	return getForgejoConfig();
+}
+
+async function resolveCreateReleaseConfig(target: CreateReleaseTarget): Promise<ForgejoConfig | null> {
+	return configFromTarget(target) ?? pickRepositoryConfig();
+}
 
 /**
  * Handles the forgejo.createRelease command.
  * Extracted from extension.ts for unit testability.
  */
-export async function createReleaseCommand(releaseTreeProvider: ReleaseTreeProvider): Promise<void> {
+export async function createReleaseCommand(releaseTreeProvider: ReleaseTreeProvider, target?: CreateReleaseTarget): Promise<void> {
 	try {
-		const config = await getForgejoConfig();
+		const config = await resolveCreateReleaseConfig(target);
 		if (!config) {
 			void vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
 			return;

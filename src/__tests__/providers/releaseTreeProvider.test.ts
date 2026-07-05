@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ReleaseTreeItem, ReleaseTreeProvider } from '../../providers/releaseTreeProvider';
+import { ReleaseGroupItem, ReleaseMessageItem, ReleaseRepositoryItem, ReleaseTreeItem, ReleaseTreeProvider } from '../../providers/releaseTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { type Release } from 'forgejo-ts';
@@ -141,6 +141,18 @@ describe('ReleaseTreeProvider', () => {
       expect(item.command?.command).toBe('forgejo.openReleaseInBrowser');
       expect(item.command?.arguments).toEqual([url]);
     });
+
+    test('uses stable IDs with repository, group, and release identity', () => {
+      const release = makeRelease({ id: 42, name: 'Release', tag_name: 'v1.0.0' });
+      const item = new ReleaseTreeItem(release, {
+        instanceUrl: 'https://git.example.com/',
+        owner: 'test-owner',
+        repo: 'test-repo',
+        rootPath: '/workspace/test-repo'
+      }, undefined, 'released');
+
+      expect(item.id).toBe('release-item/https%3A%2F%2Fgit.example.com/test-owner/test-repo/%2Fworkspace%2Ftest-repo/released/42');
+    });
   });
 
   describe('getChildren (root level)', () => {
@@ -157,6 +169,23 @@ describe('ReleaseTreeProvider', () => {
         'forgejo/forgejo'
       ]);
       expect(mockClient.listReleases).not.toHaveBeenCalled();
+    });
+
+    test('repository rows have unique stable IDs for duplicate display names', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([
+        { ...mockConfig, instanceUrl: 'https://git.example.com', owner: 'maxking', repo: 'forgejo-vscode', label: 'forgejo-vscode', rootPath: '/workspace/a' },
+        { ...mockConfig, instanceUrl: 'https://git.example.com', owner: 'maxking', repo: 'forgejo-vscode', label: 'forgejo-vscode', rootPath: '/workspace/b' }
+      ]);
+
+      const children = await provider.getChildren();
+
+      expect(children).toHaveLength(2);
+      expect(children[0]).toBeInstanceOf(ReleaseRepositoryItem);
+      expect(children[1]).toBeInstanceOf(ReleaseRepositoryItem);
+      expect((children[0] as vscode.TreeItem).label).toBe('forgejo-vscode');
+      expect((children[1] as vscode.TreeItem).label).toBe('forgejo-vscode');
+      expect((children[0] as vscode.TreeItem).id).toBe('release-repository/https%3A%2F%2Fgit.example.com/maxking/forgejo-vscode/%2Fworkspace%2Fa');
+      expect((children[1] as vscode.TreeItem).id).toBe('release-repository/https%3A%2F%2Fgit.example.com/maxking/forgejo-vscode/%2Fworkspace%2Fb');
     });
 
     test('returns error message when no config', async () => {
@@ -262,6 +291,31 @@ describe('ReleaseTreeProvider', () => {
       expect(items[0]).toBeInstanceOf(ReleaseTreeItem);
       expect(items[1]).toBeInstanceOf(ReleaseTreeItem);
     });
+
+    test('group and release child IDs include repository and group identity for duplicate tags', async () => {
+      mockGetForgejoRepositoryConfigs.mockResolvedValue([
+        { ...mockConfig, owner: 'owner-a', repo: 'repo', label: 'owner-a/repo', rootPath: '/workspace/repo-a' },
+        { ...mockConfig, owner: 'owner-b', repo: 'repo', label: 'owner-b/repo', rootPath: '/workspace/repo-b' },
+      ]);
+      mockClient.listReleases.mockResolvedValue([
+        makeRelease({ id: undefined as any, name: 'Release', tag_name: 'v1.0.0', draft: false, prerelease: false }),
+      ]);
+
+      const repositories = await provider.getChildren();
+      const firstGroups = await provider.getChildren(repositories[0]);
+      const secondGroups = await provider.getChildren(repositories[1]);
+      const firstRelease = (await provider.getChildren(firstGroups[0]))[0];
+      const secondRelease = (await provider.getChildren(secondGroups[0]))[0];
+
+      expect(firstGroups[0]).toBeInstanceOf(ReleaseGroupItem);
+      expect(secondGroups[0]).toBeInstanceOf(ReleaseGroupItem);
+      expect((firstGroups[0] as vscode.TreeItem).id).toBe('release-group/https%3A%2F%2Fgit.example.com/owner-a/repo/%2Fworkspace%2Frepo-a/released');
+      expect((secondGroups[0] as vscode.TreeItem).id).toBe('release-group/https%3A%2F%2Fgit.example.com/owner-b/repo/%2Fworkspace%2Frepo-b/released');
+      expect((firstRelease as vscode.TreeItem).label).toBe('Release');
+      expect((secondRelease as vscode.TreeItem).label).toBe('Release');
+      expect((firstRelease as vscode.TreeItem).id).toBe('release-item/https%3A%2F%2Fgit.example.com/owner-a/repo/%2Fworkspace%2Frepo-a/released/v1.0.0');
+      expect((secondRelease as vscode.TreeItem).id).toBe('release-item/https%3A%2F%2Fgit.example.com/owner-b/repo/%2Fworkspace%2Frepo-b/released/v1.0.0');
+    });
   });
 
   describe('getTreeItem', () => {
@@ -278,6 +332,19 @@ describe('ReleaseTreeProvider', () => {
       provider.onDidChangeTreeData(listener);
       provider.refresh();
       expect(listener).toHaveBeenCalled();
+    });
+  });
+
+  describe('ReleaseMessageItem', () => {
+    test('uses repository-scoped stable IDs', () => {
+      const item = new ReleaseMessageItem('No releases found', false, {
+        instanceUrl: 'https://git.example.com/',
+        owner: 'owner',
+        repo: 'repo',
+        rootPath: '/workspace/repo',
+      }, 'empty');
+
+      expect(item.id).toBe('release-message/info/https%3A%2F%2Fgit.example.com/owner/repo/%2Fworkspace%2Frepo/empty/No%20releases%20found');
     });
   });
 });

@@ -3,6 +3,7 @@ import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
 import {
   findWorkflowFileForStatus,
+  openWorkflowFileForRepository,
   openWorkflowFileForCIStatus,
   parseActionJobTarget,
   resolveStatusTargetUrl,
@@ -188,5 +189,48 @@ describe('ciNavigation', () => {
     expect(vscode.workspace.findFiles).not.toHaveBeenCalled();
     expect(vscode.window.showTextDocument).not.toHaveBeenCalled();
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith('No local workflow file matched "Test".');
+  });
+
+  test('opens an Actions tree workflow file only from the selected repository root', async () => {
+    const parentRepo = createRepository('/workspace', 'git@git.example.com:owner/parent.git');
+    const nestedRepo = createRepository('/workspace/nested', 'git@git.example.com:owner/nested.git');
+    const parentWorkflow = vscode.Uri.file('/workspace/.forgejo/workflows/ci.yml');
+    const nestedWorkflow = vscode.Uri.file('/workspace/nested/.forgejo/workflows/ci.yml');
+    mockGitApi([parentRepo, nestedRepo]);
+    (vscode.workspace.findFiles as jest.Mock).mockImplementation(async (pattern) => {
+      if (pattern.base === '/workspace') {
+        return [parentWorkflow];
+      }
+      if (pattern.base === '/workspace/nested') {
+        return [nestedWorkflow];
+      }
+      return [];
+    });
+    (vscode.workspace.openTextDocument as jest.Mock).mockImplementation(async (input) => ({
+      uri: input,
+      getText: () => 'name: CI\non: push\njobs:\n  test:\n    runs-on: docker\n    steps:\n      - run: npm test\n'
+    }));
+
+    await openWorkflowFileForRepository({
+      workflowName: 'ci.yml',
+      owner: 'owner',
+      repo: 'nested',
+      instanceUrl: 'https://git.example.com'
+    });
+
+    expect(vscode.workspace.findFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ base: '/workspace/nested' }),
+      '**/node_modules/**',
+      100
+    );
+    expect(vscode.workspace.findFiles).not.toHaveBeenCalledWith(
+      expect.objectContaining({ base: '/workspace' }),
+      expect.anything(),
+      expect.anything()
+    );
+    expect(vscode.window.showTextDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: nestedWorkflow }),
+      { preview: true }
+    );
   });
 });

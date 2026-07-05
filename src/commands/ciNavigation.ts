@@ -15,6 +15,13 @@ export interface CIStatusArgs {
   instanceUrl?: string;
 }
 
+export interface WorkflowFileArgs {
+  workflowName: string;
+  owner: string;
+  repo: string;
+  instanceUrl?: string;
+}
+
 interface ActionJobTarget {
   runNumber: number;
   jobIndex: number;
@@ -102,7 +109,7 @@ async function getGitApi(): Promise<API | undefined> {
   return gitExtension.getAPI(1);
 }
 
-async function resolveWorkflowSearchRoots(args: CIStatusArgs): Promise<vscode.Uri[]> {
+async function resolveWorkflowSearchRoots(args: Pick<CIStatusArgs, 'owner' | 'repo' | 'instanceUrl'>): Promise<vscode.Uri[]> {
   const git = await getGitApi();
   if (!git) {
     return [];
@@ -151,11 +158,13 @@ export async function findWorkflowFileForStatus(status: CommitStatus, searchRoot
   for (const uri of files) {
     const document = await vscode.workspace.openTextDocument(uri);
     const configuredName = getWorkflowName(document.getText());
-    const basename = uri.fsPath.split(/[\\/]/).pop()?.replace(/\.(ya?ml)$/i, '') ?? '';
+    const filename = uri.fsPath.split(/[\\/]/).pop() ?? '';
+    const basename = filename.replace(/\.(ya?ml)$/i, '');
     const basenameSlug = slugify(basename);
 
     if (
       configuredName?.toLowerCase() === workflowName.toLowerCase()
+      || filename.toLowerCase() === workflowName.toLowerCase()
       || basename.toLowerCase() === workflowName.toLowerCase()
       || basenameSlug === workflowSlug
     ) {
@@ -178,7 +187,7 @@ export async function findWorkflowFileForStatus(status: CommitStatus, searchRoot
   return picked?.uri ?? null;
 }
 
-export async function findWorkflowFileByName(workflowName: string): Promise<vscode.Uri | null> {
+export async function findWorkflowFileByName(workflowName: string, searchRoots?: readonly vscode.Uri[]): Promise<vscode.Uri | null> {
   return findWorkflowFileForStatus({
     id: 0,
     status: 'pending',
@@ -187,7 +196,7 @@ export async function findWorkflowFileByName(workflowName: string): Promise<vsco
     target_url: '',
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
-  } as CommitStatus);
+  } as CommitStatus, searchRoots);
 }
 
 export async function viewCIStatusLogs(args: CIStatusArgs): Promise<void> {
@@ -251,6 +260,20 @@ export async function openWorkflowFileByName(workflowName: string): Promise<void
   const uri = await findWorkflowFileByName(workflowName);
   if (!uri) {
     void vscode.window.showInformationMessage(`No local workflow file matched "${workflowName}".`);
+    return;
+  }
+
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(doc, { preview: true });
+}
+
+export async function openWorkflowFileForRepository(args: WorkflowFileArgs): Promise<void> {
+  const searchRoots = await resolveWorkflowSearchRoots(args);
+  const uri = searchRoots.length > 0
+    ? await findWorkflowFileByName(args.workflowName, searchRoots)
+    : null;
+  if (!uri) {
+    void vscode.window.showInformationMessage(`No local workflow file matched "${args.workflowName}".`);
     return;
   }
 
