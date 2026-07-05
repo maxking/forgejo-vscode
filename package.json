@@ -519,6 +519,11 @@
           "group": "navigation@4"
         },
         {
+          "command": "forgejo.createRelease",
+          "when": "viewItem == releaseRepository || viewItem == releaseGroup",
+          "group": "navigation@0"
+        },
+        {
           "command": "forgejo.openReleaseInBrowser",
           "when": "viewItem == release || viewItem == releaseDraft || viewItem == releasePrerelease",
           "group": "navigation@1"

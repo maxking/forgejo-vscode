@@ -20,7 +20,7 @@ import { getAllInstances } from './utils/instanceHelpers';
 import { startOnboarding } from './commands/onboarding';
 import { manageInstances } from './commands/instanceManager';
 import { showDiagnostics } from './commands/diagnostics';
-import { openWorkflowFileByName, openWorkflowFileForCIStatus, validateWorkflowsCommand, viewCIStatusLogs } from './commands/ciNavigation';
+import { openWorkflowFileForRepository, openWorkflowFileForCIStatus, validateWorkflowsCommand, viewCIStatusLogs } from './commands/ciNavigation';
 import { createIssueCommand } from './commands/createIssue';
 import { createPullRequestCommand } from './commands/createPullRequest';
 import { startWorkOnIssueCommand } from './commands/startWorkOnIssue';
@@ -656,7 +656,12 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      await openWorkflowFileByName(workflowName);
+      await openWorkflowFileForRepository({
+        workflowName,
+        owner: item.owner,
+        repo: item.repo,
+        instanceUrl: item.instanceUrl
+      });
     })
   );
 
@@ -934,7 +939,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    registerCommand('forgejo.createRelease', () => createReleaseCommand(releaseTreeProvider))
+    registerCommand('forgejo.createRelease', (target) => createReleaseCommand(releaseTreeProvider, target))
   );
 
   // Add releases tree view to subscriptions

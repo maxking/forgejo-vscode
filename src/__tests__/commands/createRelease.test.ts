@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { createReleaseCommand } from '../../commands/createRelease';
 import { ForgejoClient } from '../../api/forgejoClient';
-import { getForgejoConfig } from '../../utils/config';
+import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
+import { ReleaseRepositoryItem } from '../../providers/releaseTreeProvider';
 
 // Mock dependencies
 jest.mock('../../api/forgejoClient');
@@ -12,6 +13,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 const mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
+const mockGetForgejoRepositoryConfigs = getForgejoRepositoryConfigs as jest.MockedFunction<typeof getForgejoRepositoryConfigs>;
 const MockForgejoClient = ForgejoClient as jest.MockedClass<typeof ForgejoClient>;
 
 const mockConfig = {
@@ -43,6 +45,8 @@ describe('createReleaseCommand', () => {
     mockReleaseTreeProvider = { refresh: jest.fn() };
     mockListTags = jest.fn().mockResolvedValue(mockTags);
     mockCreateRelease = jest.fn().mockResolvedValue(mockRelease);
+    mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, label: 'test-owner/test-repo' }]);
     MockForgejoClient.mockImplementation(() => ({
       listTags: mockListTags,
       createRelease: mockCreateRelease,
@@ -53,6 +57,7 @@ describe('createReleaseCommand', () => {
 
   it('shows error and returns early when config is null', async () => {
     mockGetForgejoConfig.mockResolvedValue(null);
+    mockGetForgejoRepositoryConfigs.mockResolvedValue([]);
 
     await createReleaseCommand(mockReleaseTreeProvider as any);
 
@@ -65,7 +70,7 @@ describe('createReleaseCommand', () => {
   });
 
   it('shows error and returns early when token is missing', async () => {
-    mockGetForgejoConfig.mockResolvedValue({ ...mockConfig, token: '' });
+    mockGetForgejoRepositoryConfigs.mockResolvedValue([{ ...mockConfig, token: '', label: 'test-owner/test-repo' }]);
 
     await createReleaseCommand(mockReleaseTreeProvider as any);
 
@@ -375,5 +380,71 @@ describe('createReleaseCommand', () => {
 
     expect(mockReleaseTreeProvider.refresh).toHaveBeenCalled();
     expect(vscode.env.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('asks for a repository when the toolbar command has multiple repository configs', async () => {
+    const repoA = { ...mockConfig, owner: 'owner-a', repo: 'repo-a', label: 'owner-a/repo-a', rootPath: '/workspace/a' };
+    const repoB = { ...mockConfig, owner: 'owner-b', repo: 'repo-b', label: 'owner-b/repo-b', rootPath: '/workspace/b' };
+    mockGetForgejoRepositoryConfigs.mockResolvedValue([repoA, repoB]);
+    (vscode.window.showQuickPick as jest.Mock)
+      .mockResolvedValueOnce({ label: repoB.label, config: repoB })
+      .mockResolvedValueOnce({ label: 'v1.0.0' })
+      .mockResolvedValueOnce({ label: 'Release', value: 'release' });
+    (vscode.window.showInputBox as jest.Mock)
+      .mockResolvedValueOnce('Version 1.0.0')
+      .mockResolvedValueOnce('Release notes');
+    (vscode.window.showInformationMessage as jest.Mock).mockResolvedValueOnce(undefined);
+
+    await createReleaseCommand(mockReleaseTreeProvider as any);
+
+    expect(vscode.window.showQuickPick).toHaveBeenNthCalledWith(
+      1,
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'owner-a/repo-a', description: '/workspace/a', config: repoA }),
+        expect.objectContaining({ label: 'owner-b/repo-b', description: '/workspace/b', config: repoB }),
+      ]),
+      expect.objectContaining({ title: 'Create Release: Repository' })
+    );
+    expect(mockListTags).toHaveBeenCalledWith('owner-b', 'repo-b');
+    expect(mockCreateRelease).toHaveBeenCalledWith(
+      'owner-b',
+      'repo-b',
+      expect.objectContaining({ tag_name: 'v1.0.0' })
+    );
+  });
+
+  it('uses the selected release repository row config without asking for a repository', async () => {
+    const rowConfig = {
+      ...mockConfig,
+      owner: 'selected-owner',
+      repo: 'selected-repo',
+      label: 'selected-owner/selected-repo',
+      rootPath: '/workspace/selected'
+    };
+    const item = new ReleaseRepositoryItem(rowConfig);
+    mockGetForgejoRepositoryConfigs.mockResolvedValue([
+      { ...mockConfig, owner: 'other-owner', repo: 'other-repo', label: 'other-owner/other-repo' },
+      rowConfig,
+    ]);
+    (vscode.window.showQuickPick as jest.Mock)
+      .mockResolvedValueOnce({ label: 'v1.0.0' })
+      .mockResolvedValueOnce({ label: 'Release', value: 'release' });
+    (vscode.window.showInputBox as jest.Mock)
+      .mockResolvedValueOnce('Version 1.0.0')
+      .mockResolvedValueOnce('Release notes');
+    (vscode.window.showInformationMessage as jest.Mock).mockResolvedValueOnce(undefined);
+
+    await createReleaseCommand(mockReleaseTreeProvider as any, item);
+
+    expect(vscode.window.showQuickPick).not.toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ config: rowConfig })]),
+      expect.objectContaining({ title: 'Create Release: Repository' })
+    );
+    expect(mockListTags).toHaveBeenCalledWith('selected-owner', 'selected-repo');
+    expect(mockCreateRelease).toHaveBeenCalledWith(
+      'selected-owner',
+      'selected-repo',
+      expect.objectContaining({ tag_name: 'v1.0.0' })
+    );
   });
 });
