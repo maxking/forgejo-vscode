@@ -3,6 +3,8 @@ import { ForgejoClient } from '../api/forgejoClient';
 import { WorkflowRunListItem, WorkflowJobRef } from '../models/action';
 import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoConfigFor, getForgejoRepositoryConfigs } from '../utils/config';
 
+const ACTION_RUN_PAGE_SIZE = 50;
+
 /**
  * Step data scraped from Forgejo's web page.
  * Forgejo v13 doesn't expose steps via REST API, so we parse the
@@ -250,13 +252,34 @@ class ActionMessageItem extends vscode.TreeItem {
   }
 }
 
-type ActionTreeElement = ActionRepositoryItem | WorkflowRunTreeItem | JobTreeItem | StepTreeItem | ActionMessageItem;
+export class ActionLoadMoreItem extends vscode.TreeItem {
+  constructor(public readonly config: ForgejoConfig) {
+    super('Load more workflow runs', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('more');
+    this.contextValue = 'actionLoadMore';
+    this.id = actionTreeItemId(['action-load-more', config.instanceUrl, config.owner, config.repo]);
+    this.command = {
+      command: 'forgejo.loadMoreActions',
+      title: 'Load More Actions',
+      arguments: [this]
+    };
+  }
+}
+
+type ActionTreeElement = ActionRepositoryItem | WorkflowRunTreeItem | JobTreeItem | StepTreeItem | ActionMessageItem | ActionLoadMoreItem;
+
+interface WorkflowRunPageCache {
+  workflowRuns: WorkflowRunListItem[];
+  nextPage: number;
+  hasMore: boolean;
+  inFlightPagePromise?: Promise<WorkflowRunPageCache>;
+}
 
 export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ActionTreeElement | undefined | null | void> = new vscode.EventEmitter<ActionTreeElement | undefined | null | void>();
   readonly onDidChangeTreeData: vscode.Event<ActionTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
 
-  private workflowRuns = new Map<string, WorkflowRunListItem[]>();
+  private workflowRunPages = new Map<string, WorkflowRunPageCache>();
   private error: string | null = null;
   private owner = '';
   private repo = '';
@@ -266,7 +289,18 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
   }
 
   refresh(): void {
+    this.workflowRunPages.clear();
     this._onDidChangeTreeData.fire();
+  }
+
+  async loadMoreActions(item: ActionLoadMoreItem): Promise<void> {
+    try {
+      await this.fetchNextWorkflowRunPage(item.config);
+      this._onDidChangeTreeData.fire();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load more workflow runs';
+      void vscode.window.showErrorMessage(message);
+    }
   }
 
   getTreeItem(element: ActionTreeElement): vscode.TreeItem {
@@ -294,6 +328,8 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
     } else if (element instanceof JobTreeItem) {
       // Lazy-load steps by scraping the Forgejo web page
       return this.getJobSteps(element);
+    } else if (element instanceof ActionLoadMoreItem) {
+      return [];
     }
 
     return [];
@@ -351,31 +387,99 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
 
   private async getRunsForConfig(config: ForgejoConfig): Promise<ActionTreeElement[]> {
     try {
-      const workflowRuns = await this.fetchWorkflowRuns(config);
+      const cache = await this.ensureWorkflowRunPage(config);
 
-      if (workflowRuns.length === 0) {
+      if (cache.workflowRuns.length === 0) {
         return [new ActionMessageItem('No workflow runs found', false, this.configKey(config))];
       }
 
       const runsByNumber = new Map<number, WorkflowRunListItem[]>();
-      for (const job of workflowRuns) {
+      for (const job of cache.workflowRuns) {
         const existing = runsByNumber.get(job.run_number) ?? [];
         existing.push(job);
         runsByNumber.set(job.run_number, existing);
       }
 
       const sortedRuns = Array.from(runsByNumber.entries()).sort((a, b) => b[0] - a[0]);
-      return sortedRuns.map(([runNumber, jobs]) =>
+      const children: ActionTreeElement[] = sortedRuns.map(([runNumber, jobs]) =>
         new WorkflowRunTreeItem(runNumber, jobs, config.owner, config.repo, config.instanceUrl)
       );
+      if (cache.hasMore) {
+        children.push(new ActionLoadMoreItem(config));
+      }
+      return children;
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Unknown error';
       return [new ActionMessageItem(this.error, true, this.configKey(config))];
     }
   }
 
-  private async fetchWorkflowRuns(config: ForgejoConfig): Promise<WorkflowRunListItem[]> {
-    console.log('[Forgejo] Fetching workflow runs...');
+  private getWorkflowRunCache(config: ForgejoConfig): WorkflowRunPageCache {
+    const key = this.configKey(config);
+    const cached = this.workflowRunPages.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    const created: WorkflowRunPageCache = {
+      workflowRuns: [],
+      nextPage: 1,
+      hasMore: true
+    };
+    this.workflowRunPages.set(key, created);
+    return created;
+  }
+
+  private async ensureWorkflowRunPage(config: ForgejoConfig): Promise<WorkflowRunPageCache> {
+    const cache = this.getWorkflowRunCache(config);
+    if (cache.workflowRuns.length > 0 || !cache.hasMore) {
+      return cache;
+    }
+
+    return this.fetchNextWorkflowRunPage(config);
+  }
+
+  private async fetchNextWorkflowRunPage(config: ForgejoConfig): Promise<WorkflowRunPageCache> {
+    const cache = this.getWorkflowRunCache(config);
+    if (!cache.hasMore) {
+      return cache;
+    }
+    if (cache.inFlightPagePromise) {
+      return cache.inFlightPagePromise;
+    }
+
+    const promise = this.fetchWorkflowRunPageUncached(config, cache.nextPage).then(page => {
+      this.appendUniqueWorkflowRuns(cache, page.items);
+      cache.nextPage = page.page + 1;
+      cache.hasMore = page.hasMore;
+      return cache;
+    });
+    cache.inFlightPagePromise = promise;
+    try {
+      return await promise;
+    } finally {
+      cache.inFlightPagePromise = undefined;
+    }
+  }
+
+  private appendUniqueWorkflowRuns(cache: WorkflowRunPageCache, workflowRuns: WorkflowRunListItem[]): void {
+    const seenJobs = new Set(cache.workflowRuns.map(job => this.workflowJobKey(job)));
+    for (const job of workflowRuns) {
+      const key = this.workflowJobKey(job);
+      if (seenJobs.has(key)) {
+        continue;
+      }
+      seenJobs.add(key);
+      cache.workflowRuns.push(job);
+    }
+  }
+
+  private workflowJobKey(job: WorkflowRunListItem): string {
+    return `${job.id}/${job.run_number}/${job.name}/${job.workflow_id}`;
+  }
+
+  private async fetchWorkflowRunPageUncached(config: ForgejoConfig, page: number): Promise<{ items: WorkflowRunListItem[]; page: number; hasMore: boolean }> {
+    console.log(`[Forgejo] Fetching workflow runs page ${page}...`);
     const key = this.configKey(config);
 
     this.owner = config.owner;
@@ -390,14 +494,17 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const response = await client.getWorkflowRuns(config.owner, config.repo);
-      this.workflowRuns.set(key, response.workflow_runs);
+      const response = await client.getWorkflowRunsPage(config.owner, config.repo, page, ACTION_RUN_PAGE_SIZE);
       this.error = null;
-      console.log(`[Forgejo] Fetched ${response.workflow_runs.length} workflow runs`);
-      return response.workflow_runs;
+      console.log(`[Forgejo] Fetched ${response.items.length} workflow run jobs from page ${page}`);
+      return response;
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Failed to fetch workflow runs';
-      this.workflowRuns.set(key, []);
+      this.workflowRunPages.set(key, {
+        workflowRuns: [],
+        nextPage: page,
+        hasMore: false
+      });
       console.error('[Forgejo] Error fetching workflow runs:', error);
       throw error;
     }

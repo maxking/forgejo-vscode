@@ -20,7 +20,7 @@ import type { IssueListItem } from '../models/issue';
 import type { IssueLoadMoreItem, IssueRepositoryItem, IssueTreeItem } from '../providers/issueTreeProvider';
 import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem, PRLoadMoreItem } from '../providers/prTreeProvider';
 import type { RemoteRepositoryBrowseItem, RemoteRepositoryFileItem, RemoteRepositoryInstanceItem, RemoteRepositoryItem } from '../providers/remoteRepositoryTreeProvider';
-import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
+import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs, ActionLoadMoreItem } from '../providers/actionsTreeProvider';
 import type { TodoIssueDraft } from '../providers/referenceLanguageProvider';
 import type { ReleaseGroupItem, ReleaseRepositoryItem } from '../providers/releaseTreeProvider';
 
@@ -50,6 +50,7 @@ export interface CommandMap {
   'forgejo.searchIssues': [];
   'forgejo.loadMoreIssues': [item: IssueLoadMoreItem];
   'forgejo.refreshActions': [];
+  'forgejo.loadMoreActions': [item: ActionLoadMoreItem];
   'forgejo.refreshReleases': [];
   'forgejo.refreshRemoteRepositories': [];
   'forgejo.configureInstanceUrl': [];

@@ -45,7 +45,7 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - When adding fields to `ForgejoInstance` or `forgejo.instances`, update the package schema, onboarding/manage-instance UX, README configuration docs, and focused tests together.
 - Every change should add a README News entry under the current version and link to the public Codeberg issue or PR when one exists; user-facing releases should also bump `package.json`/`package-lock.json` together.
 - Keep pull request live-test coverage in the main `.forgejo/workflows/test.yml` workflow so merge gates include the Forgejo live matrix; do not move PR live tests into a separate workflow just to speed up merges.
-- Avoid unbounded pull request and issue fetches in tree providers; page Open/Draft/Merged/Closed PR groups and issue groups behind initial render, expansion, or explicit load-more actions.
+- Avoid unbounded pull request, issue, and workflow-run fetches in tree providers; page Open/Draft/Merged/Closed PR groups, issue groups, and Actions history behind initial render, expansion, or explicit load-more actions.
 - Deduplicate paged tree-provider API results before rendering stable `TreeItem.id` values; overlapping pages from large repositories must not register duplicate visible items.
 - For authenticated review-requested PR queries, use `/repos/issues/search` with `review_requested=true` and filter results back to the selected repository before hydrating PR details; repository issue listing supports `created_by`/`assigned_by`/`mentioned_by` but not `review_requested_by`.
 - For tree-view pagination changes, add VS Code Playwright coverage that opens the contributed view, interacts with visible tree rows, and uses mocked API pages so the UI behavior is deterministic.

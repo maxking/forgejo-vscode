@@ -257,6 +257,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "forgejo.loadMoreActions",
+        "title": "Load More Actions",
+        "icon": "$(more)"
+      },
+      {
         "command": "forgejo.openActionInBrowser",
         "title": "Open Action in Browser",
         "icon": "$(link-external)"
