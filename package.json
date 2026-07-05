@@ -420,6 +420,10 @@
         {
           "command": "forgejo.openRemoteFile",
           "when": "false"
+        },
+        {
+          "command": "forgejo.createIssueFromTodo",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -533,12 +537,6 @@
         {
           "command": "forgejo.submitInlineComment",
           "group": "inline"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "forgejo.createIssueFromTodo",
-          "when": "false"
         }
       ]
     },
