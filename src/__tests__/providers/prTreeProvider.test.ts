@@ -4,7 +4,7 @@ import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { PullRequestListItem, PullRequestFile } from '../../models/pullRequest';
 import { mockAllFileTypes, mockUnsortedFiles, mockAddedFile, mockModifiedFile, mockRenamedFile, mockRemovedFile } from '../fixtures/prFiles';
-import { mockStandardRefs } from '../fixtures/prRefs';
+import { mockStandardRefs, mockPRWithRefs } from '../fixtures/prRefs';
 
 // Mock dependencies
 jest.mock('../../api/forgejoClient');
@@ -51,6 +51,7 @@ describe('PRTreeProvider', () => {
       hasPullRequests: jest.fn(),
       getPullRequestFiles: jest.fn(),
       getPullRequestRefs: jest.fn(),
+      getPullRequest: jest.fn(),
       getAuthenticatedUserLogin: jest.fn()
     } as any;
 
@@ -1214,7 +1215,7 @@ describe('PRTreeProvider', () => {
 
     test('should return overview + file items on successful fetch', async () => {
       mockClient.getPullRequestFiles.mockResolvedValue(mockAllFileTypes);
-      mockClient.getPullRequestRefs.mockResolvedValue(mockStandardRefs);
+      mockClient.getPullRequest.mockResolvedValue(mockPRWithRefs as any);
 
       const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
       const children = await provider.getChildren(prItem);
@@ -1231,7 +1232,7 @@ describe('PRTreeProvider', () => {
 
     test('should return cached files on second call', async () => {
       mockClient.getPullRequestFiles.mockResolvedValue(mockAllFileTypes);
-      mockClient.getPullRequestRefs.mockResolvedValue(mockStandardRefs);
+      mockClient.getPullRequest.mockResolvedValue(mockPRWithRefs as any);
 
       const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
 
@@ -1247,7 +1248,7 @@ describe('PRTreeProvider', () => {
 
     test('should return error message on file fetch failure', async () => {
       mockClient.getPullRequestFiles.mockRejectedValue(new Error('API rate limit'));
-      mockClient.getPullRequestRefs.mockResolvedValue(mockStandardRefs);
+      mockClient.getPullRequest.mockResolvedValue(mockPRWithRefs as any);
 
       const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
       const children = await provider.getChildren(prItem);
@@ -1260,7 +1261,7 @@ describe('PRTreeProvider', () => {
 
     test('should return "No files changed" message for empty files', async () => {
       mockClient.getPullRequestFiles.mockResolvedValue([]);
-      mockClient.getPullRequestRefs.mockResolvedValue(mockStandardRefs);
+      mockClient.getPullRequest.mockResolvedValue(mockPRWithRefs as any);
 
       const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
       const children = await provider.getChildren(prItem);
@@ -1281,6 +1282,45 @@ describe('PRTreeProvider', () => {
       expect((children[0] as any).label).toBe('Overview');
       expect((children[1] as any).message).toBe('Configuration not available');
       expect((children[1] as any).isError).toBe(true);
+    });
+
+    // Regression test for issue #182: the diff view was using pr.base.ref
+    // (a branch name / moving target) to fetch "before" file content,
+    // so once the base branch advanced past the PR's divergence point the
+    // diff showed unrelated upstream changes mixed in, sometimes making it
+    // look like the whole file had changed. Fixed refs must come from
+    // merge_base (the frozen divergence commit) and head.sha (an immutable
+    // commit), never from base.sha (which is the *live* tip of the base
+    // branch and would silently reintroduce the same bug).
+    test('should pin diff refs to merge_base/head.sha, not base.sha or branch names', async () => {
+      mockClient.getPullRequestFiles.mockResolvedValue(mockAllFileTypes);
+      mockClient.getPullRequest.mockResolvedValue(mockPRWithRefs as any);
+
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(prItem);
+
+      const fileItem = children.find(item => item instanceof PRFileItem) as PRFileItem;
+      expect(fileItem).toBeDefined();
+      expect(fileItem.baseRef).toBe(mockPRWithRefs.merge_base);
+      expect(fileItem.headRef).toBe(mockPRWithRefs.head.sha);
+      // Guard against regressing to the moving-target fields.
+      expect(fileItem.baseRef).not.toBe(mockPRWithRefs.base.sha);
+      expect(fileItem.baseRef).not.toBe(mockPRWithRefs.base.ref);
+      expect(fileItem.headRef).not.toBe(mockPRWithRefs.head.ref);
+    });
+
+    test('should fall back to base.ref (not base.sha) when merge_base is missing', async () => {
+      mockClient.getPullRequestFiles.mockResolvedValue(mockAllFileTypes);
+      const prWithoutMergeBase = { ...mockPRWithRefs, merge_base: undefined };
+      mockClient.getPullRequest.mockResolvedValue(prWithoutMergeBase as any);
+
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(prItem);
+
+      const fileItem = children.find(item => item instanceof PRFileItem) as PRFileItem;
+      expect(fileItem).toBeDefined();
+      expect(fileItem.baseRef).toBe(mockPRWithRefs.base.ref);
+      expect(fileItem.baseRef).not.toBe(mockPRWithRefs.base.sha);
     });
   });
 
