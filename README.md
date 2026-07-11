@@ -27,6 +27,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 ### 0.3.25
 
 - Development version after the 0.3.24 release.
+- **Privacy & data info view ([#146](https://git.araj.me/maxking/forgejo-vscode/issues/146)):** added a "Forgejo: Show Privacy & Data Info" command and a [Privacy & Data Handling](#privacy--data-handling) README section documenting exactly what the extension stores and transmits.
 - **Correctness and safety audit ([#246](https://git.araj.me/maxking/forgejo-vscode/issues/246)):** authentication now validates supplied tokens and keeps instance configuration when signing out, local PR checkout/revert operations target the matching repository safely, detail refreshes are bounded and supersede stale requests, publishing preflights local state before creating a remote repository, and changed files/releases use deduplicated load-more pagination.
 - **Correctness audit review hardening ([#246](https://git.araj.me/maxking/forgejo-vscode/issues/246)):** credential migration now pairs each global, workspace, and resource-scoped folder token with the URL from that same scope, detail timelines retain their newest 50 entries across page boundaries, PR Git actions fetch advertised refs from the exact matching remote, Actions refreshes reject stale results, remote virtual documents refresh with credentials/repository state, and tracked-time loading is capped.
 - **Actions rerun and fork-diff identity ([#246](https://git.araj.me/maxking/forgejo-vscode/issues/246)):** workflow reruns now resolve repository-local run numbers instead of sending task IDs to the run endpoint, and fork pull request diffs fetch head-SHA content from the fork while keeping base content and review comments tied to the upstream PR repository.
@@ -358,6 +359,22 @@ The extension looks for the `origin` remote by default (configurable via `forgej
 - HTTPS: `https://codeberg.org/owner/repo.git`
 - SSH: `git@codeberg.org:owner/repo.git`
 - SSH protocol: `ssh://git@codeberg.org/owner/repo.git`
+
+## Privacy & Data Handling
+
+This extension sends no telemetry or analytics, and makes network requests only to the Forgejo instance(s) you configure.
+
+- **Network requests:** the only outbound requests are Forgejo/Gitea API calls to the instance URL(s) you add under **"Forgejo: Add Instance"**. There is no other network destination — no analytics service, no crash reporter, no update-check endpoint, and no request to the extension author.
+- **Personal access tokens** are stored in VS Code's `SecretStorage` (your OS keychain), never in `settings.json`.
+- **Instance metadata** (name, URL, SSH host/port, username) is stored in your VS Code `settings.json` under `forgejo.instances` — no secrets are stored there.
+- **PR/issue/diff content** you view is kept in memory only for the current VS Code session and is never written to disk.
+- **Logs** go to a local "Forgejo" Output channel and are never transmitted anywhere.
+
+Two things worth knowing that are outside this extension's control:
+- If you have **VS Code Settings Sync** enabled, VS Code may sync your `settings.json` (including the instance list above) and `SecretStorage` contents through your own sync account, depending on your Settings Sync configuration. That syncing is performed by VS Code itself, not by this extension.
+- **VS Code's own telemetry** (`telemetry.telemetryLevel`) is a separate setting unrelated to, and not controlled by, this extension.
+
+Run **"Forgejo: Show Privacy & Data Info"** from the Command Palette to view this information inside the editor. This extension is open source — you can verify these claims directly in `src/api/forgejoClient.ts` (network calls) and `src/utils/secretStorage.ts` (token storage).
 
 ## Feedback & Issues
 

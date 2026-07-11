@@ -20,6 +20,7 @@ import { getAllInstances } from './utils/instanceHelpers';
 import { startOnboarding } from './commands/onboarding';
 import { manageInstances } from './commands/instanceManager';
 import { showDiagnostics } from './commands/diagnostics';
+import { showPrivacyInfo } from './commands/privacyInfo';
 import { openWorkflowFileForRepository, openWorkflowFileForCIStatus, validateWorkflowsCommand, viewCIStatusLogs } from './commands/ciNavigation';
 import { createIssueCommand } from './commands/createIssue';
 import { createPullRequestCommand } from './commands/createPullRequest';
@@ -186,6 +187,12 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand('forgejo.showDiagnostics', async () => {
       return await showDiagnostics();
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.showPrivacyInfo', async () => {
+      await showPrivacyInfo();
     })
   );
 

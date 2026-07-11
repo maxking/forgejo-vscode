@@ -125,6 +125,11 @@
         "icon": "$(info)"
       },
       {
+        "command": "forgejo.showPrivacyInfo",
+        "title": "Forgejo: Show Privacy & Data Info",
+        "icon": "$(shield)"
+      },
+      {
         "command": "forgejo.validateWorkflows",
         "title": "Forgejo: Validate Workflow Files",
         "icon": "$(checklist)"

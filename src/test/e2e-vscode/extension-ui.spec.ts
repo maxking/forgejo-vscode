@@ -15,6 +15,7 @@ test.describe('Forgejo Extension UI', () => {
     expect(commands).toContain('forgejo.refreshIssues');
     expect(commands).toContain('forgejo.loadMoreIssues');
     expect(commands).toContain('forgejo.showDiagnostics');
+    expect(commands).toContain('forgejo.showPrivacyInfo');
     expect(commands).toContain('forgejo.showOutput');
   });
 
@@ -76,5 +77,13 @@ test.describe('Forgejo Extension UI', () => {
     // Should not throw
     await harness.executeCommand('forgejo.showDiagnostics');
     await harness.captureScreenshot('diagnostics');
+  });
+
+  test('forgejo.showPrivacyInfo command executes without error', async ({ harness }) => {
+    await harness.waitForExtensionActivation();
+
+    // Should not throw, and should open the privacy report as a markdown preview
+    await harness.executeCommand('forgejo.showPrivacyInfo');
+    await harness.captureScreenshot('privacy-info');
   });
 });
