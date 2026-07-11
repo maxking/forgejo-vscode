@@ -376,6 +376,9 @@
     } else {
       activityTimeline.innerHTML = '<p style="color: var(--vscode-descriptionForeground); padding: 16px;">No activity yet.</p>';
     }
+    if (data.historyTruncated) {
+      activityTimeline.innerHTML += '<p class="activity-history-notice">Showing the newest 50 entries per activity source. Use Open in Web to view older history.</p>';
+    }
 
     // Show content
     setLoading(false);

@@ -378,6 +378,8 @@ export class ForgejoClient extends BaseClient {
   }
 
   async getWorkflowRunByNumber(owner: string, repo: string, runNumber: number): Promise<WorkflowRun | null> {
+    // Temporary compatibility wrapper: forgejo-ts 0.4.1 exposes paged run
+    // listing but not Forgejo's run_number filter. Remove when the client does.
     const response = await this.rawRequest<{ workflow_runs?: WorkflowRun[] }>(
       'GET',
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs?run_number=${encodeURIComponent(String(runNumber))}&page=1&limit=2`

@@ -50,6 +50,7 @@ export interface IssueDetailViewData {
   repo: string;
   canComment: boolean;
   instanceUrl?: string;
+  historyTruncated: boolean;
 }
 
 export interface IssueTimeTrackingViewData {
@@ -151,7 +152,8 @@ export class IssueDetailWebviewProvider {
       const issueDetails = await client.getIssueDetails(owner, repo, number);
       logInfo('Issue details fetched:', { title: issueDetails.title });
 
-      const activities = await this._fetchActivities(client, owner, repo, number);
+      const activityResult = await this._fetchActivities(client, owner, repo, number);
+      const activities = activityResult.items;
       logInfo('Activities fetched:', { activities: activities.length });
 
       const timeTracking = await this._fetchTimeTracking(client, owner, repo, number, Boolean(config.token));
@@ -171,6 +173,7 @@ export class IssueDetailWebviewProvider {
         repo,
         canComment: config.token.trim().length > 0,
         instanceUrl: state.instanceUrl
+        , historyTruncated: activityResult.truncated
       };
       state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
@@ -216,28 +219,29 @@ export class IssueDetailWebviewProvider {
     await this._fetchIssueData(panelKey);
   }
 
-  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<IssueActivity[]> {
+  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: IssueActivity[]; truncated: boolean }> {
     const activities: IssueActivity[] = [];
     const pageClient = client as Partial<ForgejoClient>;
-    const firstPage = async <T>(paged: (() => Promise<{ items: T[] }>) | undefined, legacy: () => Promise<T[]>): Promise<T[]> =>
-      typeof paged === 'function' ? (await paged()).items : legacy();
+    const firstPage = async <T>(paged: (() => Promise<{ items: T[]; hasMore: boolean }>) | undefined, legacy: () => Promise<T[]>): Promise<{ items: T[]; hasMore: boolean }> =>
+      typeof paged === 'function' ? paged() : legacy().then(items => ({ items, hasMore: false }));
     const [comments, timeline] = await Promise.all([
-      firstPage(pageClient.getIssueCommentsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return []; }),
-      firstPage(pageClient.getIssueTimelinePage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return []; })
+      firstPage(pageClient.getIssueCommentsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], hasMore: false }; }),
+      firstPage(pageClient.getIssueTimelinePage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], hasMore: false }; })
     ]);
-      activities.push(...(comments as IssueActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
-      activities.push(...(timeline as IssueTimelineApiActivity[]).flatMap((t): IssueActivity[] => {
+      activities.push(...(comments.items as IssueActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
+      activities.push(...(timeline.items as IssueTimelineApiActivity[]).flatMap((t): IssueActivity[] => {
         const event = getTimelineEventName(t);
         if (!event || event === 'comment' || event === 'commented') {
           return [];
         }
         return [{ ...t, event, type: 'timeline' as const }];
       }));
-    return activities.sort((a, b) => {
+    const items = activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? 0);
       const dateB = new Date(b.created_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
+    return { items, truncated: comments.hasMore || timeline.hasMore };
   }
 
   private async _fetchTimeTracking(
@@ -254,12 +258,15 @@ export class IssueDetailWebviewProvider {
 
     try {
       const pageSize = 50;
+      let reachedSafetyCap = false;
       for (let page = 1; page <= 100; page += 1) {
         const pageEntries = await client.getIssueTrackedTimes(owner, repo, number, page, pageSize);
         entries.push(...pageEntries);
         if (pageEntries.length < pageSize) break;
+        if (page === 100) reachedSafetyCap = true;
       }
       entries.splice(0, entries.length, ...Array.from(new Map(entries.map(entry => [entry.id, entry])).values()));
+      if (reachedSafetyCap) error = 'Tracked-time history exceeds 5,000 rows; the displayed total is incomplete.';
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not fetch tracked time';
       logDebug('Could not fetch tracked time:', e);

@@ -109,6 +109,7 @@ export class PRTreeItem extends vscode.TreeItem {
   public headRef?: string;
   public filesNextPage = 1;
   public filesHasMore = true;
+  public filesInFlight?: Promise<void>;
 
   constructor(
     public readonly pr: PullRequestListItemWithMergeability,
@@ -549,20 +550,31 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     const prItem = item.pullRequest;
     const config = prItem.config ?? await getForgejoConfigFor(prItem.owner, prItem.repo);
     if (!config || !prItem.filesHasMore) return;
-    const page = await new ForgejoClient(config.instanceUrl, config.token).getPullRequestFilesPage(
-      prItem.owner, prItem.repo, prItem.pr.number,
-      { page: prItem.filesNextPage, limit: PULL_REQUEST_FILE_PAGE_SIZE }
-    );
-    const seen = new Set((prItem.files ?? []).map(file => file.filename));
-    for (const file of page.items) {
-      if (!seen.has(file.filename)) {
-        seen.add(file.filename);
-        (prItem.files ??= []).push(file);
+    if (prItem.filesInFlight) return prItem.filesInFlight;
+    const requestedPage = prItem.filesNextPage;
+    prItem.filesInFlight = (async () => {
+      try {
+        const page = await new ForgejoClient(config.instanceUrl, config.token).getPullRequestFilesPage(
+          prItem.owner, prItem.repo, prItem.pr.number,
+          { page: requestedPage, limit: PULL_REQUEST_FILE_PAGE_SIZE }
+        );
+        const seen = new Set((prItem.files ?? []).map(file => file.filename));
+        for (const file of page.items) {
+          if (!seen.has(file.filename)) {
+            seen.add(file.filename);
+            (prItem.files ??= []).push(file);
+          }
+        }
+        prItem.filesNextPage = requestedPage + 1;
+        prItem.filesHasMore = page.hasMore;
+        this._onDidChangeTreeData.fire(prItem);
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Failed to load more changed files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } finally {
+        prItem.filesInFlight = undefined;
       }
-    }
-    prItem.filesNextPage += 1;
-    prItem.filesHasMore = page.hasMore;
-    this._onDidChangeTreeData.fire(prItem);
+    })();
+    return prItem.filesInFlight;
   }
 
   private configKeyPrefix(config: ForgejoConfig): string {

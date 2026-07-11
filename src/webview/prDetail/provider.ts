@@ -124,6 +124,7 @@ export interface PRDetailViewData {
   owner: string;
   repo: string;
   instanceUrl?: string;
+  historyTruncated: boolean;
 }
 
 interface PanelState {
@@ -215,11 +216,18 @@ export class PRDetailWebviewProvider {
       logInfo('Fetching PR details from API...');
       const prDetails = await client.getPullRequestDetails(owner, repo, number);
       logInfo('PR details fetched:', { title: prDetails.title });
+      const pageClient = client as Partial<ForgejoClient>;
 
-      const [activities, allStatuses] = await Promise.all([
+      const [activityResult, statusPage] = await Promise.all([
         this._fetchActivities(client, owner, repo, number),
-        prDetails.head.sha ? client.getCommitStatuses(owner, repo, prDetails.head.sha) : Promise.resolve([])
+        prDetails.head.sha && typeof pageClient.getCommitStatusesPage === 'function'
+          ? pageClient.getCommitStatusesPage.call(client, owner, repo, prDetails.head.sha, { page: 1, limit: 50 })
+          : prDetails.head.sha
+          ? client.getCommitStatuses(owner, repo, prDetails.head.sha).then(items => ({ items, hasMore: false }))
+          : Promise.resolve({ items: [], hasMore: false })
       ]);
+      const activities = activityResult.items;
+      const allStatuses = statusPage.items;
 
       // Deduplicate statuses by context, keeping only the latest per context.
       // The API returns all historical statuses (pending + final) for a SHA.
@@ -239,7 +247,7 @@ export class PRDetailWebviewProvider {
       if (requestVersion !== state.requestVersion) return;
       logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length, raw: allStatuses.length });
 
-      state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl };
+      state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl, historyTruncated: activityResult.truncated || statusPage.hasMore };
       state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
 
@@ -292,32 +300,33 @@ export class PRDetailWebviewProvider {
     return config;
   }
 
-  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<PRActivity[]> {
+  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: PRActivity[]; truncated: boolean }> {
     const activities: PRActivity[] = [];
     const pageClient = client as Partial<ForgejoClient>;
-    const firstPage = async <T>(paged: (() => Promise<{ items: T[] }>) | undefined, legacy: () => Promise<T[]>): Promise<T[]> =>
-      typeof paged === 'function' ? (await paged()).items : legacy();
+    const firstPage = async <T>(paged: (() => Promise<{ items: T[]; hasMore: boolean }>) | undefined, legacy: () => Promise<T[]>): Promise<{ items: T[]; hasMore: boolean }> =>
+      typeof paged === 'function' ? paged() : legacy().then(items => ({ items, hasMore: false }));
     const [comments, reviews, commits, timeline] = await Promise.all([
-      firstPage(pageClient.getIssueCommentsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return []; }),
-      firstPage(pageClient.getPullRequestReviewsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getPullRequestReviews(owner, repo, number)).catch(e => { logDebug('Could not fetch reviews:', e); return []; }),
-      firstPage(pageClient.getPullRequestCommitsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getPullRequestCommits(owner, repo, number)).catch(e => { logDebug('Could not fetch commits:', e); return []; }),
-      firstPage(pageClient.getIssueTimelinePage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return []; })
+      firstPage(pageClient.getIssueCommentsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], hasMore: false }; }),
+      firstPage(pageClient.getPullRequestReviewsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getPullRequestReviews(owner, repo, number)).catch(e => { logDebug('Could not fetch reviews:', e); return { items: [], hasMore: false }; }),
+      firstPage(pageClient.getPullRequestCommitsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getPullRequestCommits(owner, repo, number)).catch(e => { logDebug('Could not fetch commits:', e); return { items: [], hasMore: false }; }),
+      firstPage(pageClient.getIssueTimelinePage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], hasMore: false }; })
     ]);
-      activities.push(...(comments as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
-      activities.push(...(reviews as PRActivity[]).map((r) => ({ ...r, type: 'review' as const })));
-      activities.push(...(commits as PRCommitApiActivity[]).map(normalizeCommitActivity));
-      activities.push(...(timeline as PRTimelineApiActivity[]).flatMap((t): PRActivity[] => {
+      activities.push(...(comments.items as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
+      activities.push(...(reviews.items as PRActivity[]).map((r) => ({ ...r, type: 'review' as const })));
+      activities.push(...(commits.items as PRCommitApiActivity[]).map(normalizeCommitActivity));
+      activities.push(...(timeline.items as PRTimelineApiActivity[]).flatMap((t): PRActivity[] => {
         const event = getTimelineEventName(t);
         if (!event || event === 'comment' || event === 'commented') {
           return [];
         }
         return [{ ...t, event, type: 'timeline' as const }];
       }));
-    return activities.sort((a, b) => {
+    const items = activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? a.submitted_at ?? a.committed_at ?? 0);
       const dateB = new Date(b.created_at ?? b.submitted_at ?? b.committed_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
+    return { items, truncated: comments.hasMore || reviews.hasMore || commits.hasMore || timeline.hasMore };
   }
 
   private async _handleMessage(message: WebviewMessage, panelKey: string): Promise<void> {

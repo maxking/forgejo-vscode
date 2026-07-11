@@ -35,7 +35,7 @@ describe('detail webview timeline activity normalization', () => {
       ])
     };
 
-    const activities = await (provider as any)._fetchActivities(client, 'forgejo', 'forgejo', 13020);
+    const { items: activities } = await (provider as any)._fetchActivities(client, 'forgejo', 'forgejo', 13020);
 
     expect(activities).toHaveLength(2);
     expect(activities.map((activity: { type: string }) => activity.type)).toEqual(['comment', 'timeline']);
@@ -121,6 +121,29 @@ describe('detail webview timeline activity normalization', () => {
     expect(result.totalSeconds).toBe(3120);
   });
 
+  test('tracked-time safety cap marks the displayed total incomplete', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const fullPage = Array.from({ length: 50 }, (_, index) => ({ id: index + 1, time: 60 }));
+    const client = { getIssueTrackedTimes: jest.fn().mockResolvedValue(fullPage), getUserStopwatches: jest.fn().mockResolvedValue([]) };
+
+    const result = await (provider as any)._fetchTimeTracking(client, 'owner', 'repo', 1, true);
+
+    expect(client.getIssueTrackedTimes).toHaveBeenCalledTimes(100);
+    expect(result.error).toContain('incomplete');
+  });
+
+  test('bounded activity pages report when older history is available', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const client = {
+      getIssueCommentsPage: jest.fn().mockResolvedValue({ items: [], hasMore: true }),
+      getIssueTimelinePage: jest.fn().mockResolvedValue({ items: [], hasMore: false })
+    };
+
+    const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 1);
+
+    expect(result).toEqual({ items: [], truncated: true });
+  });
+
   test('PR details skip duplicate timeline comments and preserve Forgejo type actions', async () => {
     const provider = new PRDetailWebviewProvider({} as never);
     const client = {
@@ -149,7 +172,7 @@ describe('detail webview timeline activity normalization', () => {
       ])
     };
 
-    const activities = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
+    const { items: activities } = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
 
     expect(activities).toHaveLength(2);
     expect(activities.map((activity: { type: string }) => activity.type)).toEqual(['comment', 'timeline']);
@@ -170,7 +193,7 @@ describe('detail webview timeline activity normalization', () => {
       getIssueTimeline: jest.fn().mockResolvedValue([])
     };
 
-    const activities = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
+    const { items: activities } = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
 
     expect(activities).toHaveLength(1);
     expect(activities[0]).toMatchObject({

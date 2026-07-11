@@ -364,6 +364,27 @@ describe('ReleaseTreeProvider', () => {
     expect(loadedGroups.some(item => item instanceof ReleaseLoadMoreItem)).toBe(false);
   });
 
+  test('coalesces concurrent release loads and retries the same page after failure', async () => {
+    let releasePage: ((value: any) => void) | undefined;
+    mockClient.listReleasesPage = jest.fn()
+      .mockResolvedValueOnce({ items: [makeRelease()], page: 1, limit: 50, hasMore: true })
+      .mockImplementationOnce(() => new Promise(resolve => { releasePage = resolve; }))
+      .mockRejectedValueOnce(new Error('temporary'))
+      .mockResolvedValueOnce({ items: [], page: 2, limit: 50, hasMore: false });
+    const groups = await provider.getChildren();
+    const item = groups.find(child => child instanceof ReleaseLoadMoreItem) as ReleaseLoadMoreItem;
+
+    const first = provider.loadMoreReleases(item);
+    const second = provider.loadMoreReleases(item);
+    expect(mockClient.listReleasesPage).toHaveBeenCalledTimes(2);
+    releasePage?.({ items: [], page: 2, limit: 50, hasMore: true });
+    await Promise.all([first, second]);
+
+    await provider.loadMoreReleases(item);
+    await provider.loadMoreReleases(item);
+    expect(mockClient.listReleasesPage).toHaveBeenLastCalledWith('test-owner', 'test-repo', { page: 3, limit: 50 });
+  });
+
   describe('ReleaseMessageItem', () => {
     test('uses repository-scoped stable IDs', () => {
       const item = new ReleaseMessageItem('No releases found', false, {

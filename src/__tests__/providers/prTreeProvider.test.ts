@@ -1278,6 +1278,33 @@ describe('PRTreeProvider', () => {
       );
     });
 
+    test('coalesces concurrent file-page loads and preserves page state for retry', async () => {
+      let releasePage: ((value: any) => void) | undefined;
+      mockClient.getPullRequestFilesPage = jest.fn()
+        .mockImplementationOnce(() => new Promise(resolve => { releasePage = resolve; }))
+        .mockRejectedValueOnce(new Error('temporary'))
+        .mockResolvedValueOnce({ items: [], page: 2, limit: 50, hasMore: false });
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo', mockConfig);
+      prItem.files = [];
+      prItem.baseRef = 'base';
+      prItem.headRef = 'head';
+      prItem.filesNextPage = 2;
+      prItem.filesHasMore = true;
+      const item = new PRFileLoadMoreItem(prItem);
+
+      const first = provider.loadMorePullRequestFiles(item);
+      const second = provider.loadMorePullRequestFiles(item);
+      expect(mockClient.getPullRequestFilesPage).toHaveBeenCalledTimes(1);
+      releasePage?.({ items: [], page: 2, limit: 50, hasMore: true });
+      await Promise.all([first, second]);
+      expect(prItem.filesNextPage).toBe(3);
+
+      await provider.loadMorePullRequestFiles(new PRFileLoadMoreItem(prItem));
+      expect(prItem.filesNextPage).toBe(3);
+      await provider.loadMorePullRequestFiles(new PRFileLoadMoreItem(prItem));
+      expect(mockClient.getPullRequestFilesPage).toHaveBeenLastCalledWith('test-owner', 'test-repo', 42, { page: 3, limit: 50 });
+    });
+
     test('should return error message on file fetch failure', async () => {
       mockClient.getPullRequestFiles.mockRejectedValue(new Error('API rate limit'));
       mockClient.getPullRequest.mockResolvedValue(mockPRWithRefs as any);

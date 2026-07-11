@@ -127,7 +127,7 @@ export class ReleaseLoadMoreItem extends vscode.TreeItem {
 }
 
 export type ReleaseTreeElement = ReleaseRepositoryItem | ReleaseTreeItem | ReleaseGroupItem | ReleaseMessageItem | ReleaseLoadMoreItem;
-interface ReleasePageCache { releases: Release[]; nextPage: number; hasMore: boolean }
+interface ReleasePageCache { releases: Release[]; nextPage: number; hasMore: boolean; inFlightPagePromise?: Promise<void> }
 
 export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ReleaseTreeElement | undefined | null | void> = new vscode.EventEmitter<ReleaseTreeElement | undefined | null | void>();
@@ -234,15 +234,26 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
   async loadMoreReleases(item: ReleaseLoadMoreItem): Promise<void> {
     const cache = this.releases.get(this.configKey(item.config));
     if (!cache?.hasMore) return;
-    const page = await new ForgejoClient(item.config.instanceUrl, item.config.token)
-      .listReleasesPage(item.config.owner, item.config.repo, { page: cache.nextPage, limit: 50 });
-    const seen = new Set(cache.releases.map(release => String(releaseIdentity(release))));
-    for (const release of page.items) {
-      const key = String(releaseIdentity(release));
-      if (!seen.has(key)) { seen.add(key); cache.releases.push(release); }
-    }
-    cache.nextPage += 1;
-    cache.hasMore = page.hasMore;
-    this._onDidChangeTreeData.fire();
+    if (cache.inFlightPagePromise) return cache.inFlightPagePromise;
+    const requestedPage = cache.nextPage;
+    cache.inFlightPagePromise = (async () => {
+      try {
+        const page = await new ForgejoClient(item.config.instanceUrl, item.config.token)
+          .listReleasesPage(item.config.owner, item.config.repo, { page: requestedPage, limit: 50 });
+        const seen = new Set(cache.releases.map(release => String(releaseIdentity(release))));
+        for (const release of page.items) {
+          const key = String(releaseIdentity(release));
+          if (!seen.has(key)) { seen.add(key); cache.releases.push(release); }
+        }
+        cache.nextPage = requestedPage + 1;
+        cache.hasMore = page.hasMore;
+        this._onDidChangeTreeData.fire();
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Failed to load more releases: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } finally {
+        cache.inFlightPagePromise = undefined;
+      }
+    })();
+    return cache.inFlightPagePromise;
   }
 }

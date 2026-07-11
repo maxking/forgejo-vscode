@@ -69,6 +69,7 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - Share the Git extension's initial repository-discovery readiness promise across view/config consumers; repeated view refreshes should parse current repositories without paying a new quiet-period delay.
 - Detail webviews should fetch independent bounded activity pages concurrently and use request generations so an older refresh cannot overwrite a newer result.
 - Workflow task rows expose `run_number`, but Actions detail/job/rerun API routes require the ActionRun `id`; resolve that id explicitly before calling `/actions/runs/{id}` endpoints.
+- Keep `ForgejoClient.getWorkflowRunByNumber()` as a narrowly documented compatibility wrapper only while forgejo-ts 0.4.1 lacks Forgejo's `run_number` list filter; do not generalize this exception into new extension-only API wrappers.
 
 ## Architecture & Code Patterns
 
