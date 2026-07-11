@@ -158,6 +158,7 @@ describe('migration', () => {
                 instances: [
                     { id: '1', name: 'Test', instanceUrl: 'url', token: 'inst-token', isDefault: true }
                 ],
+                instanceUrl: 'url',
                 token: 'legacy-token'
             });
 
@@ -176,6 +177,7 @@ describe('migration', () => {
 		it('migrates a legacy token even when instances have no plaintext tokens', async () => {
 			const { update } = mockConfig({
 				instances: [{ id: '1', name: 'Test', instanceUrl: 'url', isDefault: true }],
+				instanceUrl: 'url/',
 				token: 'legacy-token'
 			});
 
@@ -193,7 +195,7 @@ describe('migration', () => {
 			const folderOneUpdate = jest.fn().mockResolvedValue(undefined);
 			const folderTwoUpdate = jest.fn().mockResolvedValue(undefined);
 			const baseConfig = {
-				get: jest.fn((key) => key === 'instances' ? [{ id: 'workspace', name: 'Workspace', instanceUrl: 'w', isDefault: true }] : undefined),
+				get: jest.fn((key) => key === 'instances' ? [{ id: 'workspace', name: 'Workspace', instanceUrl: 'w', isDefault: true }] : key === 'instanceUrl' ? 'w/' : undefined),
 				inspect: jest.fn((key) => key === 'instances' ? {
 					globalValue: [{ id: 'global', name: 'Global', instanceUrl: 'g', token: 'g-token' }],
 					workspaceValue: [{ id: 'workspace', name: 'Workspace', instanceUrl: 'w', token: 'w-token', isDefault: true }]
@@ -201,7 +203,7 @@ describe('migration', () => {
 				update: baseUpdate
 			};
 			const folderConfig = (id: string, update: jest.Mock) => ({
-				get: jest.fn((key) => key === 'instances' ? [{ id, name: id, instanceUrl: id, token: `${id}-token`, isDefault: true }] : undefined),
+				get: jest.fn((key) => key === 'instances' ? [{ id, name: id, instanceUrl: id, token: `${id}-token`, isDefault: true }] : key === 'instanceUrl' ? `${id}/` : undefined),
 				inspect: jest.fn((key) => key === 'instances'
 					? { workspaceFolderValue: [{ id, name: id, instanceUrl: id, token: `${id}-token`, isDefault: true }] }
 					: { workspaceFolderValue: `legacy-${id}` }),
@@ -230,12 +232,56 @@ describe('migration', () => {
 		});
 
 		it('preserves a legacy token when no instance exists to receive it', async () => {
-			const { update } = mockConfig({ instances: [], token: 'keep-me' });
+			const { update } = mockConfig({ instances: [], instanceUrl: 'https://missing.example', token: 'keep-me' });
 
 			await migrateTokensToSecretStorage();
 
 			expect(mockSetToken).not.toHaveBeenCalled();
 			expect(update).not.toHaveBeenCalledWith('token', undefined, expect.anything());
+		});
+
+		it('does not apply a folder legacy token to an inherited instance on another host', async () => {
+			const folder = { uri: vscode.Uri.parse('file:///folder'), name: 'folder', index: 0 };
+			Object.defineProperty(vscode.workspace, 'workspaceFolders', { value: [folder], configurable: true, writable: true });
+			const baseConfig = mockConfig({ instances: [] });
+			const folderUpdate = jest.fn().mockResolvedValue(undefined);
+			const folderConfig = {
+				get: jest.fn((key) => key === 'instances'
+					? [{ id: 'global', name: 'Global', instanceUrl: 'https://global.example', isDefault: true }]
+					: key === 'instanceUrl' ? 'https://folder.example/' : undefined),
+				inspect: jest.fn((key) => key === 'token' ? { workspaceFolderValue: 'folder-token' } : undefined),
+				update: folderUpdate
+			};
+			(vscode.workspace.getConfiguration as jest.Mock).mockImplementation((_section, resource) => resource ? folderConfig : {
+				get: baseConfig.get, update: baseConfig.update, inspect: jest.fn()
+			});
+
+			await migrateTokensToSecretStorage();
+
+			expect(mockSetToken).not.toHaveBeenCalledWith('global', 'folder-token');
+			expect(folderUpdate).not.toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+			expect(folderUpdate).not.toHaveBeenCalledWith('instanceUrl', undefined, expect.anything());
+		});
+
+		it('migrates a folder legacy token only to the normalized matching instance URL', async () => {
+			const folder = { uri: vscode.Uri.parse('file:///folder'), name: 'folder', index: 0 };
+			Object.defineProperty(vscode.workspace, 'workspaceFolders', { value: [folder], configurable: true, writable: true });
+			const update = jest.fn().mockResolvedValue(undefined);
+			const config = {
+				get: jest.fn((key) => key === 'instances' ? [
+					{ id: 'other', name: 'Other', instanceUrl: 'https://other.example', isDefault: true },
+					{ id: 'matching', name: 'Matching', instanceUrl: 'folder.example' }
+				] : key === 'instanceUrl' ? 'https://folder.example/' : undefined),
+				inspect: jest.fn((key) => key === 'token' ? { workspaceFolderValue: 'folder-token' } : undefined),
+				update
+			};
+			(vscode.workspace.getConfiguration as jest.Mock).mockImplementation((_section, resource) => resource ? config : { get: jest.fn(), inspect: jest.fn(), update: jest.fn() });
+
+			await migrateTokensToSecretStorage();
+
+			expect(mockSetToken).toHaveBeenCalledWith('matching', 'folder-token');
+			expect(mockSetToken).not.toHaveBeenCalledWith('other', 'folder-token');
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
 		});
     });
 });

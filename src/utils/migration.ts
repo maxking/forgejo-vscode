@@ -74,17 +74,20 @@ export async function migrateTokensToSecretStorage(): Promise<void> {
 			if (changed) await config.update('instances', instances.map(({ token: _token, ...rest }) => rest), scope.target);
 		}
 
-		const defaultInstance: ForgejoInstance | undefined = effectiveInstances.find(instance => instance.isDefault)
-			?? (effectiveInstances.length > 0 ? effectiveInstances[0] : undefined);
+		const legacyInstanceUrl = config.get<string>('instanceUrl')?.trim();
+		const normalizedLegacyUrl = legacyInstanceUrl ? normalizeUrl(legacyInstanceUrl) : undefined;
+		const matchingInstance = normalizedLegacyUrl
+			? effectiveInstances.find(instance => normalizeUrl(instance.instanceUrl) === normalizedLegacyUrl)
+			: undefined;
 		const tokenInspection = config.inspect<string>('token');
 		for (const scope of scopes) {
 			const legacyToken = tokenInspection?.[scope.value]?.trim();
 			if (!legacyToken) continue;
-			if (!defaultInstance) {
-				logWarn('Legacy forgejo.token could not be migrated because no instance exists');
+			if (!matchingInstance) {
+				logWarn('Legacy forgejo.token could not be migrated because no instance matches forgejo.instanceUrl');
 				continue;
 			}
-			await setToken(defaultInstance.id, legacyToken);
+			await setToken(matchingInstance.id, legacyToken);
 			await config.update('token', undefined, scope.target);
 		}
 	};
