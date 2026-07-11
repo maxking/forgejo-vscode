@@ -40,6 +40,7 @@ export interface CommandMap {
   'forgejo.addInstance': [];
   'forgejo.manageInstances': [];
   'forgejo.showDiagnostics': [];
+  'forgejo.showPrivacyInfo': [];
   'forgejo.validateWorkflows': [];
   'forgejo.showOutput': [];
   'forgejo.refreshPullRequests': [];
