@@ -35,6 +35,37 @@ function sanitizePasswordPropertyMappings(value) {
   }
 }
 
+// Upstream forgejo/act's vendored schema is stricter than the runner actually
+// enforces: `concurrency.cancel-in-progress` only accepts strings, and step
+// `with` values only accept strings (rejecting bare YAML numbers/booleans
+// like `fetch-depth: 0`). Relax both so the bundled validator doesn't flag
+// workflows the runner accepts. See src/diagnostics/schemas forgejo-workflow
+// tests for regression coverage.
+function relaxWorkflowValidatorTypes(schema) {
+  const definitions = schema.definitions;
+  if (!definitions) {
+    return;
+  }
+
+  const cancelInProgress = definitions['concurrency-mapping']?.mapping?.properties?.['cancel-in-progress'];
+  if (cancelInProgress?.type === 'non-empty-string') {
+    cancelInProgress.type = 'concurrency-cancel-in-progress';
+    definitions['concurrency-cancel-in-progress'] = {
+      description: cancelInProgress.description,
+      'one-of': ['boolean', 'non-empty-string'],
+    };
+  }
+
+  const stepWithMapping = definitions['step-with']?.mapping;
+  if (stepWithMapping?.['loose-value-type'] === 'string') {
+    stepWithMapping['loose-value-type'] = 'step-with-value';
+    definitions['step-with-value'] = {
+      description: 'An input value. The runner coerces scalars to strings, so plain numbers and booleans (for example `fetch-depth: 0`) are valid alongside strings.',
+      'one-of': ['string', 'boolean', 'number'],
+    };
+  }
+}
+
 let downloadOutput;
 try {
   downloadOutput = execFileSync('go', ['mod', 'download', '-json', runnerModule], {
@@ -54,6 +85,7 @@ if (downloadInfo.Error) {
 copyFileSync(path.join(downloadInfo.Dir, 'act', 'schema', 'workflow_schema.json'), schemaPath);
 const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
 sanitizePasswordPropertyMappings(schema);
+relaxWorkflowValidatorTypes(schema);
 writeFileSync(schemaPath, `${JSON.stringify(schema, null, 2)}\n`);
 writeFileSync(readmePath, `# Workflow Schema Source
 

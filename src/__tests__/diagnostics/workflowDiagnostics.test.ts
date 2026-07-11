@@ -21,6 +21,15 @@ describe('workflowDiagnostics', () => {
     expect(workflowSchema.definitions['service-container-registry-credentials'].mapping.properties.password).toEqual({ type: 'non-empty-string' });
   });
 
+  test('relaxes cancel-in-progress and step with schema types beyond upstream non-empty-string', () => {
+    expect(workflowSchema.definitions['concurrency-mapping'].mapping.properties['cancel-in-progress']).toEqual(
+      expect.objectContaining({ type: 'concurrency-cancel-in-progress' })
+    );
+    expect(workflowSchema.definitions['concurrency-cancel-in-progress']['one-of']).toEqual(['boolean', 'non-empty-string']);
+    expect(workflowSchema.definitions['step-with'].mapping['loose-value-type']).toBe('step-with-value');
+    expect(workflowSchema.definitions['step-with-value']['one-of']).toEqual(['string', 'boolean', 'number']);
+  });
+
   test('contributes the Forgejo schema to YAML language tooling', () => {
     expect(packageJson.contributes.yamlValidation).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -229,5 +238,117 @@ describe('workflowDiagnostics', () => {
         message: 'Unknown workflow property "triggers".',
       }),
     ]));
+  });
+
+  test('accepts a boolean concurrency.cancel-in-progress at the workflow level', () => {
+    const issues = validateWorkflowText([
+      'name: Test',
+      'on: push',
+      'concurrency:',
+      '  group: ci-${{ github.ref }}',
+      '  cancel-in-progress: true',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - run: npm test',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('accepts a boolean concurrency.cancel-in-progress at the job level', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    concurrency:',
+      '      group: ci',
+      '      cancel-in-progress: true',
+      '    steps:',
+      '      - run: npm test',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('still accepts a string concurrency.cancel-in-progress (previously the only accepted form)', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'concurrency:',
+      '  group: ci',
+      '  cancel-in-progress: "true"',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - run: npm test',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('still rejects a bare number for concurrency.cancel-in-progress', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'concurrency:',
+      '  group: ci',
+      '  cancel-in-progress: 1',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - run: npm test',
+    ].join('\n'), workflowPath);
+
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  test('accepts a bare number for a step with value like fetch-depth: 0', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - uses: actions/checkout@v4',
+      '        with:',
+      '          fetch-depth: 0',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('accepts a bare boolean for a step with value', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - uses: actions/some-action@v1',
+      '        with:',
+      '          some-flag: true',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('still rejects a sequence for a step with value', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - uses: actions/some-action@v1',
+      '        with:',
+      '          args:',
+      '            - 1',
+      '            - 2',
+    ].join('\n'), workflowPath);
+
+    expect(issues.length).toBeGreaterThan(0);
   });
 });
