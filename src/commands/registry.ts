@@ -69,6 +69,7 @@ export interface CommandMap {
   'forgejo.createPullRequestForRepository': [repositoryItem: PRRepositoryItem];
   'forgejo.createRelease': [target?: ReleaseRepositoryItem | ReleaseGroupItem];
   'forgejo.publishToForgejo': [];
+  'forgejo.statusBar.action': [];
 
   // -- Simple URL commands -------------------------------------------------
   'forgejo.openPrInBrowser': [url: string];

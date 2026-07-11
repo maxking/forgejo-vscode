@@ -289,6 +289,11 @@ const QuickPickItemKind = {
   Default: 0
 };
 
+const StatusBarAlignment = {
+  Left: 1,
+  Right: 2
+};
+
 const window = {
   showInformationMessage: jest.fn(),
   showErrorMessage: jest.fn(),
@@ -310,6 +315,14 @@ const window = {
     appendLine: jest.fn(),
     clear: jest.fn(),
     show: jest.fn(),
+    dispose: jest.fn()
+  })),
+  createStatusBarItem: jest.fn().mockImplementation(() => ({
+    text: '',
+    tooltip: undefined,
+    command: undefined,
+    show: jest.fn(),
+    hide: jest.fn(),
     dispose: jest.fn()
   })),
   withProgress: jest.fn()
@@ -358,6 +371,18 @@ const env = {
   openExternal: jest.fn()
 };
 
+// Absent by default (VS Code's `vscode.extensions` namespace, used only by
+// gitUtils.ts to reach the built-in Git extension API). Runtime code must
+// guard for this being undefined; tests that need it should configure
+// `extensions.getExtension` directly rather than reassigning `vscode.extensions`,
+// since TypeScript's per-file `__importStar` helper copies enumerable own
+// properties from this module at each file's first `require('vscode')` --
+// properties added later on one file's `vscode` binding are not visible from
+// another file's separately-created binding of the same underlying module.
+const extensions = {
+  getExtension: jest.fn()
+};
+
 module.exports = {
   EventEmitter,
   Uri,
@@ -369,6 +394,7 @@ module.exports = {
   ThemeColor,
   ProgressLocation,
   QuickPickItemKind,
+  StatusBarAlignment,
   CommentMode,
   MarkdownString,
   Hover,
@@ -387,6 +413,7 @@ module.exports = {
   languages,
   commands,
   env,
+  extensions,
   ViewColumn,
   ColorThemeKind
 };

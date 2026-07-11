@@ -1,5 +1,12 @@
 import * as vscode from 'vscode';
-import { parseRemoteUrl, detectGitRemote, hasGitRepository, waitForGitRepositoryDiscovery, resetGitRepositoryReadinessForTesting } from '../../utils/gitUtils';
+import {
+  parseRemoteUrl,
+  detectGitRemote,
+  hasGitRepository,
+  getActiveGitRepository,
+  waitForGitRepositoryDiscovery,
+  resetGitRepositoryReadinessForTesting
+} from '../../utils/gitUtils';
 
 jest.mock('child_process');
 
@@ -328,6 +335,56 @@ describe('gitUtils', () => {
       expect(onDidOpenRepository).toHaveBeenCalledTimes(1);
       expect(dispose).toHaveBeenCalledTimes(1);
       jest.useRealTimers();
+    });
+  });
+
+  describe('getActiveGitRepository', () => {
+    afterEach(() => {
+      (vscode.window as any).activeTextEditor = undefined;
+    });
+
+    function mockGitExtension(repositories: any[], getRepositoryImpl: (uri: any) => any) {
+      (vscode.extensions.getExtension as jest.Mock).mockReturnValue({
+        isActive: true,
+        exports: {
+          enabled: true,
+          getAPI: () => ({
+            repositories,
+            getRepository: jest.fn(getRepositoryImpl)
+          })
+        }
+      });
+    }
+
+    it('returns null when the Git extension is not available', () => {
+      expect(getActiveGitRepository()).toBeNull();
+    });
+
+    it('prefers the repository owning the active editor over the first repository (multi-root)', () => {
+      const repoOne = { rootUri: { fsPath: '/workspace/repo-one' } };
+      const repoTwo = { rootUri: { fsPath: '/workspace/repo-two' } };
+      mockGitExtension([repoOne, repoTwo], (uri) => (uri?.fsPath === '/workspace/repo-two/src/file.ts' ? repoTwo : null));
+      (vscode.window as any).activeTextEditor = { document: { uri: { fsPath: '/workspace/repo-two/src/file.ts' } } };
+
+      expect(getActiveGitRepository()).toBe(repoTwo);
+    });
+
+    it('falls back to the first repository when no active editor matches any repository', () => {
+      const repoOne = { rootUri: { fsPath: '/workspace/repo-one' } };
+      const repoTwo = { rootUri: { fsPath: '/workspace/repo-two' } };
+      mockGitExtension([repoOne, repoTwo], () => null);
+      (vscode.window as any).activeTextEditor = undefined;
+
+      expect(getActiveGitRepository()).toBe(repoOne);
+    });
+
+    it('uses an explicit sourceUri instead of the active editor when provided', () => {
+      const repoOne = { rootUri: { fsPath: '/workspace/repo-one' } };
+      const repoTwo = { rootUri: { fsPath: '/workspace/repo-two' } };
+      mockGitExtension([repoOne, repoTwo], (uri) => (uri?.fsPath === '/workspace/repo-one/file.ts' ? repoOne : null));
+      (vscode.window as any).activeTextEditor = { document: { uri: { fsPath: '/workspace/repo-two/file.ts' } } };
+
+      expect(getActiveGitRepository({ fsPath: '/workspace/repo-one/file.ts' } as any)).toBe(repoOne);
     });
   });
 });

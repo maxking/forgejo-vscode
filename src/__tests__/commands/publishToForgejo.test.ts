@@ -17,6 +17,7 @@ function repository(overrides: Partial<Repository['state']>): Repository {
 			indexChanges: [],
 			workingTreeChanges: [],
 			mergeChanges: [],
+			onDidChange: jest.fn() as unknown as vscode.Event<void>,
 			...overrides
 		},
 		inputBox: { value: '' },

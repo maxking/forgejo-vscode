@@ -16,6 +16,7 @@ export interface RepositoryState {
   readonly indexChanges?: Change[];
   readonly workingTreeChanges?: Change[];
   readonly mergeChanges?: Change[];
+  readonly onDidChange: Event<void>;
 }
 
 export interface Branch {

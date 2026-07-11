@@ -41,6 +41,7 @@ import { createRemoteSourcePublisher, publishRepositoryFromWorkspace } from './c
 import { activateGitExtension } from './utils/gitExtension';
 import { registerWorkflowDiagnostics } from './diagnostics/workflowDiagnostics';
 import { registerReferenceLanguageFeatures } from './providers/referenceLanguageProvider';
+import { BranchStatusBarController } from './statusBar/branchStatusBarController';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -904,6 +905,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create Action detail webview provider
   const actionDetailWebviewProvider = new ActionDetailWebviewProvider(context.extensionUri);
+
+  // Status bar item showing the active repository's branch/PR/CI status.
+  // activate() only registers listeners (no network); the first refresh is
+  // scheduled through the same debounced path as every later trigger.
+  const branchStatusBarController = new BranchStatusBarController();
+  branchStatusBarController.activate(context);
+  context.subscriptions.push(
+    registerCommand('forgejo.statusBar.action', () => branchStatusBarController.handleClick())
+  );
 
   // Register Issue details viewer command
   // Handles both direct tree item click (args: issue, owner, repo) and

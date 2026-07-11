@@ -82,22 +82,46 @@ function parseRepositoryRemote(repository: Repository, remoteName?: string): Git
   return parsed ? { ...parsed, rootPath: repository.rootUri.fsPath, remoteName: selectedRemote.name } : null;
 }
 
+function resolveActiveRepository(git: ReturnType<GitExtension['getAPI']>, sourceUri?: vscode.Uri): Repository | null {
+  const activeUri = sourceUri ?? vscode.window.activeTextEditor?.document.uri;
+  const activeRepository = activeUri ? git.getRepository(activeUri) : null;
+  const [firstRepository] = git.repositories as readonly (Repository | undefined)[];
+  return activeRepository ?? firstRepository ?? null;
+}
+
 function detectGitRemoteFromGitExtension(remoteName?: string, sourceUri?: vscode.Uri): GitRemoteInfo | null {
   const git = getGitExtensionApi();
   if (!git) {
     return null;
   }
 
-  const activeUri = sourceUri ?? vscode.window.activeTextEditor?.document.uri;
-  const activeRepository = activeUri ? git.getRepository(activeUri) : null;
-  const [firstRepository] = git.repositories as readonly (Repository | undefined)[];
-  const repository = activeRepository ?? firstRepository;
-
+  const repository = resolveActiveRepository(git, sourceUri);
   if (!repository) {
     return null;
   }
 
   return parseRepositoryRemote(repository, remoteName);
+}
+
+/**
+ * Resolve the VS Code Git extension's active `Repository` object (not just its
+ * parsed remote info), preferring the repository that owns `sourceUri` (or the
+ * active editor) over the first discovered repository. Callers that need live
+ * repository state (current branch, `state.onDidChange` events) rather than
+ * just owner/repo should use this instead of re-implementing the same
+ * active-repository resolution.
+ */
+export function getActiveGitRepository(sourceUri?: vscode.Uri): Repository | null {
+  const git = getGitExtensionApi();
+  return git ? resolveActiveRepository(git, sourceUri) : null;
+}
+
+/**
+ * Access the raw VS Code Git extension API (repositories, open/close events).
+ * Returns `null` when the Git extension is not installed/active.
+ */
+export function getGitApi(): ReturnType<GitExtension['getAPI']> | null {
+  return getGitExtensionApi();
 }
 
 function parseGitRepositories(git: ReturnType<GitExtension['getAPI']>, remoteName?: string): GitRepositoryRemoteInfo[] {
