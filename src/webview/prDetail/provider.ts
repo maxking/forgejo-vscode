@@ -6,6 +6,10 @@ import { executeCommand } from '../../commands/registry';
 import { openWorkflowFileForCIStatus, viewCIStatusLogs } from '../../commands/ciNavigation';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 import { getTimelineEventName, type TimelineActivity } from '../shared/helpers';
+import { activateGitExtension } from '../../utils/gitExtension';
+import { repositoryMatchesConfig } from '../../utils/gitRepositoryMatch';
+import type { Repository } from '../../types/git';
+import { execFile } from 'child_process';
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -130,6 +134,7 @@ interface PanelState {
   instanceUrl?: string;
   isReady: boolean;
   pendingData?: PRDetailViewData | null;
+  pendingError?: string | null;
 }
 
 export class PRDetailWebviewProvider {
@@ -170,7 +175,8 @@ export class PRDetailWebviewProvider {
       number,
       instanceUrl,
       isReady: false,
-      pendingData: null
+      pendingData: null,
+      pendingError: null
     };
     this._panels.set(panelKey, state);
 
@@ -230,6 +236,7 @@ export class PRDetailWebviewProvider {
       logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length, raw: allStatuses.length });
 
       state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl };
+      state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
 
       if (state.isReady) {
@@ -240,11 +247,14 @@ export class PRDetailWebviewProvider {
       }
     } catch (error) {
       logError('Failed to fetch PR data:', error);
+      const message = error instanceof Error ? error.message : 'Failed to load PR details';
       if (state.isReady) {
         void panel.webview.postMessage({
           type: 'error',
-          message: error instanceof Error ? error.message : 'Failed to load PR details'
+          message
         });
+      } else {
+        state.pendingError = message;
       }
     }
   }
@@ -319,7 +329,10 @@ export class PRDetailWebviewProvider {
       case 'ready':
         logInfo('Webview ready message received, pendingData exists:', !!state.pendingData);
         state.isReady = true;
-        if (state.pendingData) {
+        if (state.pendingError) {
+          void panel.webview.postMessage({ type: 'error', message: state.pendingError });
+          state.pendingError = null;
+        } else if (state.pendingData) {
           logInfo('Sending pending data to webview...');
           this._sendDataToPanel(panelKey);
         } else {
@@ -330,7 +343,7 @@ export class PRDetailWebviewProvider {
       case 'checkout': await this._checkoutBranch(owner, repo, number, instanceUrl); break;
       case 'refresh': await this._fetchPRData(panelKey); break;
       case 'merge': await this._mergePR(owner, repo, number, message.strategy, message.message, panelKey, instanceUrl); break;
-      case 'revert': this._revertCommit(message.commitSha); break;
+      case 'revert': await this._revertCommit(message.commitSha, owner, repo, instanceUrl); break;
       case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey, instanceUrl); break;
       case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey, instanceUrl); break;
       case 'openInBrowser': await this._openInBrowser(owner, repo, number, instanceUrl); break;
@@ -360,16 +373,10 @@ export class PRDetailWebviewProvider {
       try {
         const config = await this._getConfig(owner, repo, instanceUrl);
 
-        // Fetch workflow runs and find the matching one by run_number
         const client = new ForgejoClient(config.instanceUrl, config.token);
-        const response = await client.getWorkflowRuns(owner, repo);
-        const matchingRun = response.workflow_runs.find(r => r.run_number === runNumber);
-
-        if (matchingRun) {
-          // Deep-link to the action detail webview within the extension
-          await executeCommand('forgejo.showActionDetails', matchingRun, owner, repo, instanceUrl);
-          return;
-        }
+        const matchingRun = await client.getWorkflowRunDetails(owner, repo, runNumber);
+        await executeCommand('forgejo.showActionDetails', matchingRun, owner, repo, instanceUrl);
+        return;
       } catch (error) {
         logError('Failed to open CI status in extension:', error);
       }
@@ -395,10 +402,17 @@ export class PRDetailWebviewProvider {
       const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
       const refs = await client.getPullRequestRefs(owner, repo, number);
-      const terminal = vscode.window.createTerminal('Forgejo Checkout');
-      terminal.sendText(`git fetch origin ${refs.head}:${refs.head}`);
-      terminal.sendText(`git checkout ${refs.head}`);
-      terminal.show();
+      const repository = await this._selectLocalRepository(owner, repo, config.instanceUrl, 'Checkout Pull Request');
+      if (!repository) return;
+      if (repository.state.remotes.length === 0) throw new Error('The selected repository has no Git remote');
+      const remote = repository.state.remotes.find(candidate => candidate.name === 'origin')
+        ?? repository.state.remotes[0];
+      try {
+        await repository.checkout(refs.head);
+      } catch {
+        await repository.fetch(remote.name, `refs/pull/${String(number)}/head`);
+        await repository.createBranch(refs.head, true, 'FETCH_HEAD');
+      }
       void vscode.window.showInformationMessage(`Checked out branch: ${refs.head}`);
     } catch (error) {
       void vscode.window.showErrorMessage(`Failed to checkout: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -410,7 +424,7 @@ export class PRDetailWebviewProvider {
     try {
       const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.mergePullRequest(owner, repo, number, strategy as 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only', false);
+      await client.mergePullRequestWithMessage(owner, repo, number, strategy as 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only', message);
       void vscode.window.showInformationMessage('Pull request merged successfully');
       if (panelState) {
         void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'merge', success: true });
@@ -424,10 +438,45 @@ export class PRDetailWebviewProvider {
     }
   }
 
-  private _revertCommit(commitSha: string): void {
-    const terminal = vscode.window.createTerminal('Forgejo Revert');
-    terminal.sendText(`git revert ${commitSha}`);
-    terminal.show();
+  private async _revertCommit(commitSha: string, owner: string, repo: string, instanceUrl?: string): Promise<void> {
+    if (!/^[0-9a-f]{7,64}$/i.test(commitSha)) {
+      void vscode.window.showErrorMessage('Cannot revert an invalid commit identifier.');
+      return;
+    }
+    try {
+      const config = await this._getConfig(owner, repo, instanceUrl);
+      const repository = await this._selectLocalRepository(owner, repo, config.instanceUrl, 'Revert Pull Request');
+      if (!repository) return;
+      await new Promise<void>((resolve, reject) => {
+        execFile('git', ['revert', commitSha], { cwd: repository.rootUri.fsPath }, error => {
+          if (error) reject(error instanceof Error ? error : new Error(String(error)));
+          else resolve();
+        });
+      });
+      void vscode.window.showInformationMessage(`Reverted commit ${commitSha.slice(0, 8)}`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to revert: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _selectLocalRepository(owner: string, repo: string, instanceUrl: string, title: string): Promise<Repository | undefined> {
+    const gitExtension = await activateGitExtension();
+    if (!gitExtension?.enabled) {
+      throw new Error('The VS Code Git extension is unavailable');
+    }
+    const matches = gitExtension.getAPI(1).repositories.filter(repository =>
+      repositoryMatchesConfig(repository, owner, repo, instanceUrl)
+    );
+    if (matches.length === 1) return matches[0];
+    if (matches.length === 0) {
+      throw new Error(`No local checkout matches ${owner}/${repo}`);
+    }
+    const picked = await vscode.window.showQuickPick(matches.map(repository => ({
+      label: repository.rootUri.fsPath.split('/').pop() ?? repo,
+      description: repository.rootUri.fsPath,
+      repository
+    })), { title, placeHolder: 'Select the local checkout' });
+    return picked?.repository;
   }
 
   private async _addComment(owner: string, repo: string, number: number, body: string, panelKey?: string, instanceUrl?: string): Promise<void> {

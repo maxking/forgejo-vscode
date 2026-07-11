@@ -132,6 +132,7 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
   }
 
   refresh(): void {
+	this.releases.clear();
     this._onDidChangeTreeData.fire();
   }
 
@@ -193,6 +194,10 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
   private async _fetchReleases(config: ForgejoConfig): Promise<Release[]> {
     console.log('[Forgejo] Fetching releases...');
     const key = this.configKey(config);
+	const cached = this.releases.get(key);
+	if (cached) {
+		return cached;
+	}
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);

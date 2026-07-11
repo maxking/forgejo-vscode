@@ -344,6 +344,20 @@ describe('ForgejoClient', () => {
     });
   });
 
+	describe('mergePullRequestWithMessage', () => {
+		test('sends the user-entered merge message to Forgejo', async () => {
+			const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue(undefined as any);
+
+			await client.mergePullRequestWithMessage('owner', 'repo', 42, 'squash', '  Release fix  ');
+
+			expect(rawSpy).toHaveBeenCalledWith(
+				'POST',
+				'/repos/owner/repo/pulls/42/merge',
+				{ Do: 'squash', MergeMessageField: 'Release fix', delete_branch_after_merge: false }
+			);
+		});
+	});
+
   describe('getPullRequestFiles', () => {
     test('should fetch pull request files successfully', async () => {
       mockFetch.mockResolvedValueOnce({

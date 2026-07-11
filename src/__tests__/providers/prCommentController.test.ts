@@ -331,5 +331,28 @@ describe('ForgejoCommentController', () => {
       const mockController = (vscode.comments.createCommentController as jest.Mock).mock.results[0].value;
       expect(mockController.createCommentThread).not.toHaveBeenCalled();
     });
+
+	it('renders only the positions belonging to the current diff side', async () => {
+		const headUri = vscode.Uri.parse('forgejo-pr:/owner/repo/ZmVhdHVyZQ/src/file.ts');
+		controller.registerPRContext(headUri, ctx);
+		mockGetForgejoConfigFor.mockResolvedValueOnce({
+			instanceUrl: 'https://git.example.com', owner: 'owner', repo: 'repo', token: 'token'
+		} as any);
+		MockForgejoClient.mockImplementationOnce(() => ({
+			getPullRequestReviews: jest.fn().mockResolvedValue([{ id: 1, comments_count: 2 }]),
+			getReviewComments: jest.fn().mockResolvedValue([
+				{ path: 'src/file.ts', line: 3, old_position: 3, body: 'base only', user: { login: 'a' } },
+				{ path: 'src/file.ts', line: 8, new_position: 8, body: 'head only', user: { login: 'b' } }
+			]),
+			createReviewWithComments: jest.fn()
+		} as any));
+
+		await controller.loadCommentsForDocument({ uri: headUri } as vscode.TextDocument);
+
+		const commentController = (vscode.comments.createCommentController as jest.Mock).mock.results[0].value;
+		expect(commentController.createCommentThread).toHaveBeenCalledTimes(1);
+		expect(commentController.createCommentThread.mock.calls[0][1].start.line).toBe(7);
+		expect(commentController.createCommentThread.mock.calls[0][2][0].body.value).toBe('head only');
+	});
   });
 });

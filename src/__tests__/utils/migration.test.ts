@@ -171,5 +171,17 @@ describe('migration', () => {
             expect(tokenClearCall).toBeDefined();
             expect(tokenClearCall![1]).toBeUndefined();
         });
+
+		it('migrates a legacy token even when instances have no plaintext tokens', async () => {
+			const { update } = mockConfig({
+				instances: [{ id: '1', name: 'Test', instanceUrl: 'url', isDefault: true }],
+				token: 'legacy-token'
+			});
+
+			await migrateTokensToSecretStorage();
+
+			expect(mockSetToken).toHaveBeenCalledWith('1', 'legacy-token');
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Global);
+		});
     });
 });

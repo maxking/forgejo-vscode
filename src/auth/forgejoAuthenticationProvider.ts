@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { getAllInstances, removeInstance } from '../utils/instanceHelpers';
+import { getAllInstances } from '../utils/instanceHelpers';
+import { deleteToken, onDidChangeToken } from '../utils/secretStorage';
 import { ForgejoInstance } from '../models/instance';
 
 const DEFAULT_SCOPES = ['api'];
@@ -27,8 +28,10 @@ export class ForgejoAuthenticationProvider implements vscode.AuthenticationProvi
 		new vscode.EventEmitter<vscode.AuthenticationProviderAuthenticationSessionsChangeEvent>();
 
 	private readonly _configListener: vscode.Disposable;
+	private readonly _tokenListener: vscode.Disposable;
 
 	private _knownSessions: vscode.AuthenticationSession[] = [];
+	private _tokenMutationInProgress = false;
 
 	constructor() {
 		this.onDidChangeSessions = this._emitter.event;
@@ -36,6 +39,9 @@ export class ForgejoAuthenticationProvider implements vscode.AuthenticationProvi
 			if (e.affectsConfiguration('forgejo.instances')) {
 				await this._diffAndFire();
 			}
+		});
+		this._tokenListener = onDidChangeToken(() => {
+			if (!this._tokenMutationInProgress) void this._diffAndFire();
 		});
 	}
 
@@ -88,16 +94,18 @@ export class ForgejoAuthenticationProvider implements vscode.AuthenticationProvi
 	}
 
 	async removeSession(sessionId: string): Promise<void> {
-		const session = this._knownSessions.find(s => s.id === sessionId);
-		await removeInstance(sessionId);
-		if (session && this._knownSessions.some(s => s.id === sessionId)) {
-			this._knownSessions = this._knownSessions.filter(s => s.id !== sessionId);
-			this._emitter.fire({ added: [], removed: [session], changed: [] });
+		this._tokenMutationInProgress = true;
+		try {
+			await deleteToken(sessionId);
+		} finally {
+			this._tokenMutationInProgress = false;
 		}
+		await this._diffAndFire();
 	}
 
 	dispose(): void {
 		this._configListener.dispose();
+		this._tokenListener.dispose();
 		this._emitter.dispose();
 	}
 }

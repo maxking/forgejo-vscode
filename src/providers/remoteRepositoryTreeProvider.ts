@@ -461,13 +461,22 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
 
   private async getDirectoryChildren(selection: RemoteRepositorySelection, path: string): Promise<RemoteRepositoryTreeElement[]> {
     try {
-      const client = new ForgejoClient(selection.instanceUrl, selection.token ?? '');
+      const currentInstance = await this.instanceForSelection(selection);
+      if (!currentInstance) {
+        return [new RemoteRepositoryMessageItem('The Forgejo instance for this repository is no longer configured.', true, path)];
+      }
+      const currentSelection = {
+        ...selection,
+        instanceUrl: normalizeUrl(currentInstance.instanceUrl),
+        token: currentInstance.token
+      };
+      const client = this.createClient(currentInstance);
       const contents = await client.getRepositoryContents(
-        selection.owner,
-        selection.repo,
+        currentSelection.owner,
+        currentSelection.repo,
         path,
         {
-          ref: selection.branch,
+          ref: currentSelection.branch,
           page: 1,
           limit: REMOTE_DIRECTORY_PAGE_SIZE
         }
@@ -477,7 +486,7 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
       }
 
       const hasMore = contents.length >= REMOTE_DIRECTORY_PAGE_SIZE
-        && await this.hasMoreDirectoryEntries(client, selection, path);
+        && await this.hasMoreDirectoryEntries(client, currentSelection, path);
       const entries = sortEntries(contents).slice(0, REMOTE_DIRECTORY_PAGE_SIZE);
       if (entries.length === 0) {
         return [new RemoteRepositoryMessageItem('No files found', false, path)];
@@ -485,9 +494,9 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
 
       const children: RemoteRepositoryTreeElement[] = entries.map(entry => {
         if (entry.type === 'dir') {
-          return new RemoteRepositoryDirectoryItem(selection, entry.path);
+          return new RemoteRepositoryDirectoryItem(currentSelection, entry.path);
         }
-        return new RemoteRepositoryFileItem(selection, entry);
+        return new RemoteRepositoryFileItem(currentSelection, entry);
       });
 
       if (hasMore) {

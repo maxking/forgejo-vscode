@@ -62,38 +62,37 @@ export async function migrateTokensToSecretStorage(): Promise<void> {
 
 	// Check if any instances still have plaintext tokens in settings
 	const instancesWithTokens = instances.filter(i => i.token && i.token.trim() !== '');
-	if (instancesWithTokens.length === 0) {
-		return;
-	}
+	if (instancesWithTokens.length > 0) {
+		logInfo(`Migrating ${instancesWithTokens.length} plaintext token(s) to SecretStorage`);
 
-	logInfo(`Migrating ${instancesWithTokens.length} plaintext token(s) to SecretStorage`);
-
-	// Move each token to SecretStorage
-	for (const instance of instancesWithTokens) {
-		if (instance.id && instance.token) {
-			await setToken(instance.id, instance.token.trim());
+		// Move each token to SecretStorage
+		for (const instance of instancesWithTokens) {
+			if (instance.id && instance.token) {
+				await setToken(instance.id, instance.token.trim());
+			}
 		}
+
+		// Rewrite instances without tokens
+		const cleanedInstances = instances.map(i => {
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			const { token: _token, ...rest } = i;
+			return rest;
+		});
+		await config.update('instances', cleanedInstances, vscode.ConfigurationTarget.Global);
+		logInfo('Token migration to SecretStorage complete');
 	}
-
-	// Rewrite instances without tokens
-	const cleanedInstances = instances.map(i => {
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		const { token: _token, ...rest } = i;
-		return rest;
-	});
-	await config.update('instances', cleanedInstances, vscode.ConfigurationTarget.Global);
-
-	logInfo('Token migration to SecretStorage complete');
 
 	// Also clear legacy forgejo.token if still present
 	const legacyToken = config.get<string>('token');
 	if (legacyToken && legacyToken.trim() !== '') {
 		// Find the default instance to associate the legacy token with
-		const defaultInstance = instances.find(i => i.isDefault) ?? instances[0];
-		if (defaultInstance.id) {
+		const defaultInstance = instances.length > 0 ? (instances.find(i => i.isDefault) ?? instances[0]) : undefined;
+		if (defaultInstance) {
 			await setToken(defaultInstance.id, legacyToken.trim());
+			await config.update('token', undefined, vscode.ConfigurationTarget.Global);
+			logInfo('Legacy forgejo.token migrated to SecretStorage and cleared');
+		} else {
+			logWarn('Legacy forgejo.token could not be migrated because no instance exists');
 		}
-		await config.update('token', undefined, vscode.ConfigurationTarget.Global);
-		logInfo('Legacy forgejo.token migrated to SecretStorage and cleared');
 	}
 }

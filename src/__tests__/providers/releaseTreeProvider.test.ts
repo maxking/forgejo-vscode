@@ -271,6 +271,18 @@ describe('ReleaseTreeProvider', () => {
       expect(provider.getOwner()).toBe('test-owner');
       expect(provider.getRepo()).toBe('test-repo');
     });
+
+	test('reuses releases until an explicit refresh', async () => {
+		mockClient.listReleases.mockResolvedValue([makeRelease()]);
+
+		await provider.getChildren();
+		await provider.getChildren();
+		expect(mockClient.listReleases).toHaveBeenCalledTimes(1);
+
+		provider.refresh();
+		await provider.getChildren();
+		expect(mockClient.listReleases).toHaveBeenCalledTimes(2);
+	});
   });
 
   describe('getChildren (group level)', () => {

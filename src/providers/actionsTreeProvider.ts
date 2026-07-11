@@ -480,8 +480,6 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
 
   private async fetchWorkflowRunPageUncached(config: ForgejoConfig, page: number): Promise<{ items: WorkflowRunListItem[]; page: number; hasMore: boolean }> {
     console.log(`[Forgejo] Fetching workflow runs page ${page}...`);
-    const key = this.configKey(config);
-
     this.owner = config.owner;
     this.repo = config.repo;
 
@@ -500,11 +498,6 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       return response;
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Failed to fetch workflow runs';
-      this.workflowRunPages.set(key, {
-        workflowRuns: [],
-        nextPage: page,
-        hasMore: false
-      });
       console.error('[Forgejo] Error fetching workflow runs:', error);
       throw error;
     }

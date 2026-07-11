@@ -123,19 +123,25 @@ export class ActionDetailWebviewProvider {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       logInfo('Fetching jobs from API...');
 
-      // Use the run data we already have (passed from the tree view)
-      // Convert WorkflowRunListItem to WorkflowRun with default values for timing fields
-      const fullRun: WorkflowRun = {
-        ...run,
-        started_at: run.created_at,
-        stopped_at: null,
-        run_started_at: run.created_at
-      };
+      // Task-list rows use an instance-wide task id, while repository Actions
+      // endpoints use the repository-local run number.
+      let fullRun: WorkflowRun;
+      try {
+        fullRun = await client.getWorkflowRunDetails(owner, repo, run.run_number);
+      } catch (runError) {
+        logError('Failed to refresh workflow run details (using tree snapshot):', runError);
+        fullRun = {
+          ...run,
+          started_at: run.created_at,
+          stopped_at: null,
+          run_started_at: run.created_at
+        };
+      }
 
-      // Only fetch jobs - the run details API uses incompatible IDs
+      // Fetch jobs using the repository-local run number as well.
       let jobs: WorkflowJob[] = [];
       try {
-        const jobsResponse = await client.getWorkflowJobs(owner, repo, run.id);
+        const jobsResponse = await client.getWorkflowJobs(owner, repo, run.run_number);
         jobs = jobsResponse.jobs;
         logInfo('Jobs fetched:', { jobCount: jobs.length });
       } catch (jobError) {
@@ -215,7 +221,7 @@ export class ActionDetailWebviewProvider {
         await this._fetchActionData(panelKey);
         break;
       case 'rerun':
-        await this._rerunWorkflow(owner, repo, runId, panelKey, instanceUrl);
+        await this._rerunWorkflow(owner, repo, state.run.run_number, panelKey, instanceUrl);
         break;
       case 'openInBrowser':
         await this._openInBrowser(owner, repo, runId, instanceUrl);

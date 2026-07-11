@@ -32,7 +32,7 @@ import { registerCommand } from './commands/registry';
 import { logger, logInfo } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { ForgejoConfig, getForgejoConfig, getForgejoConfigFor } from './utils/config';
-import { initializeSecretStorage } from './utils/secretStorage';
+import { initializeSecretStorage, onDidChangeToken } from './utils/secretStorage';
 import { migrateTokensToSecretStorage } from './utils/migration';
 import { ForgejoRemoteSourceProvider } from './providers/forgejoRemoteSourceProvider';
 import { ForgejoAuthenticationProvider } from './auth/forgejoAuthenticationProvider';
@@ -65,6 +65,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Late-bound so addInstance/manageInstances can trigger a re-registration
   let refreshRemoteSourceProviders: () => Promise<void> = () => Promise.resolve();
+	context.subscriptions.push(onDidChangeToken(() => {
+		prTreeProvider.refresh();
+		issueTreeProvider.refresh();
+		actionsTreeProvider.refresh();
+		releaseTreeProvider.refresh();
+		remoteRepositoryTreeProvider.refresh();
+		void refreshRemoteSourceProviders();
+	}));
 
   // Helper to update the context key for viewsWelcome
   async function updateNoInstanceContext() {
@@ -979,14 +987,23 @@ export async function activate(context: vscode.ExtensionContext) {
     const git = gitExtension.getAPI(1);
 
     let providerDisposables: vscode.Disposable[] = [];
+    let providerRefreshGeneration = 0;
 
     refreshRemoteSourceProviders = async () => {
-      for (const d of providerDisposables) d.dispose();
-      providerDisposables = [];
+      const generation = ++providerRefreshGeneration;
       const instances = await getAllInstances();
+      if (generation !== providerRefreshGeneration) return;
+      const replacements: vscode.Disposable[] = [];
       for (const instance of instances) {
-        providerDisposables.push(git.registerRemoteSourceProvider(new ForgejoRemoteSourceProvider(instance)));
+        replacements.push(git.registerRemoteSourceProvider(new ForgejoRemoteSourceProvider(instance)));
       }
+      if (generation !== providerRefreshGeneration) {
+        for (const disposable of replacements) disposable.dispose();
+        return;
+      }
+      const previous = providerDisposables;
+      providerDisposables = replacements;
+      for (const disposable of previous) disposable.dispose();
       logInfo(`Remote source providers registered for ${instances.length} instance(s)`);
     };
 

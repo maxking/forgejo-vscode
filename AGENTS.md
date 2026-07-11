@@ -61,6 +61,11 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - Start-work-on-issue must not silently choose among multiple matching local worktrees; show a repository picker with full paths so the user intentionally selects the target worktree before checkout.
 - Remote repository browsing must keep instance URL, owner, repo, branch, and path identity in tree items and virtual document URIs, and public no-token access must not fall back to unrelated configured instances or tokens.
 - PR detail commands that open local files must preserve the PR's instance, owner, and repo identity when resolving local Git repositories; do not fall back to workspace-wide file searches when that explicit identity has no matching local checkout.
+- Treat SecretStorage token writes and deletes as observable configuration changes: authentication sessions, remote-source providers, and authenticated views must refresh without requiring an unrelated settings edit.
+- Connection tests with a supplied token must call an authenticated endpoint such as `/user`; a successful public `/version` response does not validate credentials.
+- PR checkout and revert actions must resolve the local repository through the VS Code Git API using instance/owner/repo identity. Use Git API operations when available; for operations it does not expose, invoke `git` with an argument array and the matched repository cwd, never by interpolating API values into a terminal shell command.
+- Webviews that begin loading before their `ready` message must retain both pending data and pending errors so fast failures do not leave an indefinite loading screen.
+- Publishing must validate the local commit/content state and chosen remote name before creating the server-side repository, so predictable local failures do not leave orphan repositories.
 
 ## Architecture & Code Patterns
 

@@ -377,6 +377,24 @@ export class ForgejoClient extends BaseClient {
     return this.updatePullRequest(owner, repo, number, { body });
   }
 
+  async mergePullRequestWithMessage(
+    owner: string,
+    repo: string,
+    number: number,
+    strategy: 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only',
+    message?: string
+  ): Promise<void> {
+    if (!message?.trim()) {
+      await this.mergePullRequest(owner, repo, number, strategy, false);
+      return;
+    }
+    await this.rawRequest<void>(
+      'POST',
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${encodeURIComponent(String(number))}/merge`,
+      { Do: strategy, MergeMessageField: message.trim(), delete_branch_after_merge: false }
+    );
+  }
+
   async updateIssueBody(owner: string, repo: string, number: number, body: string): Promise<Issue> {
     return this.updateIssue(owner, repo, number, { body });
   }

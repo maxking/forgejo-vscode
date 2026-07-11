@@ -141,7 +141,7 @@ describe('RemoteFileContentProvider', () => {
     expect(content).toContain(uri.toString());
   });
 
-  test('caches empty remote files', async () => {
+  test('refetches branch content so advancing branches do not remain stale', async () => {
     const uri = createRemoteFileUri('https://git.example.com', 'owner', 'repo', 'main', 'empty.txt');
     mockClient.getRepositoryContents.mockResolvedValue({
       type: 'file',
@@ -157,7 +157,7 @@ describe('RemoteFileContentProvider', () => {
 
     expect(first).toBe('');
     expect(second).toBe('');
-    expect(mockClient.getRepositoryContents).toHaveBeenCalledTimes(1);
+	expect(mockClient.getRepositoryContents).toHaveBeenCalledTimes(2);
   });
 
   test('rejects ambiguous URI formats without the versioned identity layout', () => {

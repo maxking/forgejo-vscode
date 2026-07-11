@@ -1,17 +1,24 @@
 import * as vscode from 'vscode';
 import { ForgejoAuthenticationProvider } from '../../auth/forgejoAuthenticationProvider';
-import { getAllInstances, removeInstance } from '../../utils/instanceHelpers';
+import { getAllInstances } from '../../utils/instanceHelpers';
+import { deleteToken, onDidChangeToken } from '../../utils/secretStorage';
 
 jest.mock('../../utils/instanceHelpers');
+jest.mock('../../utils/secretStorage', () => ({
+	deleteToken: jest.fn().mockResolvedValue(undefined),
+	onDidChangeToken: jest.fn(() => ({ dispose: jest.fn() })),
+}));
 
 const mockGetAllInstances = getAllInstances as jest.MockedFunction<typeof getAllInstances>;
-const mockRemoveInstance = removeInstance as jest.MockedFunction<typeof removeInstance>;
+const mockDeleteToken = deleteToken as jest.MockedFunction<typeof deleteToken>;
+const mockOnDidChangeToken = onDidChangeToken as jest.MockedFunction<typeof onDidChangeToken>;
 
 describe('ForgejoAuthenticationProvider', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		(vscode.workspace.onDidChangeConfiguration as jest.Mock).mockReturnValue({ dispose: jest.fn() });
-		mockRemoveInstance.mockResolvedValue(undefined);
+		mockDeleteToken.mockResolvedValue(undefined);
+		mockOnDidChangeToken.mockReturnValue({ dispose: jest.fn() });
 	});
 
 	it('returns configured instances as authentication sessions with requested scopes', async () => {
@@ -87,8 +94,8 @@ describe('ForgejoAuthenticationProvider', () => {
 			.mockResolvedValueOnce([
 				{ id: 'old', name: 'Old', instanceUrl: 'https://old.example', token: 'old-token' },
 			])
-			.mockResolvedValueOnce([]);
-		mockRemoveInstance.mockImplementation(async () => {
+			.mockResolvedValue([]);
+		mockDeleteToken.mockImplementation(async () => {
 			await configListener?.({ affectsConfiguration: section => section === 'forgejo.instances' });
 		});
 
@@ -98,6 +105,7 @@ describe('ForgejoAuthenticationProvider', () => {
 		provider.onDidChangeSessions(listener);
 
 		await provider.removeSession('old');
+		expect(mockDeleteToken).toHaveBeenCalledWith('old');
 
 		expect(listener).toHaveBeenCalledTimes(1);
 		expect(listener).toHaveBeenCalledWith({

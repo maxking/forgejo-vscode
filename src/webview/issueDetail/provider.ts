@@ -69,6 +69,7 @@ interface PanelState {
   instanceUrl?: string;
   isReady: boolean;
   pendingData?: IssueDetailViewData | null;
+  pendingError?: string | null;
 }
 
 export class IssueDetailWebviewProvider {
@@ -109,7 +110,8 @@ export class IssueDetailWebviewProvider {
       number,
       instanceUrl,
       isReady: false,
-      pendingData: null
+      pendingData: null,
+      pendingError: null
     };
     this._panels.set(panelKey, state);
 
@@ -166,6 +168,7 @@ export class IssueDetailWebviewProvider {
         canComment: config.token.trim().length > 0,
         instanceUrl: state.instanceUrl
       };
+      state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
 
       if (state.isReady) {
@@ -176,11 +179,14 @@ export class IssueDetailWebviewProvider {
       }
     } catch (error) {
       logError('Failed to fetch Issue data:', error);
+      const message = error instanceof Error ? error.message : 'Failed to load Issue details';
       if (state.isReady) {
         void panel.webview.postMessage({
           type: 'error',
-          message: error instanceof Error ? error.message : 'Failed to load Issue details'
+          message
         });
+      } else {
+        state.pendingError = message;
       }
     }
   }
@@ -235,13 +241,18 @@ export class IssueDetailWebviewProvider {
     number: number,
     canTrack: boolean
   ): Promise<IssueTimeTrackingViewData> {
-    let entries: ForgejoTrackedTime[] = [];
+    const entries: ForgejoTrackedTime[] = [];
     let currentStopwatch: ForgejoStopwatch | undefined;
     let otherStopwatch: ForgejoStopwatch | undefined;
     let error: string | undefined;
 
     try {
-      entries = await client.getIssueTrackedTimes(owner, repo, number);
+      const pageSize = 50;
+      for (let page = 1; page <= 100; page += 1) {
+        const pageEntries = await client.getIssueTrackedTimes(owner, repo, number, page, pageSize);
+        entries.push(...pageEntries);
+        if (pageEntries.length < pageSize) break;
+      }
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not fetch tracked time';
       logDebug('Could not fetch tracked time:', e);
@@ -284,7 +295,10 @@ export class IssueDetailWebviewProvider {
       case 'ready':
         logInfo('Webview ready message received, pendingData exists:', !!state.pendingData);
         state.isReady = true;
-        if (state.pendingData) {
+        if (state.pendingError) {
+          void state.panel.webview.postMessage({ type: 'error', message: state.pendingError });
+          state.pendingError = null;
+        } else if (state.pendingData) {
           logInfo('Sending pending data to webview...');
           this._sendDataToPanel(panelKey);
         } else {

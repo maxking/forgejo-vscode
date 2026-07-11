@@ -265,6 +265,15 @@ describe('instanceHelpers', () => {
 			// Token should not be in settings
 			expect(lastInstancesUpdate[1][0].token).toBeUndefined();
 		});
+
+		it('clears legacy settings when the final instance is removed', async () => {
+			const { update } = mockConfig([{ id: '1', name: 'Only', instanceUrl: 'https://only.example', isDefault: true }]);
+
+			await removeInstance('1');
+
+			expect(update).toHaveBeenCalledWith('instanceUrl', undefined, vscode.ConfigurationTarget.Global);
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Global);
+		});
 	});
 
 	describe('setDefaultInstance', () => {
