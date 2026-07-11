@@ -175,6 +175,10 @@ export class JobTreeItem extends vscode.TreeItem {
   }
 }
 
+export function workflowRunNumberForItem(item: WorkflowRunTreeItem | JobTreeItem): number {
+  return item instanceof WorkflowRunTreeItem ? item.runNumber : item.job.run_number;
+}
+
 /**
  * Represents a single step within a workflow job (leaf node).
  * Data comes from Forgejo web page scraping.

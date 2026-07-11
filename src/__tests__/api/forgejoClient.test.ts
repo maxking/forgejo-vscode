@@ -354,6 +354,18 @@ describe('ForgejoClient', () => {
 		});
 	});
 
+	describe('rerunWorkflowByNumber', () => {
+		test('resolves the run number before rerunning the distinct API run id', async () => {
+			jest.spyOn(client, 'getWorkflowRunByNumber').mockResolvedValue({ id: 9001, run_number: 42 } as any);
+			const rerun = jest.spyOn(client, 'rerunWorkflow').mockResolvedValue(undefined);
+
+			await client.rerunWorkflowByNumber('owner', 'repo', 42);
+
+			expect(client.getWorkflowRunByNumber).toHaveBeenCalledWith('owner', 'repo', 42);
+			expect(rerun).toHaveBeenCalledWith('owner', 'repo', 9001);
+		});
+	});
+
   describe('getPullRequestFiles', () => {
     test('should fetch pull request files successfully', async () => {
       mockFetch.mockResolvedValueOnce({

@@ -87,6 +87,8 @@ export interface CommandMap {
     baseRef: string,
     headRef: string,
     instanceUrl?: string,
+    headOwner?: string,
+    headRepo?: string,
   ];
 
   // -- Context menu commands -----------------------------------------------

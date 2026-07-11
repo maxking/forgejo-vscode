@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, ActionsTreeProvider, ScrapedStep, ActionLoadMoreItem } from '../../providers/actionsTreeProvider';
+import { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, ActionsTreeProvider, ScrapedStep, ActionLoadMoreItem, workflowRunNumberForItem } from '../../providers/actionsTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { WorkflowRunListItem } from '../../models/action';
@@ -288,6 +288,16 @@ describe('ActionsTreeProvider', () => {
     test('should set stable id with repository and job identity', () => {
       const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo, 'https://git.example.com');
       expect(item.id).toBe('workflow-job/https%3A%2F%2Fgit.example.com/test-owner/test-repo/42/123');
+    });
+  });
+
+  describe('workflowRunNumberForItem', () => {
+    test('uses stable run identity instead of a distinct task/job id', () => {
+      const job = { ...mockWorkflowRunSuccess, id: 9001, run_number: 42 };
+
+      expect(workflowRunNumberForItem(new JobTreeItem(job, 0, 'owner', 'repo'))).toBe(42);
+      expect(workflowRunNumberForItem(new WorkflowRunTreeItem(42, [job], 'owner', 'repo'))).toBe(42);
+      expect(job.id).not.toBe(job.run_number);
     });
   });
 

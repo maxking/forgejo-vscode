@@ -387,6 +387,12 @@ export class ForgejoClient extends BaseClient {
     return response.workflow_runs?.find(run => run.run_number === runNumber) ?? null;
   }
 
+  async rerunWorkflowByNumber(owner: string, repo: string, runNumber: number): Promise<void> {
+    const run = await this.getWorkflowRunByNumber(owner, repo, runNumber);
+    if (!run) throw new Error(`Workflow run #${String(runNumber)} was not found`);
+    await this.rerunWorkflow(owner, repo, run.id);
+  }
+
   async updateIssueBody(owner: string, repo: string, number: number, body: string): Promise<Issue> {
     return this.updateIssue(owner, repo, number, { body });
   }

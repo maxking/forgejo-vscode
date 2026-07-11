@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { getForgejoConfigFor } from '../utils/config';
+import type { PullRequestFile } from '../models/pullRequest';
 
 /**
  * Custom URI scheme for PR diff virtual documents.
@@ -32,6 +33,13 @@ export interface ParsedPRFileUri {
   repo: string;
   ref: string;
   filepath: string;
+  instanceUrl?: string;
+}
+
+export interface PRFileContentRef {
+  owner: string;
+  repo: string;
+  ref: string;
   instanceUrl?: string;
 }
 
@@ -176,4 +184,22 @@ export function createPRFileUri(
 
   const path = `/${owner}/${repo}/${encodedRef}/${encodedPath}`;
   return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
+}
+
+export function createPRFileUris(
+  file: PullRequestFile,
+  base: PRFileContentRef,
+  head: PRFileContentRef
+): { before?: vscode.Uri; after?: vscode.Uri } {
+  const beforePath = file.previous_filename ?? file.filename;
+  if (file.status === 'removed') {
+    return { before: createPRFileUri(base.owner, base.repo, base.ref, beforePath, base.instanceUrl) };
+  }
+  if (file.status === 'added') {
+    return { after: createPRFileUri(head.owner, head.repo, head.ref, file.filename, head.instanceUrl) };
+  }
+  return {
+    before: createPRFileUri(base.owner, base.repo, base.ref, beforePath, base.instanceUrl),
+    after: createPRFileUri(head.owner, head.repo, head.ref, file.filename, head.instanceUrl)
+  };
 }

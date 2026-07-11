@@ -12,7 +12,7 @@ import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoCon
 interface PullRequestWithMergeBase {
   merge_base?: string;
   base: { ref: string };
-  head: { ref: string; sha?: string };
+  head: { ref: string; sha?: string; repo?: { full_name?: string } };
 }
 
 /**
@@ -35,11 +35,15 @@ async function getPRDiffRefs(
   owner: string,
   repo: string,
   number: number
-): Promise<{ base: string; head: string }> {
+): Promise<{ base: string; head: string; headOwner: string; headRepo: string }> {
   const pr = await client.getPullRequest(owner, repo, number) as PullRequestWithMergeBase;
+  const headRepositoryParts = pr.head.repo?.full_name?.split('/');
+  const hasHeadRepositoryIdentity = headRepositoryParts?.length === 2 && headRepositoryParts.every(part => part.length > 0);
   return {
     base: pr.merge_base ?? pr.base.ref,
-    head: pr.head.sha ?? pr.head.ref
+    head: pr.head.sha ?? pr.head.ref,
+    headOwner: hasHeadRepositoryIdentity ? headRepositoryParts[0] : owner,
+    headRepo: hasHeadRepositoryIdentity ? headRepositoryParts[1] : repo
   };
 }
 
@@ -107,6 +111,8 @@ export class PRTreeItem extends vscode.TreeItem {
   public filesError?: string;
   public baseRef?: string;
   public headRef?: string;
+  public headOwner?: string;
+  public headRepo?: string;
   public filesNextPage = 1;
   public filesHasMore = true;
   public filesInFlight?: Promise<void>;
@@ -265,7 +271,9 @@ export class PRFileItem extends vscode.TreeItem {
     public readonly baseRef: string,
     public readonly headRef: string,
     public readonly instanceUrl?: string,
-    public readonly treeContext?: string
+    public readonly treeContext?: string,
+    public readonly headOwner: string = owner,
+    public readonly headRepo: string = repo
   ) {
     super(file.filename, vscode.TreeItemCollapsibleState.None);
 
@@ -300,7 +308,7 @@ export class PRFileItem extends vscode.TreeItem {
     this.command = {
       command: 'forgejo.showPrFileDiff',
       title: 'Show Diff',
-      arguments: [this.file, this.pr, this.owner, this.repo, this.baseRef, this.headRef, this.instanceUrl]
+      arguments: [this.file, this.pr, this.owner, this.repo, this.baseRef, this.headRef, this.instanceUrl, this.headOwner, this.headRepo]
     };
   }
 }
@@ -484,11 +492,11 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     const overviewItem = new PROverviewItem(prItem.pr, prItem.owner, prItem.repo, prItem.config?.instanceUrl, prItem.treeContext);
 
     // Return cached files if available
-    if (prItem.files && prItem.baseRef && prItem.headRef) {
+    if (prItem.files && prItem.baseRef && prItem.headRef && prItem.headOwner && prItem.headRepo) {
       const baseRef = prItem.baseRef;
       const headRef = prItem.headRef;
       const fileItems = prItem.files.map(file =>
-        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef, prItem.config?.instanceUrl, prItem.treeContext)
+        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef, prItem.config?.instanceUrl, prItem.treeContext, prItem.headOwner, prItem.headRepo)
       );
       return [overviewItem, ...fileItems, ...(prItem.filesHasMore ? [new PRFileLoadMoreItem(prItem)] : [])];
     }
@@ -520,6 +528,8 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       prItem.files = files;
       prItem.baseRef = refs.base;
       prItem.headRef = refs.head;
+      prItem.headOwner = refs.headOwner;
+      prItem.headRepo = refs.headRepo;
       prItem.filesNextPage = 2;
       prItem.filesHasMore = filePage.hasMore;
 
@@ -535,7 +545,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const sortedFiles = files.sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status));
 
       const fileItems = sortedFiles.map(file =>
-        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head, config.instanceUrl, prItem.treeContext)
+        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head, config.instanceUrl, prItem.treeContext, refs.headOwner, refs.headRepo)
       );
       return [overviewItem, ...fileItems, ...(prItem.filesHasMore ? [new PRFileLoadMoreItem(prItem)] : [])];
     } catch (error) {

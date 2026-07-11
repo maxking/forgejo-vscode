@@ -354,5 +354,24 @@ describe('ForgejoCommentController', () => {
 		expect(commentController.createCommentThread.mock.calls[0][1].start.line).toBe(7);
 		expect(commentController.createCommentThread.mock.calls[0][2][0].body.value).toBe('head only');
 	});
+
+	it('keeps review API calls on the base PR repository for a fork head URI', async () => {
+		const forkHeadUri = vscode.Uri.parse('forgejo-pr:/contributor/project-fork/aGVhZC1zaGE/src/file.ts');
+		controller.registerPRContext(forkHeadUri, { ...ctx, owner: 'upstream', repo: 'project', headRef: 'head-sha' });
+		mockGetForgejoConfigFor.mockResolvedValueOnce({
+			instanceUrl: 'https://git.example.com', owner: 'upstream', repo: 'project', token: 'token'
+		} as any);
+		const getPullRequestReviews = jest.fn().mockResolvedValue([]);
+		MockForgejoClient.mockImplementationOnce(() => ({
+			getPullRequestReviews,
+			getReviewComments: jest.fn(),
+			createReviewWithComments: jest.fn()
+		} as any));
+
+		await controller.loadCommentsForDocument({ uri: forkHeadUri } as vscode.TextDocument);
+
+		expect(mockGetForgejoConfigFor).toHaveBeenCalledWith('upstream', 'project', undefined);
+		expect(getPullRequestReviews).toHaveBeenCalledWith('upstream', 'project', 42);
+	});
   });
 });

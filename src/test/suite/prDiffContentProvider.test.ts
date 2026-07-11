@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from '../../providers/prDiffContentProvider';
+import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri, createPRFileUris, parsePRFileUri } from '../../providers/prDiffContentProvider';
 
 suite('PR Diff Content Provider Test Suite', () => {
   let provider: PRDiffContentProvider;
@@ -64,6 +64,21 @@ suite('PR Diff Content Provider Test Suite', () => {
     assert.ok(uri.path.includes('repo'), 'Path should contain repo');
     assert.strictEqual(uri.query, '', 'URI should have no query parameters (ref is base64url-encoded in path)');
     assert.ok(uri.path.includes('src/deep/nested/path/file.ts'), 'Path should contain file path');
+  });
+
+  test('fork rename URIs preserve base and head repository identity', () => {
+    const uris = createPRFileUris(
+      { filename: 'src/new.ts', previous_filename: 'src/old.ts', status: 'renamed' } as never,
+      { owner: 'upstream', repo: 'project', ref: 'base-sha', instanceUrl: 'https://git.example.com' },
+      { owner: 'contributor', repo: 'project-fork', ref: 'head-sha', instanceUrl: 'https://git.example.com' }
+    );
+    assert.ok(uris.before && uris.after, 'Renamed files should have both URI sides');
+    assert.deepStrictEqual(parsePRFileUri(uris.before), {
+      owner: 'upstream', repo: 'project', ref: 'base-sha', filepath: 'src/old.ts', instanceUrl: 'https://git.example.com'
+    });
+    assert.deepStrictEqual(parsePRFileUri(uris.after), {
+      owner: 'contributor', repo: 'project-fork', ref: 'head-sha', filepath: 'src/new.ts', instanceUrl: 'https://git.example.com'
+    });
   });
 
   test('provideTextDocumentContent should handle invalid URI format', async function() {

@@ -1368,6 +1368,36 @@ describe('PRTreeProvider', () => {
       expect(fileItem.headRef).not.toBe(mockPRWithRefs.head.ref);
     });
 
+    test('should carry fork head repository identity into file commands', async () => {
+      mockClient.getPullRequestFiles.mockResolvedValue([mockModifiedFile]);
+      mockClient.getPullRequest.mockResolvedValue({
+        ...mockPRWithRefs,
+        head: { ...mockPRWithRefs.head, repo: { full_name: 'contributor/project-fork' } }
+      } as any);
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'upstream', 'project');
+
+      const children = await provider.getChildren(prItem);
+      const fileItem = children.find(item => item instanceof PRFileItem) as PRFileItem;
+
+      expect(fileItem.headOwner).toBe('contributor');
+      expect(fileItem.headRepo).toBe('project-fork');
+      expect(fileItem.command?.arguments?.slice(-2)).toEqual(['contributor', 'project-fork']);
+    });
+
+    test('should fall back to the base PR repository for same-repository heads', async () => {
+      mockClient.getPullRequestFiles.mockResolvedValue([mockModifiedFile]);
+      mockClient.getPullRequest.mockResolvedValue({
+        ...mockPRWithRefs,
+        head: { ...mockPRWithRefs.head, repo: { full_name: 'upstream/project' } }
+      } as any);
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'upstream', 'project');
+
+      const children = await provider.getChildren(prItem);
+      const fileItem = children.find(item => item instanceof PRFileItem) as PRFileItem;
+
+      expect([fileItem.headOwner, fileItem.headRepo]).toEqual(['upstream', 'project']);
+    });
+
     test('should fall back to base.ref (not base.sha) when merge_base is missing', async () => {
       mockClient.getPullRequestFiles.mockResolvedValue(mockAllFileTypes);
       const prWithoutMergeBase = { ...mockPRWithRefs, merge_base: undefined };
