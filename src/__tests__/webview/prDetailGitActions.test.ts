@@ -21,7 +21,7 @@ describe('PR detail Git actions', () => {
     repository.checkout.mockRejectedValue(new Error('missing branch'));
     (execFile as unknown as jest.Mock).mockImplementation((_command, _args, _options, callback) => callback(null));
     (ForgejoClient as jest.MockedClass<typeof ForgejoClient>).mockImplementation(() => ({
-      getPullRequestDetails: jest.fn().mockResolvedValue({ head: { sha: 'abcdef1234567890' } })
+      getPullRequestDetails: jest.fn().mockResolvedValue({ head: { sha: 'abcdef1234567890' }, base: { ref: 'master' } })
     }) as any);
   });
 
@@ -34,7 +34,7 @@ describe('PR detail Git actions', () => {
     await (provider as any)._revertCommit('abcdef1234567890', 'owner', 'repo', 42, 'https://git.example.com');
 
     expect(repository.fetch).toHaveBeenNthCalledWith(1, 'upstream', 'refs/pull/42/head');
-    expect(repository.fetch).toHaveBeenNthCalledWith(2, 'upstream', 'refs/pull/42/head');
+    expect(repository.fetch).toHaveBeenNthCalledWith(2, 'upstream', 'refs/heads/master');
     expect(execFile).toHaveBeenCalledWith('git', ['revert', 'abcdef1234567890'], { cwd: '/workspace/repo' }, expect.any(Function));
   });
 });

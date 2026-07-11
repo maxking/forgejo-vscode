@@ -117,6 +117,22 @@ function normalizeCommitActivity(commit: PRCommitApiActivity): PRActivity {
   };
 }
 
+function isValidGitBranchRef(ref: string): boolean {
+  const hasControlOrSpace = Array.from(ref).some(character => {
+    const code = character.charCodeAt(0);
+    return code <= 32 || code === 127;
+  });
+  return ref.length > 0
+    && !ref.startsWith('/')
+    && !ref.endsWith('/')
+    && !ref.endsWith('.')
+    && !ref.endsWith('.lock')
+    && !ref.includes('..')
+    && !ref.includes('@{')
+    && !hasControlOrSpace
+    && !/[~^:?*[\\]/.test(ref);
+}
+
 export interface PRDetailViewData {
   pr: PullRequest;
   activities: PRActivity[];
@@ -458,11 +474,15 @@ export class PRDetailWebviewProvider {
     }
     try {
       const config = await this._getConfig(owner, repo, instanceUrl);
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const details = await client.getPullRequestDetails(owner, repo, number);
+      const baseRef = details.base.ref;
+      if (!isValidGitBranchRef(baseRef)) throw new Error('The pull request has an invalid base branch ref');
       const repository = await this._selectLocalRepository(owner, repo, config.instanceUrl, 'Revert Pull Request');
       if (!repository) return;
       const remote = matchingRemote(repository, owner, repo, config.instanceUrl);
       if (!remote) throw new Error('The selected repository has no remote matching this pull request');
-      await repository.fetch(remote.name, `refs/pull/${String(number)}/head`);
+      await repository.fetch(remote.name, `refs/heads/${baseRef}`);
       await new Promise<void>((resolve, reject) => {
         execFile('git', ['revert', commitSha], { cwd: repository.rootUri.fsPath }, error => {
           if (error) reject(error instanceof Error ? error : new Error(String(error)));
