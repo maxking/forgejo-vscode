@@ -45,6 +45,7 @@ interface PanelState {
   isReady: boolean;
   pendingData?: ActionDetailViewData | null;
   pendingError?: string | null;
+  requestVersion?: number;
 }
 
 export class ActionDetailWebviewProvider {
@@ -115,6 +116,7 @@ export class ActionDetailWebviewProvider {
     if (!state) return;
 
     const { panel, owner, repo, run, instanceUrl } = state;
+    const requestVersion = state.requestVersion = (state.requestVersion ?? 0) + 1;
     logInfo('_fetchActionData starting:', { panelKey, isReady: state.isReady });
 
     try {
@@ -152,6 +154,7 @@ export class ActionDetailWebviewProvider {
         // Continue with empty jobs - at least show the run info
       }
 
+      if (requestVersion !== state.requestVersion) return;
       state.pendingData = { run: fullRun, jobs, owner, repo };
       state.pendingError = null; // Clear any previous error
       logInfo('pendingData set, isReady:', state.isReady);
@@ -163,6 +166,7 @@ export class ActionDetailWebviewProvider {
         logInfo('Webview not ready yet, data will be sent when ready');
       }
     } catch (error) {
+      if (requestVersion !== state.requestVersion) return;
       logError('Failed to fetch action data:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to load action details';
       if (state.isReady) {

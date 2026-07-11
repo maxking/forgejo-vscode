@@ -7,7 +7,7 @@ import { openWorkflowFileForCIStatus, viewCIStatusLogs } from '../../commands/ci
 import { logDebug, logInfo, logError } from '../../utils/logger';
 import { getTimelineEventName, type TimelineActivity } from '../shared/helpers';
 import { activateGitExtension } from '../../utils/gitExtension';
-import { repositoryMatchesConfig } from '../../utils/gitRepositoryMatch';
+import { matchingRemote, repositoryMatchesConfig } from '../../utils/gitRepositoryMatch';
 import type { Repository } from '../../types/git';
 import { execFile } from 'child_process';
 
@@ -303,13 +303,22 @@ export class PRDetailWebviewProvider {
   private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: PRActivity[]; truncated: boolean }> {
     const activities: PRActivity[] = [];
     const pageClient = client as Partial<ForgejoClient>;
-    const firstPage = async <T>(paged: (() => Promise<{ items: T[]; hasMore: boolean }>) | undefined, legacy: () => Promise<T[]>): Promise<{ items: T[]; hasMore: boolean }> =>
-      typeof paged === 'function' ? paged() : legacy().then(items => ({ items, hasMore: false }));
+    const newestPage = async <T>(paged: ((page: number) => Promise<{ items: T[]; hasMore: boolean; totalCount?: number | null }>) | undefined, legacy: () => Promise<T[]>): Promise<{ items: T[]; truncated: boolean }> => {
+      if (!paged) return legacy().then(items => ({ items, truncated: false }));
+      const first = await paged(1);
+      if (!first.hasMore || typeof first.totalCount !== 'number') return { items: first.items, truncated: first.hasMore };
+      const lastPage = Math.ceil(first.totalCount / 50);
+      return { items: lastPage > 1 ? (await paged(lastPage)).items : first.items, truncated: true };
+    };
+    const commentsPage = pageClient.getIssueCommentsPage;
+    const reviewsPage = pageClient.getPullRequestReviewsPage;
+    const commitsPage = pageClient.getPullRequestCommitsPage;
+    const timelinePage = pageClient.getIssueTimelinePage;
     const [comments, reviews, commits, timeline] = await Promise.all([
-      firstPage(pageClient.getIssueCommentsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], hasMore: false }; }),
-      firstPage(pageClient.getPullRequestReviewsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getPullRequestReviews(owner, repo, number)).catch(e => { logDebug('Could not fetch reviews:', e); return { items: [], hasMore: false }; }),
-      firstPage(pageClient.getPullRequestCommitsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getPullRequestCommits(owner, repo, number)).catch(e => { logDebug('Could not fetch commits:', e); return { items: [], hasMore: false }; }),
-      firstPage(pageClient.getIssueTimelinePage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], hasMore: false }; })
+      newestPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false }; }),
+      newestPage(reviewsPage ? page => reviewsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestReviews(owner, repo, number)).catch(e => { logDebug('Could not fetch reviews:', e); return { items: [], truncated: false }; }),
+      newestPage(commitsPage ? page => commitsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestCommits(owner, repo, number)).catch(e => { logDebug('Could not fetch commits:', e); return { items: [], truncated: false }; }),
+      newestPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false }; })
     ]);
       activities.push(...(comments.items as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
       activities.push(...(reviews.items as PRActivity[]).map((r) => ({ ...r, type: 'review' as const })));
@@ -326,7 +335,7 @@ export class PRDetailWebviewProvider {
       const dateB = new Date(b.created_at ?? b.submitted_at ?? b.committed_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
-    return { items, truncated: comments.hasMore || reviews.hasMore || commits.hasMore || timeline.hasMore };
+    return { items, truncated: comments.truncated || reviews.truncated || commits.truncated || timeline.truncated };
   }
 
   private async _handleMessage(message: WebviewMessage, panelKey: string): Promise<void> {
@@ -417,9 +426,8 @@ export class PRDetailWebviewProvider {
       const details = await client.getPullRequestDetails(owner, repo, number);
       const repository = await this._selectLocalRepository(owner, repo, config.instanceUrl, 'Checkout Pull Request');
       if (!repository) return;
-      if (repository.state.remotes.length === 0) throw new Error('The selected repository has no Git remote');
-      const remote = repository.state.remotes.find(candidate => candidate.name === 'origin')
-        ?? repository.state.remotes[0];
+      const remote = matchingRemote(repository, owner, repo, config.instanceUrl);
+      if (!remote) throw new Error('The selected repository has no remote matching this pull request');
       await repository.fetch(remote.name, `refs/pull/${String(number)}/head`);
       const localBranch = `forgejo-pr-${String(number)}-${details.head.sha.slice(0, 8)}`;
       try { await repository.checkout(localBranch); }
@@ -458,6 +466,9 @@ export class PRDetailWebviewProvider {
       const config = await this._getConfig(owner, repo, instanceUrl);
       const repository = await this._selectLocalRepository(owner, repo, config.instanceUrl, 'Revert Pull Request');
       if (!repository) return;
+      const remote = matchingRemote(repository, owner, repo, config.instanceUrl);
+      if (!remote) throw new Error('The selected repository has no remote matching this pull request');
+      await repository.fetch(remote.name, commitSha);
       await new Promise<void>((resolve, reject) => {
         execFile('git', ['revert', commitSha], { cwd: repository.rootUri.fsPath }, error => {
           if (error) reject(error instanceof Error ? error : new Error(String(error)));

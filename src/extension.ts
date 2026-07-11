@@ -65,12 +65,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Late-bound so addInstance/manageInstances can trigger a re-registration
   let refreshRemoteSourceProviders: () => Promise<void> = () => Promise.resolve();
+	const remoteFileProvider = new RemoteFileContentProvider();
 	context.subscriptions.push(onDidChangeToken(() => {
 		prTreeProvider.refresh();
 		issueTreeProvider.refresh();
 		actionsTreeProvider.refresh();
 		releaseTreeProvider.refresh();
 		remoteRepositoryTreeProvider.refresh();
+		remoteFileProvider.refresh();
 		void refreshRemoteSourceProviders();
 	}));
 
@@ -145,7 +147,6 @@ export async function activate(context: vscode.ExtensionContext) {
     prDetailsProvider
   );
 
-  const remoteFileProvider = new RemoteFileContentProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(REMOTE_FILE_SCHEME, remoteFileProvider),
     remoteFileProvider
@@ -162,6 +163,7 @@ export async function activate(context: vscode.ExtensionContext) {
         actionsTreeProvider.refresh();
         releaseTreeProvider.refresh();
         remoteRepositoryTreeProvider.refresh();
+        remoteFileProvider.refresh();
         await refreshRemoteSourceProviders();
       }
     })
@@ -176,6 +178,7 @@ export async function activate(context: vscode.ExtensionContext) {
       actionsTreeProvider.refresh();
       releaseTreeProvider.refresh();
       remoteRepositoryTreeProvider.refresh();
+      remoteFileProvider.refresh();
       await refreshRemoteSourceProviders();
     })
   );
@@ -209,6 +212,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand('forgejo.refreshRemoteRepositories', () => {
       remoteRepositoryTreeProvider.refresh();
+      remoteFileProvider.refresh();
       void vscode.window.showInformationMessage('Remote repositories refreshed');
     })
   );

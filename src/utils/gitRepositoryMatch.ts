@@ -59,3 +59,23 @@ export function repositoryMatchesConfig(
 			|| parsed.remoteHost === expectedHost.hostname;
 	});
 }
+
+export function matchingRemote(
+	repository: Repository,
+	owner: string,
+	repo: string,
+	instanceUrl?: string
+): Remote | undefined {
+	const expectedHost = hostForInstanceUrl(instanceUrl);
+	return repository.state.remotes.find(remote => {
+		const url = remoteUrl(remote);
+		const parsed = url ? parseRemoteUrl(url) : null;
+		return Boolean(parsed
+			&& parsed.owner === owner
+			&& parsed.repo === repo
+			&& (!expectedHost
+				|| parsed.instanceUrl === instanceUrl
+				|| parsed.remoteHost === expectedHost.host
+				|| parsed.remoteHost === expectedHost.hostname));
+	});
+}

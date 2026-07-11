@@ -27,7 +27,7 @@ const mockConfig = (values: Record<string, any>) => {
     (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
         get,
         update,
-        inspect: jest.fn()
+        inspect: jest.fn((key) => ({ globalValue: values[key] }))
     });
     return { get, update };
 };
@@ -182,6 +182,32 @@ describe('migration', () => {
 
 			expect(mockSetToken).toHaveBeenCalledWith('1', 'legacy-token');
 			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Global);
+		});
+
+		it('cleans plaintext instance and legacy tokens at every configuration scope', async () => {
+			const update = jest.fn().mockResolvedValue(undefined);
+			const scopedInstances = {
+				globalValue: [{ id: 'global', name: 'Global', instanceUrl: 'g', token: 'g-token', isDefault: true }],
+				workspaceValue: [{ id: 'workspace', name: 'Workspace', instanceUrl: 'w', token: 'w-token' }],
+				workspaceFolderValue: [{ id: 'folder', name: 'Folder', instanceUrl: 'f', token: 'f-token' }]
+			};
+			(vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+				get: jest.fn((key) => key === 'instances' ? scopedInstances.workspaceFolderValue : undefined),
+				inspect: jest.fn((key) => key === 'instances' ? scopedInstances : {
+					globalValue: 'legacy-global', workspaceValue: 'legacy-workspace', workspaceFolderValue: 'legacy-folder'
+				}),
+				update
+			});
+
+			await migrateTokensToSecretStorage();
+
+			expect(mockSetToken).toHaveBeenCalledWith('global', 'g-token');
+			expect(mockSetToken).toHaveBeenCalledWith('workspace', 'w-token');
+			expect(mockSetToken).toHaveBeenCalledWith('folder', 'f-token');
+			for (const target of [vscode.ConfigurationTarget.Global, vscode.ConfigurationTarget.Workspace, vscode.ConfigurationTarget.WorkspaceFolder]) {
+				expect(update).toHaveBeenCalledWith('instances', [expect.not.objectContaining({ token: expect.anything() })], target);
+				expect(update).toHaveBeenCalledWith('token', undefined, target);
+			}
 		});
     });
 });

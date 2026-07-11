@@ -134,6 +134,7 @@ export function decodeRemoteFileContent(entry: RepositoryContentEntry, uri: vsco
 
 export class RemoteFileContentProvider implements vscode.TextDocumentContentProvider {
   private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
+  private readonly _knownUris = new Map<string, vscode.Uri>();
   readonly onDidChange = this._onDidChange.event;
 
   dispose(): void {
@@ -141,6 +142,7 @@ export class RemoteFileContentProvider implements vscode.TextDocumentContentProv
   }
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+    this._knownUris.set(uri.toString(), uri);
     const { instanceUrl, owner, repo, ref, filepath } = parseRemoteFileUri(uri);
     try {
       const config = await getForgejoConfigFor(owner, repo, instanceUrl);
@@ -159,7 +161,11 @@ export class RemoteFileContentProvider implements vscode.TextDocumentContentProv
     }
   }
 
-  refresh(uri: vscode.Uri): void {
-    this._onDidChange.fire(uri);
+  refresh(uri?: vscode.Uri): void {
+    if (uri) {
+      this._onDidChange.fire(uri);
+      return;
+    }
+    for (const knownUri of this._knownUris.values()) this._onDidChange.fire(knownUri);
   }
 }

@@ -211,8 +211,10 @@ export async function removeInstance(id: string): Promise<void> {
 	} else if (filtered.length === 0) {
 		// Do not leave compatibility settings capable of recreating the deleted
 		// instance on the next activation.
-		await config.update('instanceUrl', undefined, vscode.ConfigurationTarget.Global);
-		await config.update('token', undefined, vscode.ConfigurationTarget.Global);
+		for (const target of [vscode.ConfigurationTarget.Global, vscode.ConfigurationTarget.Workspace, vscode.ConfigurationTarget.WorkspaceFolder]) {
+			await config.update('instanceUrl', undefined, target);
+			await config.update('token', undefined, target);
+		}
 	}
 }
 

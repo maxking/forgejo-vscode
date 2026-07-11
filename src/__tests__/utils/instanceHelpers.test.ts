@@ -273,6 +273,10 @@ describe('instanceHelpers', () => {
 
 			expect(update).toHaveBeenCalledWith('instanceUrl', undefined, vscode.ConfigurationTarget.Global);
 			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Global);
+			expect(update).toHaveBeenCalledWith('instanceUrl', undefined, vscode.ConfigurationTarget.Workspace);
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Workspace);
+			expect(update).toHaveBeenCalledWith('instanceUrl', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
 		});
 	});
 

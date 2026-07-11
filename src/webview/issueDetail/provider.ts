@@ -222,11 +222,18 @@ export class IssueDetailWebviewProvider {
   private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: IssueActivity[]; truncated: boolean }> {
     const activities: IssueActivity[] = [];
     const pageClient = client as Partial<ForgejoClient>;
-    const firstPage = async <T>(paged: (() => Promise<{ items: T[]; hasMore: boolean }>) | undefined, legacy: () => Promise<T[]>): Promise<{ items: T[]; hasMore: boolean }> =>
-      typeof paged === 'function' ? paged() : legacy().then(items => ({ items, hasMore: false }));
+    const newestPage = async <T>(paged: ((page: number) => Promise<{ items: T[]; hasMore: boolean; totalCount?: number | null }>) | undefined, legacy: () => Promise<T[]>): Promise<{ items: T[]; truncated: boolean }> => {
+      if (!paged) return legacy().then(items => ({ items, truncated: false }));
+      const first = await paged(1);
+      if (!first.hasMore || typeof first.totalCount !== 'number') return { items: first.items, truncated: first.hasMore };
+      const lastPage = Math.ceil(first.totalCount / 50);
+      return { items: lastPage > 1 ? (await paged(lastPage)).items : first.items, truncated: true };
+    };
+    const commentsPage = pageClient.getIssueCommentsPage;
+    const timelinePage = pageClient.getIssueTimelinePage;
     const [comments, timeline] = await Promise.all([
-      firstPage(pageClient.getIssueCommentsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], hasMore: false }; }),
-      firstPage(pageClient.getIssueTimelinePage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], hasMore: false }; })
+      newestPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false }; }),
+      newestPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false }; })
     ]);
       activities.push(...(comments.items as IssueActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
       activities.push(...(timeline.items as IssueTimelineApiActivity[]).flatMap((t): IssueActivity[] => {
@@ -241,7 +248,7 @@ export class IssueDetailWebviewProvider {
       const dateB = new Date(b.created_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
-    return { items, truncated: comments.hasMore || timeline.hasMore };
+    return { items, truncated: comments.truncated || timeline.truncated };
   }
 
   private async _fetchTimeTracking(
@@ -259,14 +266,14 @@ export class IssueDetailWebviewProvider {
     try {
       const pageSize = 50;
       let reachedSafetyCap = false;
-      for (let page = 1; page <= 100; page += 1) {
+      for (let page = 1; page <= 4; page += 1) {
         const pageEntries = await client.getIssueTrackedTimes(owner, repo, number, page, pageSize);
         entries.push(...pageEntries);
         if (pageEntries.length < pageSize) break;
-        if (page === 100) reachedSafetyCap = true;
+        if (page === 4) reachedSafetyCap = true;
       }
       entries.splice(0, entries.length, ...Array.from(new Map(entries.map(entry => [entry.id, entry])).values()));
-      if (reachedSafetyCap) error = 'Tracked-time history exceeds 5,000 rows; the displayed total is incomplete.';
+      if (reachedSafetyCap) error = 'Tracked-time history exceeds 200 rows; the displayed total is incomplete.';
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not fetch tracked time';
       logDebug('Could not fetch tracked time:', e);

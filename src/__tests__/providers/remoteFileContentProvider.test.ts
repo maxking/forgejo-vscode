@@ -160,6 +160,18 @@ describe('RemoteFileContentProvider', () => {
 	expect(mockClient.getRepositoryContents).toHaveBeenCalledTimes(2);
   });
 
+  test('refresh without a URI invalidates every virtual document served by the provider', async () => {
+    const uri = createRemoteFileUri('https://git.example.com', 'owner', 'repo', 'main', 'README.md');
+    mockClient.getRepositoryContents.mockResolvedValue({ type: 'file', name: 'README.md', path: 'README.md', encoding: 'base64', content: '' });
+    const changed: vscode.Uri[] = [];
+    provider.onDidChange(changedUri => changed.push(changedUri));
+
+    await provider.provideTextDocumentContent(uri);
+    provider.refresh();
+
+    expect(changed.map(changedUri => changedUri.toString())).toEqual([uri.toString()]);
+  });
+
   test('rejects ambiguous URI formats without the versioned identity layout', () => {
     const uri = vscode.Uri.parse('forgejo-remote:/owner/repo/main/file.ts');
 

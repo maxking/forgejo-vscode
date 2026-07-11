@@ -128,7 +128,7 @@ describe('detail webview timeline activity normalization', () => {
 
     const result = await (provider as any)._fetchTimeTracking(client, 'owner', 'repo', 1, true);
 
-    expect(client.getIssueTrackedTimes).toHaveBeenCalledTimes(100);
+    expect(client.getIssueTrackedTimes).toHaveBeenCalledTimes(4);
     expect(result.error).toContain('incomplete');
   });
 
@@ -142,6 +142,19 @@ describe('detail webview timeline activity normalization', () => {
     const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 1);
 
     expect(result).toEqual({ items: [], truncated: true });
+  });
+
+  test('issue details fetch the last activity page when the API reports a total', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const getIssueCommentsPage = jest.fn((_owner, _repo, _number, { page }) => Promise.resolve(page === 1
+      ? { items: [{ id: 1, created_at: '2020-01-01' }], hasMore: true, totalCount: 101 }
+      : { items: [{ id: 101, created_at: '2026-01-01' }], hasMore: false, totalCount: 101 }));
+    const client = { getIssueCommentsPage, getIssueTimelinePage: jest.fn().mockResolvedValue({ items: [], hasMore: false, totalCount: 0 }) };
+
+    const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 1);
+
+    expect(getIssueCommentsPage).toHaveBeenLastCalledWith('owner', 'repo', 1, { page: 3, limit: 50 });
+    expect(result.items.map((item: any) => item.id)).toEqual([101]);
   });
 
   test('PR details skip duplicate timeline comments and preserve Forgejo type actions', async () => {
@@ -208,5 +221,24 @@ describe('detail webview timeline activity normalization', () => {
       html_url: mockCommit.html_url
     });
     expect(activities[0]).not.toHaveProperty('commit');
+  });
+
+  test('PR details retain the newest page from each bounded activity stream', async () => {
+    const provider = new PRDetailWebviewProvider({} as never);
+    const page = (type: string) => jest.fn((_owner, _repo, _number, options) => Promise.resolve(options.page === 1
+      ? { items: [], hasMore: true, totalCount: 51 }
+      : { items: [{ id: 51, body: type, created_at: '2026-01-01' }], hasMore: false, totalCount: 51 }));
+    const client = {
+      getIssueCommentsPage: page('comment'),
+      getPullRequestReviewsPage: page('review'),
+      getPullRequestCommitsPage: page('commit'),
+      getIssueTimelinePage: jest.fn().mockResolvedValue({ items: [], hasMore: false, totalCount: 0 })
+    };
+
+    const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
+
+    expect(result.truncated).toBe(true);
+    expect(result.items.map((item: any) => item.type).sort()).toEqual(['comment', 'commit', 'review']);
+    expect(client.getPullRequestCommitsPage).toHaveBeenLastCalledWith('owner', 'repo', 42, { page: 2, limit: 50 });
   });
 });
