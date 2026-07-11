@@ -171,7 +171,10 @@ export class WebviewHarness {
     </section>
 
     <section class="activity-section">
-      <h2>Activity <span id="activity-count"></span></h2>
+      <div class="activity-section-header">
+        <h2>Activity <span id="activity-count"></span></h2>
+        <button id="activity-sort-btn" class="icon-btn" title="Toggle activity sort order">Newest first</button>
+      </div>
       <div id="activity-timeline"></div>
     </section>
 
@@ -267,6 +270,7 @@ export class WebviewHarness {
     </header>
 
     <nav class="action-bar">
+      <button id="start-work-btn" class="btn btn-primary">Start Work</button>
       <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
       <button id="open-web-btn" class="btn btn-secondary">Open in Web</button>
       <div id="state-actions" class="state-actions">
@@ -312,7 +316,10 @@ export class WebviewHarness {
     </section>
 
     <section class="activity-section">
-      <h2>Activity <span id="activity-count"></span></h2>
+      <div class="activity-section-header">
+        <h2>Activity <span id="activity-count"></span></h2>
+        <button id="activity-sort-btn" class="icon-btn" title="Toggle activity sort order">Newest first</button>
+      </div>
       <div id="activity-timeline"></div>
     </section>
 
@@ -535,6 +542,7 @@ export interface PRDetailData {
     commit_message?: string;
     title?: string;
   }>;
+  activitySortOrder?: 'newest-first' | 'oldest-first';
   statuses: Array<{
     status: string;
     context?: string;
@@ -568,6 +576,7 @@ export interface IssueDetailData {
     body?: string;
     event?: string;
   }>;
+  activitySortOrder?: 'newest-first' | 'oldest-first';
   timeTracking: {
     canTrack: boolean;
     totalSeconds: number;
