@@ -8,7 +8,7 @@ test.describe('Remote repository directory lazy loading', () => {
   test.setTimeout(60_000);
 
   test.afterEach(async ({ evaluateInVSCode }) => {
-    await evaluateInVSCode(() => {
+    await evaluateInVSCode((vscode) => {
       const globals = globalThis as typeof globalThis & { __forgejoOriginalFetch?: typeof fetch };
       if (globals.__forgejoOriginalFetch) {
         globalThis.fetch = globals.__forgejoOriginalFetch;
@@ -16,11 +16,10 @@ test.describe('Remote repository directory lazy loading', () => {
       }
 
       type DialogGlobals = typeof globalThis & {
-        __forgejoOriginalShowInputBox?: typeof import('vscode').window.showInputBox;
-        __forgejoOriginalShowQuickPick?: typeof import('vscode').window.showQuickPick;
+        __forgejoOriginalShowInputBox?: typeof vscode.window.showInputBox;
+        __forgejoOriginalShowQuickPick?: typeof vscode.window.showQuickPick;
       };
       const dialogGlobals = globalThis as DialogGlobals;
-      const vscode: typeof import('vscode') = require('vscode');
       if (dialogGlobals.__forgejoOriginalShowInputBox) {
         (vscode.window as unknown as { showInputBox: typeof vscode.window.showInputBox }).showInputBox = dialogGlobals.__forgejoOriginalShowInputBox;
         delete dialogGlobals.__forgejoOriginalShowInputBox;
@@ -103,13 +102,12 @@ test.describe('Remote repository directory lazy loading', () => {
     // Drive the repository/branch pickers headlessly instead of the real
     // Quick Input widgets, mirroring how src/test/e2e-vscode/start-work-on-issue.spec.ts
     // patches vscode.window dialogs.
-    await evaluateInVSCode(() => {
+    await evaluateInVSCode((vscode) => {
       type DialogGlobals = typeof globalThis & {
-        __forgejoOriginalShowInputBox?: typeof import('vscode').window.showInputBox;
-        __forgejoOriginalShowQuickPick?: typeof import('vscode').window.showQuickPick;
+        __forgejoOriginalShowInputBox?: typeof vscode.window.showInputBox;
+        __forgejoOriginalShowQuickPick?: typeof vscode.window.showQuickPick;
       };
       const globals = globalThis as DialogGlobals;
-      const vscode: typeof import('vscode') = require('vscode');
 
       globals.__forgejoOriginalShowInputBox ??= vscode.window.showInputBox;
       globals.__forgejoOriginalShowQuickPick ??= vscode.window.showQuickPick;
@@ -127,10 +125,20 @@ test.describe('Remote repository directory lazy loading', () => {
       await vscode.commands.executeCommand('forgejo.browseRemoteRepository');
     });
 
+    // The repository row is nested under the instance's tree node, which
+    // starts collapsed, so expand the instance row first.
+    await expect(workbox.locator('.monaco-list-row', { hasText: 'Forgejo Remote Load More' }).first()).toBeVisible({ timeout: 30_000 });
+    await workbox.locator('.monaco-list-row', { hasText: 'Forgejo Remote Load More' }).first().click();
+
     await expect(workbox.locator('.monaco-list-row', { hasText: 'maxking/forgejo-vscode' }).first()).toBeVisible({ timeout: 30_000 });
     await workbox.locator('.monaco-list-row', { hasText: 'maxking/forgejo-vscode' }).first().click();
 
     await expect(workbox.locator('.monaco-list-row', { hasText: 'file-000.txt' }).first()).toBeVisible({ timeout: 30_000 });
+
+    // The 100-entry page overflows the virtualized tree view, so the
+    // "Load more entries" row (item 101) isn't attached to the DOM until
+    // the list actually scrolls there. Jump to the end of the focused list.
+    await workbox.keyboard.press('End');
     const loadMore = workbox.locator('.monaco-list-row', { hasText: 'Load more entries' }).first();
     await expect(loadMore).toBeVisible({ timeout: 10_000 });
 
