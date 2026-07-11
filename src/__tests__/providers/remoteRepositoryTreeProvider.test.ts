@@ -7,6 +7,7 @@ import {
   RemoteRepositoryFileItem,
   RemoteRepositoryInstanceItem,
   RemoteRepositoryItem,
+  RemoteRepositoryLoadMoreItem,
   RemoteRepositoryTreeProvider,
   openRemoteFile
 } from '../../providers/remoteRepositoryTreeProvider';
@@ -211,7 +212,33 @@ describe('RemoteRepositoryTreeProvider', () => {
     expect(children[1]).toBeInstanceOf(RemoteRepositoryFileItem);
   });
 
-  test('passes bounded directory parameters and adds a cap message for large directories', async () => {
+  test('passes bounded directory parameters and adds a load-more row for large directories', async () => {
+    const repoItem = new RemoteRepositoryItem({
+      instanceId: 'private',
+      instanceName: 'Private Forgejo',
+      instanceUrl: 'https://git.example.com',
+      token: 'secret-token',
+      owner: 'maxking',
+      repo: 'forgejo-vscode',
+      branch: 'main'
+    });
+    mockClient.getRepositoryContents.mockResolvedValueOnce(Array.from({ length: 100 }, (_value, index) => ({
+      type: 'file',
+      name: `file-${index}.txt`,
+      path: `file-${index}.txt`,
+      size: 1
+    })));
+
+    const children = await provider.getChildren(repoItem);
+
+    expect(mockClient.getRepositoryContents).toHaveBeenCalledTimes(1);
+    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', { ref: 'main', page: 1, limit: 100 });
+    expect(children).toHaveLength(101);
+    expect(children[100]).toBeInstanceOf(RemoteRepositoryLoadMoreItem);
+    expect(String((children[100] as vscode.TreeItem).label)).toBe('Load more entries');
+  });
+
+  test('loads the next directory page when the load-more row is activated', async () => {
     const repoItem = new RemoteRepositoryItem({
       instanceId: 'private',
       instanceName: 'Private Forgejo',
@@ -235,12 +262,77 @@ describe('RemoteRepositoryTreeProvider', () => {
         size: 1
       }]);
 
-    const children = await provider.getChildren(repoItem);
+    const firstPageChildren = await provider.getChildren(repoItem);
+    const loadMoreItem = firstPageChildren[100] as RemoteRepositoryLoadMoreItem;
 
-    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', { ref: 'main', page: 1, limit: 100 });
-    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', { ref: 'main', page: 2, limit: 1 });
-    expect(children).toHaveLength(101);
-    expect(String((children[100] as vscode.TreeItem).label)).toContain('Showing first 100 entries');
+    await provider.loadMoreDirectoryEntries(loadMoreItem);
+    const secondPageChildren = await provider.getChildren(repoItem);
+
+    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', { ref: 'main', page: 2, limit: 100 });
+    expect(secondPageChildren).toHaveLength(101);
+    expect(secondPageChildren.some(child => (child as vscode.TreeItem).label === 'file-100.txt')).toBe(true);
+    expect(secondPageChildren.some(child => child instanceof RemoteRepositoryLoadMoreItem)).toBe(false);
+  });
+
+  test('stops offering load-more once a directory page returns exactly the page size with no more entries', async () => {
+    const repoItem = new RemoteRepositoryItem({
+      instanceId: 'private',
+      instanceName: 'Private Forgejo',
+      instanceUrl: 'https://git.example.com',
+      token: 'secret-token',
+      owner: 'maxking',
+      repo: 'forgejo-vscode',
+      branch: 'main'
+    });
+    mockClient.getRepositoryContents
+      .mockResolvedValueOnce(Array.from({ length: 100 }, (_value, index) => ({
+        type: 'file',
+        name: `file-${index}.txt`,
+        path: `file-${index}.txt`,
+        size: 1
+      })))
+      .mockResolvedValueOnce([]);
+
+    const firstPageChildren = await provider.getChildren(repoItem);
+    const loadMoreItem = firstPageChildren[100] as RemoteRepositoryLoadMoreItem;
+
+    await provider.loadMoreDirectoryEntries(loadMoreItem);
+    const secondPageChildren = await provider.getChildren(repoItem);
+
+    expect(mockClient.getRepositoryContents).toHaveBeenCalledWith('maxking', 'forgejo-vscode', '', { ref: 'main', page: 2, limit: 100 });
+    expect(secondPageChildren).toHaveLength(100);
+    expect(secondPageChildren.some(child => child instanceof RemoteRepositoryLoadMoreItem)).toBe(false);
+  });
+
+  test('deduplicates directory entries that overlap across pages', async () => {
+    const repoItem = new RemoteRepositoryItem({
+      instanceId: 'private',
+      instanceName: 'Private Forgejo',
+      instanceUrl: 'https://git.example.com',
+      token: 'secret-token',
+      owner: 'maxking',
+      repo: 'forgejo-vscode',
+      branch: 'main'
+    });
+    const firstPageEntries = Array.from({ length: 100 }, (_value, index) => ({
+      type: 'file',
+      name: `file-${index}.txt`,
+      path: `file-${index}.txt`,
+      size: 1
+    }));
+    mockClient.getRepositoryContents
+      .mockResolvedValueOnce(firstPageEntries)
+      .mockResolvedValueOnce([firstPageEntries[99], { type: 'file', name: 'file-100.txt', path: 'file-100.txt', size: 1 }]);
+
+    const firstPageChildren = await provider.getChildren(repoItem);
+    const loadMoreItem = firstPageChildren[100] as RemoteRepositoryLoadMoreItem;
+
+    await provider.loadMoreDirectoryEntries(loadMoreItem);
+    const secondPageChildren = await provider.getChildren(repoItem);
+
+    const labels = secondPageChildren.map(child => String((child as vscode.TreeItem).label));
+    expect(labels.filter(label => label === 'file-99.txt')).toHaveLength(1);
+    expect(secondPageChildren).toHaveLength(101);
   });
 
   test('opens remote files as virtual documents with full repository identity', async () => {

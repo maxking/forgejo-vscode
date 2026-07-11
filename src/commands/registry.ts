@@ -19,7 +19,7 @@ import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
 import type { IssueLoadMoreItem, IssueRepositoryItem, IssueTreeItem } from '../providers/issueTreeProvider';
 import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem, PRLoadMoreItem, PRFileLoadMoreItem } from '../providers/prTreeProvider';
-import type { RemoteRepositoryBrowseItem, RemoteRepositoryFileItem, RemoteRepositoryInstanceItem, RemoteRepositoryItem } from '../providers/remoteRepositoryTreeProvider';
+import type { RemoteRepositoryBrowseItem, RemoteRepositoryFileItem, RemoteRepositoryInstanceItem, RemoteRepositoryItem, RemoteRepositoryLoadMoreItem } from '../providers/remoteRepositoryTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs, ActionLoadMoreItem } from '../providers/actionsTreeProvider';
 import type { TodoIssueDraft } from '../providers/referenceLanguageProvider';
 import type { ReleaseGroupItem, ReleaseRepositoryItem, ReleaseLoadMoreItem } from '../providers/releaseTreeProvider';
@@ -63,6 +63,7 @@ export interface CommandMap {
   'forgejo.browseRemoteRepository': [item?: RemoteRepositoryInstanceItem | RemoteRepositoryBrowseItem];
   'forgejo.selectRemoteRepositoryBranch': [item?: RemoteRepositoryItem];
   'forgejo.openRemoteFile': [item?: RemoteRepositoryFileItem];
+  'forgejo.loadMoreRemoteDirectoryEntries': [item: RemoteRepositoryLoadMoreItem];
   'forgejo.createIssue': [];
   'forgejo.createIssueForRepository': [repositoryItem: IssueRepositoryItem];
   'forgejo.createIssueFromTodo': [draft: TodoIssueDraft];
