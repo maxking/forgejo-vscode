@@ -66,6 +66,10 @@
           "name": "Repositories"
         },
         {
+          "id": "forgejoSavedQueries",
+          "name": "Saved Queries"
+        },
+        {
           "id": "forgejoPullRequests",
           "name": "Pull Requests"
         },
@@ -343,6 +347,41 @@
         "command": "forgejo.openReleaseInBrowser",
         "title": "Open Release in Browser",
         "icon": "$(link-external)"
+      },
+      {
+        "command": "forgejo.refreshSavedQueries",
+        "title": "Forgejo: Refresh Saved Queries",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.loadMoreSavedQuery",
+        "title": "Load More",
+        "icon": "$(more)"
+      },
+      {
+        "command": "forgejo.addSavedQuery",
+        "title": "Forgejo: Add Saved Query",
+        "icon": "$(add)"
+      },
+      {
+        "command": "forgejo.editSavedQuery",
+        "title": "Edit Saved Query",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "forgejo.removeSavedQuery",
+        "title": "Remove Saved Query",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "forgejo.moveSavedQueryUp",
+        "title": "Move Saved Query Up",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "forgejo.moveSavedQueryDown",
+        "title": "Move Saved Query Down",
+        "icon": "$(arrow-down)"
       }
     ],
     "yamlValidation": [
@@ -434,6 +473,21 @@
         {
           "command": "forgejo.manageInstances",
           "when": "view == forgejoReleases",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.addSavedQuery",
+          "when": "view == forgejoSavedQueries",
+          "group": "navigation@0"
+        },
+        {
+          "command": "forgejo.refreshSavedQueries",
+          "when": "view == forgejoSavedQueries",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.manageInstances",
+          "when": "view == forgejoSavedQueries",
           "group": "navigation@2"
         }
       ],
@@ -560,6 +614,31 @@
           "command": "forgejo.openReleaseInBrowser",
           "when": "viewItem == release || viewItem == releaseDraft || viewItem == releasePrerelease",
           "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.editSavedQuery",
+          "when": "viewItem == savedQueryCustomGroup",
+          "group": "navigation@0"
+        },
+        {
+          "command": "forgejo.moveSavedQueryUp",
+          "when": "viewItem == savedQueryCustomGroup",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.moveSavedQueryDown",
+          "when": "viewItem == savedQueryCustomGroup",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.removeSavedQuery",
+          "when": "viewItem == savedQueryCustomGroup",
+          "group": "navigation@3"
+        },
+        {
+          "command": "forgejo.loadMoreSavedQuery",
+          "when": "viewItem == savedQueryLoadMore",
+          "group": "inline@0"
         }
       ],
       "comments/commentThread/context": [
@@ -606,6 +685,11 @@
         "view": "forgejoActions",
         "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
         "when": "forgejo.noInstanceConfigured"
+      },
+      {
+        "view": "forgejoSavedQueries",
+        "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
+        "when": "forgejo.noInstanceConfigured"
       }
     ],
     "configuration": {
@@ -646,6 +730,31 @@
               },
               "lastConnectionTest": {
                 "type": "object"
+              }
+            }
+          }
+        },
+        "forgejo.savedQueries": {
+          "type": "array",
+          "default": [],
+          "description": "Custom saved PR/issue query groups shown in the Saved Queries view, in addition to the built-in defaults (Waiting for my review, Assigned to me, Created by me, Mentioned me, Recently updated).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string",
+                "enum": ["pullRequests", "issues", "both"],
+                "description": "Whether this query searches pull requests, issues, or both."
+              },
+              "query": {
+                "type": "string",
+                "description": "Free-text server-side search query."
               }
             }
           }

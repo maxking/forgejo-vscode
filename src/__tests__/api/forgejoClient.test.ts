@@ -296,6 +296,100 @@ describe('ForgejoClient', () => {
 
       expect(rawSpy).toHaveBeenCalledWith('GET', '/user');
     });
+
+    describe('sort passthrough (#187 saved query dashboard)', () => {
+      test('getPullRequestsPage should omit sort from the default list path when not provided', async () => {
+        const listPageSpy = jest.spyOn(client, 'listPullRequestsPage').mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false,
+          totalCount: null
+        });
+
+        await client.getPullRequestsPage('owner', 'repo', 'open', 1, 50);
+
+        expect(listPageSpy).toHaveBeenCalledWith('owner', 'repo', { state: 'open', page: 1, limit: 50, sort: undefined });
+      });
+
+      test('getPullRequestsPage should pass sort through to the default list path', async () => {
+        const listPageSpy = jest.spyOn(client, 'listPullRequestsPage').mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false,
+          totalCount: null
+        });
+
+        await client.getPullRequestsPage('owner', 'repo', 'open', 1, 50, { sort: 'recentupdate' });
+
+        expect(listPageSpy).toHaveBeenCalledWith('owner', 'repo', { state: 'open', page: 1, limit: 50, sort: 'recentupdate' });
+      });
+
+      test('getPullRequestsPage should pass sort through the free-text search path', async () => {
+        const searchSpy = jest.spyOn(client, 'searchPullRequestsPage').mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false,
+          totalCount: null
+        });
+
+        await client.getPullRequestsPage('owner', 'repo', 'open', 1, 50, { query: 'bug', sort: 'recentupdate' });
+
+        expect(searchSpy).toHaveBeenCalledWith('owner', 'repo', { state: 'open', page: 1, limit: 50, query: 'bug', sort: 'recentupdate' });
+      });
+
+      test('getPullRequestsPage should pass sort through the issue-filter search path', async () => {
+        const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue([]);
+
+        await client.getPullRequestsPage('owner', 'repo', 'open', 1, 50, { assignedBy: 'alice', sort: 'recentupdate' });
+
+        expect(rawSpy).toHaveBeenCalledWith(
+          'GET',
+          '/repos/owner/repo/issues?state=open&type=pulls&assigned_by=alice&sort=recentupdate&page=1&limit=50'
+        );
+      });
+
+      test('getPullRequestsPage should pass sort through the review-requested search path', async () => {
+        const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue([]);
+
+        await client.getPullRequestsPage('owner', 'repo', 'open', 1, 50, { reviewRequestedBy: 'alice', sort: 'recentupdate' });
+
+        expect(rawSpy).toHaveBeenCalledWith(
+          'GET',
+          '/repos/issues/search?state=open&type=pulls&sort=recentupdate&review_requested=true&owner=owner&page=1&limit=50'
+        );
+      });
+
+      test('getIssuesPage should omit sort when not provided', async () => {
+        const listPageSpy = jest.spyOn(client, 'listIssuesPage').mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false,
+          totalCount: null
+        });
+
+        await client.getIssuesPage('owner', 'repo', 'open', 1, 50);
+
+        expect(listPageSpy).toHaveBeenCalledWith('owner', 'repo', { state: 'open', page: 1, limit: 50 });
+      });
+
+      test('getIssuesPage should pass sort through to forgejo-ts', async () => {
+        const listPageSpy = jest.spyOn(client, 'listIssuesPage').mockResolvedValueOnce({
+          items: [],
+          page: 1,
+          limit: 50,
+          hasMore: false,
+          totalCount: null
+        });
+
+        await client.getIssuesPage('owner', 'repo', 'open', 1, 50, { sort: 'recentupdate' });
+
+        expect(listPageSpy).toHaveBeenCalledWith('owner', 'repo', { state: 'open', page: 1, limit: 50, sort: 'recentupdate' });
+      });
+    });
   });
 
   describe('issue time tracking', () => {

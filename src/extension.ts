@@ -4,6 +4,7 @@ import { IssueTreeProvider, IssueTreeItem } from './providers/issueTreeProvider'
 import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs, workflowRunNumberForItem } from './providers/actionsTreeProvider';
 import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
 import { RemoteRepositoryTreeProvider, RemoteRepositoryItem, RemoteRepositoryLoadMoreItem, openRemoteFile } from './providers/remoteRepositoryTreeProvider';
+import { SavedQueryTreeProvider, SavedQueryGroupItem, SavedQueryLoadMoreItem } from './providers/savedQueryTreeProvider';
 import { WorkflowRunListItem } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUris } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
@@ -17,6 +18,7 @@ import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
 import { configureInstanceUrlCommand, setAuthTokenCommand } from './commands/legacyConfig';
 import { migrateToMultiInstance } from './utils/migration';
 import { getAllInstances } from './utils/instanceHelpers';
+import { addCustomSavedQuery, moveCustomSavedQuery, removeCustomSavedQuery, SavedQueryTarget, updateCustomSavedQuery } from './utils/savedQueries';
 import { startOnboarding } from './commands/onboarding';
 import { manageInstances } from './commands/instanceManager';
 import { showDiagnostics } from './commands/diagnostics';
@@ -64,6 +66,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const actionsTreeProvider = new ActionsTreeProvider();
   const releaseTreeProvider = new ReleaseTreeProvider();
   const remoteRepositoryTreeProvider = new RemoteRepositoryTreeProvider();
+  const savedQueryTreeProvider = new SavedQueryTreeProvider();
   const workflowDiagnostics = registerWorkflowDiagnostics(context);
 
   // Late-bound so addInstance/manageInstances can trigger a re-registration
@@ -122,6 +125,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const remoteRepositoryTreeView = vscode.window.createTreeView('forgejoRemoteRepositories', {
     treeDataProvider: remoteRepositoryTreeProvider,
+    showCollapseAll: true
+  });
+
+  const savedQueryTreeView = vscode.window.createTreeView('forgejoSavedQueries', {
+    treeDataProvider: savedQueryTreeProvider,
     showCollapseAll: true
   });
 
@@ -903,6 +911,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(issueTreeView);
   context.subscriptions.push(actionsTreeView);
   context.subscriptions.push(remoteRepositoryTreeView);
+  context.subscriptions.push(savedQueryTreeView);
 
   // Create PR detail webview provider (not registered as WebviewViewProvider since we use WebviewPanel)
   const prDetailWebviewProvider = new PRDetailWebviewProvider(context.extensionUri);
@@ -1004,6 +1013,122 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Add releases tree view to subscriptions
   context.subscriptions.push(releaseTreeView);
+
+  // Register saved query dashboard commands
+  const savedQueryTargetPicks: { label: string; value: SavedQueryTarget }[] = [
+    { label: 'Pull Requests', value: 'pullRequests' },
+    { label: 'Issues', value: 'issues' },
+    { label: 'Both', value: 'both' }
+  ];
+
+  context.subscriptions.push(
+    registerCommand('forgejo.refreshSavedQueries', () => {
+      savedQueryTreeProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.loadMoreSavedQuery', (item: SavedQueryLoadMoreItem) => savedQueryTreeProvider.loadMoreSavedQuery(item))
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.addSavedQuery', async () => {
+      const label = await vscode.window.showInputBox({ prompt: 'Saved query label', placeHolder: 'e.g. Needs triage' });
+      if (!label) {
+        return;
+      }
+
+      const query = await vscode.window.showInputBox({ prompt: 'Search query (Forgejo search syntax)', placeHolder: 'e.g. label:bug' });
+      if (query === undefined) {
+        return;
+      }
+
+      const targetPick = await vscode.window.showQuickPick(savedQueryTargetPicks, { placeHolder: 'What should this query search?' });
+      if (!targetPick) {
+        return;
+      }
+
+      await addCustomSavedQuery({ label, target: targetPick.value, query });
+      savedQueryTreeProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.editSavedQuery', async (item?: SavedQueryGroupItem) => {
+      if (!item || item.group.builtin) {
+        return;
+      }
+
+      const group = item.group;
+      const label = await vscode.window.showInputBox({ prompt: 'Saved query label', value: group.label });
+      if (!label) {
+        return;
+      }
+
+      const query = await vscode.window.showInputBox({ prompt: 'Search query (Forgejo search syntax)', value: group.query });
+      if (query === undefined) {
+        return;
+      }
+
+      const targetPick = await vscode.window.showQuickPick(savedQueryTargetPicks, { placeHolder: 'What should this query search?' });
+      if (!targetPick) {
+        return;
+      }
+
+      await updateCustomSavedQuery(group.id, { label, query, target: targetPick.value });
+      savedQueryTreeProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.removeSavedQuery', async (item?: SavedQueryGroupItem) => {
+      if (!item || item.group.builtin) {
+        return;
+      }
+
+      const confirmation = await vscode.window.showWarningMessage(
+        `Remove saved query "${item.group.label}"?`,
+        { modal: true },
+        'Remove'
+      );
+      if (confirmation !== 'Remove') {
+        return;
+      }
+
+      await removeCustomSavedQuery(item.group.id);
+      savedQueryTreeProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.moveSavedQueryUp', async (item?: SavedQueryGroupItem) => {
+      if (!item || item.group.builtin) {
+        return;
+      }
+
+      await moveCustomSavedQuery(item.group.id, 'up');
+      savedQueryTreeProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.moveSavedQueryDown', async (item?: SavedQueryGroupItem) => {
+      if (!item || item.group.builtin) {
+        return;
+      }
+
+      await moveCustomSavedQuery(item.group.id, 'down');
+      savedQueryTreeProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('forgejo.savedQueries')) {
+        savedQueryTreeProvider.refresh();
+      }
+    })
+  );
 
   const gitExtension = await activateGitExtension();
 
