@@ -21,6 +21,7 @@ import { startOnboarding } from './commands/onboarding';
 import { manageInstances } from './commands/instanceManager';
 import { showDiagnostics } from './commands/diagnostics';
 import { showPrivacyInfo } from './commands/privacyInfo';
+import { copyPermalinkCommand } from './commands/copyPermalink';
 import { openWorkflowFileForRepository, openWorkflowFileForCIStatus, validateWorkflowsCommand, viewCIStatusLogs } from './commands/ciNavigation';
 import { createIssueCommand } from './commands/createIssue';
 import { createPullRequestCommand } from './commands/createPullRequest';
@@ -194,6 +195,12 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand('forgejo.showPrivacyInfo', async () => {
       await showPrivacyInfo();
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.copyPermalink', async () => {
+      await copyPermalinkCommand();
     })
   );
 

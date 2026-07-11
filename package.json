@@ -130,6 +130,11 @@
         "icon": "$(shield)"
       },
       {
+        "command": "forgejo.copyPermalink",
+        "title": "Forgejo: Copy Permalink",
+        "icon": "$(link)"
+      },
+      {
         "command": "forgejo.validateWorkflows",
         "title": "Forgejo: Validate Workflow Files",
         "icon": "$(checklist)"
@@ -434,6 +439,10 @@
       ],
       "commandPalette": [
         {
+          "command": "forgejo.copyPermalink",
+          "when": "resourceScheme == file"
+        },
+        {
           "command": "forgejo.selectRemoteRepositoryBranch",
           "when": "false"
         },
@@ -557,6 +566,13 @@
         {
           "command": "forgejo.submitInlineComment",
           "group": "inline"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "forgejo.copyPermalink",
+          "when": "resourceScheme == file",
+          "group": "9_forgejo"
         }
       ]
     },
