@@ -66,6 +66,9 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - PR checkout and revert actions must resolve the local repository through the VS Code Git API using instance/owner/repo identity. Use Git API operations when available; for operations it does not expose, invoke `git` with an argument array and the matched repository cwd, never by interpolating API values into a terminal shell command.
 - Webviews that begin loading before their `ready` message must retain both pending data and pending errors so fast failures do not leave an indefinite loading screen.
 - Publishing must validate the local commit/content state and chosen remote name before creating the server-side repository, so predictable local failures do not leave orphan repositories.
+- Share the Git extension's initial repository-discovery readiness promise across view/config consumers; repeated view refreshes should parse current repositories without paying a new quiet-period delay.
+- Detail webviews should fetch independent bounded activity pages concurrently and use request generations so an older refresh cannot overwrite a newer result.
+- Workflow task rows expose `run_number`, but Actions detail/job/rerun API routes require the ActionRun `id`; resolve that id explicitly before calling `/actions/runs/{id}` endpoints.
 
 ## Architecture & Code Patterns
 

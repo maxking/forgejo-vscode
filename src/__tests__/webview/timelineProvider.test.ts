@@ -105,6 +105,22 @@ describe('detail webview timeline activity normalization', () => {
     expect(client.getUserStopwatches).not.toHaveBeenCalled();
   });
 
+  test('tracked-time pagination deduplicates overlapping ids before totals', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const pageOne = Array.from({ length: 50 }, (_, index) => ({ id: index + 1, time: 60 }));
+    const client = {
+      getIssueTrackedTimes: jest.fn()
+        .mockResolvedValueOnce(pageOne)
+        .mockResolvedValueOnce([{ id: 50, time: 60 }, { id: 51, time: 120 }]),
+      getUserStopwatches: jest.fn().mockResolvedValue([])
+    };
+
+    const result = await (provider as any)._fetchTimeTracking(client, 'owner', 'repo', 1, true);
+
+    expect(result.entries).toHaveLength(51);
+    expect(result.totalSeconds).toBe(3120);
+  });
+
   test('PR details skip duplicate timeline comments and preserve Forgejo type actions', async () => {
     const provider = new PRDetailWebviewProvider({} as never);
     const client = {

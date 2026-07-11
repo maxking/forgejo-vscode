@@ -335,4 +335,54 @@ test.describe('Pull Request lazy loading', () => {
     });
     expect(calls.some(url => url.includes('/pulls') && url.includes('state=open') && url.includes('page=2'))).toBe(true);
   });
+
+  test('loads additional changed-file pages from an expanded PR row', async ({ harness, evaluateInVSCode, workbox }) => {
+    await harness.waitForExtensionActivation();
+    await evaluateInVSCode(async (vscode) => {
+      const config = vscode.workspace.getConfiguration('forgejo');
+      await config.update('instances', [{ id: 'file-pages', name: 'File Pages', instanceUrl: 'https://codeberg.org', token: '', isDefault: true }], vscode.ConfigurationTarget.Global);
+      await config.update('autoDetectFromRemote', false, vscode.ConfigurationTarget.Global);
+    });
+    await evaluateInVSCode(() => {
+      const globals = globalThis as typeof globalThis & { __forgejoOriginalFetch?: typeof fetch; __forgejoFetchCalls?: string[] };
+      globals.__forgejoOriginalFetch ??= globalThis.fetch;
+      globals.__forgejoFetchCalls = [];
+      globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        const parsed = new URL(url);
+        globals.__forgejoFetchCalls?.push(url);
+        if (parsed.pathname.endsWith('/pulls') && parsed.searchParams.get('state') === 'open') {
+          return new Response(JSON.stringify([{ number: 700, title: 'Paged files', state: 'open', user: { login: 'alice' }, html_url: 'https://codeberg.org/maxking/forgejo-vscode/pulls/700', created_at: '2026-01-01T00:00:00Z', merged: false, draft: false, mergeable: true, comments: 0 }]), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '1' } });
+        }
+        if (parsed.pathname.endsWith('/pulls') && parsed.searchParams.get('state') === 'closed') {
+          return new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '0' } });
+        }
+        if (parsed.pathname.endsWith('/pulls/700/files')) {
+          const page = parsed.searchParams.get('page') ?? '1';
+          const files = page === '1'
+            ? Array.from({ length: 50 }, (_, index) => ({ filename: `src/page-one-${String(index)}.ts`, status: 'modified', additions: 1, deletions: 0, changes: 1 }))
+            : [{ filename: 'src/page-two.ts', status: 'added', additions: 1, deletions: 0, changes: 1 }];
+          return new Response(JSON.stringify(files), { status: 200, headers: { 'content-type': 'application/json', 'x-total-count': '51' } });
+        }
+        if (parsed.pathname.endsWith('/pulls/700')) {
+          return new Response(JSON.stringify({ number: 700, merge_base: 'base-sha', base: { ref: 'main', sha: 'tip' }, head: { ref: 'feature', sha: 'head-sha' } }), { status: 200, headers: { 'content-type': 'application/json' } });
+        }
+        return globals.__forgejoOriginalFetch!(input, init);
+      };
+    });
+
+    await harness.openForgejoSidebar();
+    await evaluateInVSCode(async (vscode) => {
+      await vscode.commands.executeCommand('forgejoPullRequests.focus');
+      await vscode.commands.executeCommand('forgejo.refreshPullRequests');
+    });
+    const prRow = workbox.locator('.monaco-list-row', { hasText: /#700: Paged files/ }).first();
+    await expect(prRow).toBeVisible({ timeout: 30_000 });
+    await prRow.click();
+    const loadMore = workbox.locator('.monaco-list-row', { hasText: 'Load more changed files' }).first();
+    await expect(loadMore).toBeVisible({ timeout: 30_000 });
+    await loadMore.click();
+    await workbox.keyboard.press('Enter');
+    await expect(workbox.locator('.monaco-list-row', { hasText: 'page-two.ts' }).first()).toBeVisible({ timeout: 30_000 });
+  });
 });

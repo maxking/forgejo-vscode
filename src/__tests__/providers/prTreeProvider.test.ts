@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PRTreeProvider, PRTreeItem, PRLoadMoreItem, PRFileItem, PROverviewItem, PRRepositoryItem } from '../../providers/prTreeProvider';
+import { PRTreeProvider, PRTreeItem, PRLoadMoreItem, PRFileLoadMoreItem, PRFileItem, PROverviewItem, PRRepositoryItem } from '../../providers/prTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { PullRequestListItem, PullRequestFile } from '../../models/pullRequest';
@@ -481,6 +481,16 @@ describe('PRTreeProvider', () => {
       expect(mockClient.getPullRequestDetails).toHaveBeenCalledWith('test-owner', 'test-repo', 42);
       expect(prItem.pr.mergeable).toBe(false);
       expect(prItem.description).toBe('by testuser - Merge conflicts');
+    });
+
+    test('bounds mergeability hydration to five PR details per render', async () => {
+      const openPRs = Array.from({ length: 12 }, (_, index) => ({ ...mockPR, number: index + 1 }));
+      mockClient.getPullRequestsPage.mockResolvedValue(prPage(openPRs));
+
+      const groups = await provider.getChildren();
+      await provider.getChildren(groups.find(child => (child as any).label === 'Open'));
+
+      expect(mockClient.getPullRequestDetails).toHaveBeenCalledTimes(5);
     });
 
     test('should not fire tree refresh while resolving group children', async () => {
@@ -1244,6 +1254,28 @@ describe('PRTreeProvider', () => {
       const children = await provider.getChildren(prItem);
       expect(mockClient.getPullRequestFiles).toHaveBeenCalledTimes(1); // Still 1
       expect(children.length).toBe(1 + mockAllFileTypes.length);
+    });
+
+    test('loads and deduplicates later changed-file pages explicitly', async () => {
+      const first = mockAllFileTypes.slice(0, 2);
+      const later = [first[1], mockAllFileTypes[2]];
+      mockClient.getPullRequestFilesPage = jest.fn()
+        .mockResolvedValueOnce({ items: first, page: 1, limit: 50, hasMore: true })
+        .mockResolvedValueOnce({ items: later, page: 2, limit: 50, hasMore: false });
+      mockClient.getPullRequest.mockResolvedValue(mockPRWithRefs as any);
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo', mockConfig);
+
+      const initial = await provider.getChildren(prItem);
+      const loadMore = initial.find(item => item instanceof PRFileLoadMoreItem) as PRFileLoadMoreItem;
+      expect(loadMore).toBeDefined();
+
+      await provider.loadMorePullRequestFiles(loadMore);
+      const loaded = await provider.getChildren(prItem);
+      expect(loaded.filter(item => item instanceof PRFileItem)).toHaveLength(3);
+      expect(loaded.some(item => item instanceof PRFileLoadMoreItem)).toBe(false);
+      expect(mockClient.getPullRequestFilesPage).toHaveBeenLastCalledWith(
+        'test-owner', 'test-repo', 42, { page: 2, limit: 50 }
+      );
     });
 
     test('should return error message on file fetch failure', async () => {

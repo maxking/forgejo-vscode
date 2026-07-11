@@ -344,17 +344,13 @@ describe('ForgejoClient', () => {
     });
   });
 
-	describe('mergePullRequestWithMessage', () => {
-		test('sends the user-entered merge message to Forgejo', async () => {
-			const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue(undefined as any);
+	describe('getWorkflowRunByNumber', () => {
+		test('resolves a repository-local run number to its distinct API id', async () => {
+			const run = { ...mockWorkflowRunDetails, id: 9001, run_number: 42 };
+			const rawSpy = jest.spyOn(client, 'rawRequest').mockResolvedValue({ workflow_runs: [run] } as any);
 
-			await client.mergePullRequestWithMessage('owner', 'repo', 42, 'squash', '  Release fix  ');
-
-			expect(rawSpy).toHaveBeenCalledWith(
-				'POST',
-				'/repos/owner/repo/pulls/42/merge',
-				{ Do: 'squash', MergeMessageField: 'Release fix', delete_branch_after_merge: false }
-			);
+			await expect(client.getWorkflowRunByNumber('owner', 'repo', 42)).resolves.toEqual(run);
+			expect(rawSpy).toHaveBeenCalledWith('GET', '/repos/owner/repo/actions/runs?run_number=42&page=1&limit=2');
 		});
 	});
 

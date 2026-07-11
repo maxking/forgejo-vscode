@@ -155,6 +155,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "forgejo.loadMorePullRequestFiles",
+        "title": "Forgejo: Load More Pull Request Files",
+        "icon": "$(more)"
+      },
+      {
         "command": "forgejo.browseRemoteRepository",
         "title": "Forgejo: Browse Remote Repository",
         "icon": "$(search)"
@@ -313,6 +318,11 @@
         "command": "forgejo.refreshReleases",
         "title": "Forgejo: Refresh Releases",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.loadMoreReleases",
+        "title": "Forgejo: Load More Releases",
+        "icon": "$(more)"
       },
       {
         "command": "forgejo.createRelease",

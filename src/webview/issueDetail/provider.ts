@@ -70,6 +70,7 @@ interface PanelState {
   isReady: boolean;
   pendingData?: IssueDetailViewData | null;
   pendingError?: string | null;
+  requestVersion?: number;
 }
 
 export class IssueDetailWebviewProvider {
@@ -111,7 +112,8 @@ export class IssueDetailWebviewProvider {
       instanceUrl,
       isReady: false,
       pendingData: null,
-      pendingError: null
+      pendingError: null,
+      requestVersion: 0
     };
     this._panels.set(panelKey, state);
 
@@ -138,6 +140,7 @@ export class IssueDetailWebviewProvider {
     if (!state) return;
 
     const { panel, owner, repo, number, instanceUrl } = state;
+    const requestVersion = state.requestVersion = (state.requestVersion ?? 0) + 1;
     logInfo('_fetchIssueData starting:', { panelKey, isReady: state.isReady });
 
     try {
@@ -152,6 +155,7 @@ export class IssueDetailWebviewProvider {
       logInfo('Activities fetched:', { activities: activities.length });
 
       const timeTracking = await this._fetchTimeTracking(client, owner, repo, number, Boolean(config.token));
+      if (requestVersion !== state.requestVersion) return;
       logInfo('Time tracking fetched:', {
         totalSeconds: timeTracking.totalSeconds,
         entries: timeTracking.entries.length,
@@ -178,6 +182,7 @@ export class IssueDetailWebviewProvider {
         logInfo('Webview not ready yet, data will be sent when ready');
       }
     } catch (error) {
+      if (requestVersion !== state.requestVersion) return;
       logError('Failed to fetch Issue data:', error);
       const message = error instanceof Error ? error.message : 'Failed to load Issue details';
       if (state.isReady) {
@@ -213,12 +218,14 @@ export class IssueDetailWebviewProvider {
 
   private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<IssueActivity[]> {
     const activities: IssueActivity[] = [];
-    try {
-      const comments = await client.getIssueComments(owner, repo, number);
+    const pageClient = client as Partial<ForgejoClient>;
+    const firstPage = async <T>(paged: (() => Promise<{ items: T[] }>) | undefined, legacy: () => Promise<T[]>): Promise<T[]> =>
+      typeof paged === 'function' ? (await paged()).items : legacy();
+    const [comments, timeline] = await Promise.all([
+      firstPage(pageClient.getIssueCommentsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return []; }),
+      firstPage(pageClient.getIssueTimelinePage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return []; })
+    ]);
       activities.push(...(comments as IssueActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
-    } catch (e) { logDebug('Could not fetch comments:', e); }
-    try {
-      const timeline = await client.getIssueTimeline(owner, repo, number);
       activities.push(...(timeline as IssueTimelineApiActivity[]).flatMap((t): IssueActivity[] => {
         const event = getTimelineEventName(t);
         if (!event || event === 'comment' || event === 'commented') {
@@ -226,7 +233,6 @@ export class IssueDetailWebviewProvider {
         }
         return [{ ...t, event, type: 'timeline' as const }];
       }));
-    } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? 0);
       const dateB = new Date(b.created_at ?? 0);
@@ -253,6 +259,7 @@ export class IssueDetailWebviewProvider {
         entries.push(...pageEntries);
         if (pageEntries.length < pageSize) break;
       }
+      entries.splice(0, entries.length, ...Array.from(new Map(entries.map(entry => [entry.id, entry])).values()));
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not fetch tracked time';
       logDebug('Could not fetch tracked time:', e);

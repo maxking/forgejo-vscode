@@ -106,8 +106,12 @@ function parseGitRepositories(git: ReturnType<GitExtension['getAPI']>, remoteNam
     .filter((info): info is GitRepositoryRemoteInfo => info !== null);
 }
 
-async function waitForGitRepositoryDiscovery(git: ReturnType<GitExtension['getAPI']>, timeoutMs = 5000, quietMs = 750): Promise<void> {
-  await new Promise<void>((resolve) => {
+let gitReadiness = new WeakMap<object, Promise<void>>();
+
+export function waitForGitRepositoryDiscovery(git: ReturnType<GitExtension['getAPI']>, timeoutMs = 5000, quietMs = 750): Promise<void> {
+  const cached = gitReadiness.get(git);
+  if (cached) return cached;
+  const readiness = new Promise<void>((resolve) => {
     const state: { disposable?: vscode.Disposable; quietTimer?: ReturnType<typeof setTimeout> } = {};
     let finished = false;
     const timeout = setTimeout(() => finish(), timeoutMs);
@@ -136,6 +140,12 @@ async function waitForGitRepositoryDiscovery(git: ReturnType<GitExtension['getAP
       scheduleQuietFinish();
     }
   });
+  gitReadiness.set(git, readiness);
+  return readiness;
+}
+
+export function resetGitRepositoryReadinessForTesting(): void {
+  gitReadiness = new WeakMap<object, Promise<void>>();
 }
 
 export function detectGitRepositories(remoteName?: string): GitRepositoryRemoteInfo[] {

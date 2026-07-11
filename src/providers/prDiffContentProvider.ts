@@ -120,6 +120,8 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
 
       // Cache the result
       this.cache.set(uri.toString(), content);
+      const oldest = this.cache.keys().next();
+      if (this.cache.size > 100 && !oldest.done) this.cache.delete(oldest.value);
 
       return content;
     } catch (error) {

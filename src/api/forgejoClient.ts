@@ -377,22 +377,12 @@ export class ForgejoClient extends BaseClient {
     return this.updatePullRequest(owner, repo, number, { body });
   }
 
-  async mergePullRequestWithMessage(
-    owner: string,
-    repo: string,
-    number: number,
-    strategy: 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only',
-    message?: string
-  ): Promise<void> {
-    if (!message?.trim()) {
-      await this.mergePullRequest(owner, repo, number, strategy, false);
-      return;
-    }
-    await this.rawRequest<void>(
-      'POST',
-      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${encodeURIComponent(String(number))}/merge`,
-      { Do: strategy, MergeMessageField: message.trim(), delete_branch_after_merge: false }
+  async getWorkflowRunByNumber(owner: string, repo: string, runNumber: number): Promise<WorkflowRun | null> {
+    const response = await this.rawRequest<{ workflow_runs?: WorkflowRun[] }>(
+      'GET',
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs?run_number=${encodeURIComponent(String(runNumber))}&page=1&limit=2`
     );
+    return response.workflow_runs?.find(run => run.run_number === runNumber) ?? null;
   }
 
   async updateIssueBody(owner: string, repo: string, number: number, body: string): Promise<Issue> {

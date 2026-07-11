@@ -15,7 +15,7 @@ export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'checkout' }
   | { type: 'refresh' }
-  | { type: 'merge'; strategy: string; message?: string }
+  | { type: 'merge'; strategy: string }
   | { type: 'revert'; commitSha: string }
   | { type: 'addComment'; body: string }
   | { type: 'addReview'; state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; body: string }
@@ -135,6 +135,7 @@ interface PanelState {
   isReady: boolean;
   pendingData?: PRDetailViewData | null;
   pendingError?: string | null;
+  requestVersion?: number;
 }
 
 export class PRDetailWebviewProvider {
@@ -176,7 +177,8 @@ export class PRDetailWebviewProvider {
       instanceUrl,
       isReady: false,
       pendingData: null,
-      pendingError: null
+      pendingError: null,
+      requestVersion: 0
     };
     this._panels.set(panelKey, state);
 
@@ -203,6 +205,7 @@ export class PRDetailWebviewProvider {
     if (!state) return;
 
     const { panel, owner, repo, number } = state;
+    const requestVersion = state.requestVersion = (state.requestVersion ?? 0) + 1;
     logInfo('_fetchPRData starting:', { panelKey, isReady: state.isReady });
 
     try {
@@ -233,6 +236,7 @@ export class PRDetailWebviewProvider {
         }
       }
       const statuses = Array.from(latestByContext.values());
+      if (requestVersion !== state.requestVersion) return;
       logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length, raw: allStatuses.length });
 
       state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl };
@@ -246,6 +250,7 @@ export class PRDetailWebviewProvider {
         logInfo('Webview not ready yet, data will be sent when ready');
       }
     } catch (error) {
+      if (requestVersion !== state.requestVersion) return;
       logError('Failed to fetch PR data:', error);
       const message = error instanceof Error ? error.message : 'Failed to load PR details';
       if (state.isReady) {
@@ -289,20 +294,18 @@ export class PRDetailWebviewProvider {
 
   private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<PRActivity[]> {
     const activities: PRActivity[] = [];
-    try {
-      const comments = await client.getIssueComments(owner, repo, number);
+    const pageClient = client as Partial<ForgejoClient>;
+    const firstPage = async <T>(paged: (() => Promise<{ items: T[] }>) | undefined, legacy: () => Promise<T[]>): Promise<T[]> =>
+      typeof paged === 'function' ? (await paged()).items : legacy();
+    const [comments, reviews, commits, timeline] = await Promise.all([
+      firstPage(pageClient.getIssueCommentsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return []; }),
+      firstPage(pageClient.getPullRequestReviewsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getPullRequestReviews(owner, repo, number)).catch(e => { logDebug('Could not fetch reviews:', e); return []; }),
+      firstPage(pageClient.getPullRequestCommitsPage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getPullRequestCommits(owner, repo, number)).catch(e => { logDebug('Could not fetch commits:', e); return []; }),
+      firstPage(pageClient.getIssueTimelinePage?.bind(client, owner, repo, number, { page: 1, limit: 50 }), () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return []; })
+    ]);
       activities.push(...(comments as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
-    } catch (e) { logDebug('Could not fetch comments:', e); }
-    try {
-      const reviews = await client.getPullRequestReviews(owner, repo, number);
       activities.push(...(reviews as PRActivity[]).map((r) => ({ ...r, type: 'review' as const })));
-    } catch (e) { logDebug('Could not fetch reviews:', e); }
-    try {
-      const commits = await client.getPullRequestCommits(owner, repo, number);
       activities.push(...(commits as PRCommitApiActivity[]).map(normalizeCommitActivity));
-    } catch (e) { logDebug('Could not fetch commits:', e); }
-    try {
-      const timeline = await client.getIssueTimeline(owner, repo, number);
       activities.push(...(timeline as PRTimelineApiActivity[]).flatMap((t): PRActivity[] => {
         const event = getTimelineEventName(t);
         if (!event || event === 'comment' || event === 'commented') {
@@ -310,7 +313,6 @@ export class PRDetailWebviewProvider {
         }
         return [{ ...t, event, type: 'timeline' as const }];
       }));
-    } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? a.submitted_at ?? a.committed_at ?? 0);
       const dateB = new Date(b.created_at ?? b.submitted_at ?? b.committed_at ?? 0);
@@ -342,7 +344,7 @@ export class PRDetailWebviewProvider {
         break;
       case 'checkout': await this._checkoutBranch(owner, repo, number, instanceUrl); break;
       case 'refresh': await this._fetchPRData(panelKey); break;
-      case 'merge': await this._mergePR(owner, repo, number, message.strategy, message.message, panelKey, instanceUrl); break;
+      case 'merge': await this._mergePR(owner, repo, number, message.strategy, panelKey, instanceUrl); break;
       case 'revert': await this._revertCommit(message.commitSha, owner, repo, instanceUrl); break;
       case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey, instanceUrl); break;
       case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey, instanceUrl); break;
@@ -374,7 +376,9 @@ export class PRDetailWebviewProvider {
         const config = await this._getConfig(owner, repo, instanceUrl);
 
         const client = new ForgejoClient(config.instanceUrl, config.token);
-        const matchingRun = await client.getWorkflowRunDetails(owner, repo, runNumber);
+        const locatedRun = await client.getWorkflowRunByNumber(owner, repo, runNumber);
+        if (!locatedRun) throw new Error(`Workflow run #${String(runNumber)} was not found`);
+        const matchingRun = await client.getWorkflowRunDetails(owner, repo, locatedRun.id);
         await executeCommand('forgejo.showActionDetails', matchingRun, owner, repo, instanceUrl);
         return;
       } catch (error) {
@@ -401,30 +405,28 @@ export class PRDetailWebviewProvider {
     try {
       const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const refs = await client.getPullRequestRefs(owner, repo, number);
+      const details = await client.getPullRequestDetails(owner, repo, number);
       const repository = await this._selectLocalRepository(owner, repo, config.instanceUrl, 'Checkout Pull Request');
       if (!repository) return;
       if (repository.state.remotes.length === 0) throw new Error('The selected repository has no Git remote');
       const remote = repository.state.remotes.find(candidate => candidate.name === 'origin')
         ?? repository.state.remotes[0];
-      try {
-        await repository.checkout(refs.head);
-      } catch {
-        await repository.fetch(remote.name, `refs/pull/${String(number)}/head`);
-        await repository.createBranch(refs.head, true, 'FETCH_HEAD');
-      }
-      void vscode.window.showInformationMessage(`Checked out branch: ${refs.head}`);
+      await repository.fetch(remote.name, `refs/pull/${String(number)}/head`);
+      const localBranch = `forgejo-pr-${String(number)}-${details.head.sha.slice(0, 8)}`;
+      try { await repository.checkout(localBranch); }
+      catch { await repository.createBranch(localBranch, true, 'FETCH_HEAD'); }
+      void vscode.window.showInformationMessage(`Checked out branch: ${localBranch}`);
     } catch (error) {
       void vscode.window.showErrorMessage(`Failed to checkout: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async _mergePR(owner: string, repo: string, number: number, strategy: string, message?: string, panelKey?: string, instanceUrl?: string): Promise<void> {
+  private async _mergePR(owner: string, repo: string, number: number, strategy: string, panelKey?: string, instanceUrl?: string): Promise<void> {
     const panelState = panelKey ? this._panels.get(panelKey) : undefined;
     try {
       const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.mergePullRequestWithMessage(owner, repo, number, strategy as 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only', message);
+      await client.mergePullRequest(owner, repo, number, strategy as 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only', false);
       void vscode.window.showInformationMessage('Pull request merged successfully');
       if (panelState) {
         void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'merge', success: true });
@@ -676,7 +678,6 @@ export class PRDetailWebviewProvider {
         <option value="squash">Squash and merge</option>
         <option value="rebase">Rebase and merge</option>
       </select>
-      <textarea id="merge-message" placeholder="Merge message (optional)"></textarea>
       <div class="merge-actions">
         <button id="confirm-merge-btn" class="btn btn-success">Merge</button>
         <button id="cancel-merge-btn" class="btn btn-secondary">Cancel</button>

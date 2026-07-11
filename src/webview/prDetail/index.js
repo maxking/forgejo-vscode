@@ -56,7 +56,6 @@
 
   const mergeDialog = document.getElementById('merge-dialog');
   const mergeStrategy = document.getElementById('merge-strategy');
-  const mergeMessage = document.getElementById('merge-message');
   const confirmMergeBtn = document.getElementById('confirm-merge-btn');
   const cancelMergeBtn = document.getElementById('cancel-merge-btn');
 
@@ -219,27 +218,15 @@
 
     confirmMergeBtn.addEventListener('click', () => {
       const strategy = mergeStrategy.value;
-      const message = mergeMessage.value.trim() || undefined;
       console.log('[Forgejo Webview] Confirm merge clicked, strategy:', strategy);
       confirmMergeBtn.disabled = true;
       confirmMergeBtn.textContent = 'Merging...';
-      vscode.postMessage({ type: 'merge', strategy, message });
+      vscode.postMessage({ type: 'merge', strategy });
     });
 
     cancelMergeBtn.addEventListener('click', () => {
       console.log('[Forgejo Webview] Cancel merge clicked');
-      mergeMessage.value = '';
       mergeDialog.style.display = 'none';
-    });
-
-    mergeMessage.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        confirmMergeBtn.click();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelMergeBtn.click();
-      }
     });
 
     ciStatusList.addEventListener('click', (e) => {
@@ -333,7 +320,6 @@
         confirmMergeBtn.disabled = false;
         confirmMergeBtn.textContent = 'Merge';
         if (success) {
-          mergeMessage.value = '';
           mergeDialog.style.display = 'none';
         }
         break;

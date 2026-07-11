@@ -256,6 +256,9 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand('forgejo.loadMorePullRequests', (item) => prTreeProvider.loadMorePullRequests(item))
   );
+  context.subscriptions.push(
+    registerCommand('forgejo.loadMorePullRequestFiles', (item) => prTreeProvider.loadMorePullRequestFiles(item))
+  );
 
   context.subscriptions.push(
     registerCommand('forgejo.refreshIssues', () => {
@@ -941,6 +944,9 @@ export async function activate(context: vscode.ExtensionContext) {
       void vscode.window.showInformationMessage('Releases refreshed');
     })
   );
+  context.subscriptions.push(registerCommand(
+    'forgejo.loadMoreReleases', item => releaseTreeProvider.loadMoreReleases(item)
+  ));
 
   context.subscriptions.push(
     registerCommand('forgejo.openReleaseInBrowser', (url: string) => {

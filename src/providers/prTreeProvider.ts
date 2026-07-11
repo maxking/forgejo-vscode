@@ -45,6 +45,8 @@ async function getPRDiffRefs(
 
 const PULL_REQUEST_PAGE_SIZE = 50;
 const PULL_REQUEST_MERGEABILITY_BATCH_SIZE = 5;
+const MAX_MERGEABILITY_HYDRATIONS_PER_RENDER = 5;
+const PULL_REQUEST_FILE_PAGE_SIZE = 50;
 
 type PRQueryKind = 'assigned' | 'review' | 'created' | 'mentioned';
 type PRGroupKind = 'open' | 'draft' | 'merged' | 'closed' | PRQueryKind;
@@ -105,6 +107,8 @@ export class PRTreeItem extends vscode.TreeItem {
   public filesError?: string;
   public baseRef?: string;
   public headRef?: string;
+  public filesNextPage = 1;
+  public filesHasMore = true;
 
   constructor(
     public readonly pr: PullRequestListItemWithMergeability,
@@ -186,6 +190,16 @@ export class PRLoadMoreItem extends vscode.TreeItem {
       title: 'Load More Pull Requests',
       arguments: [this]
     };
+  }
+}
+
+export class PRFileLoadMoreItem extends vscode.TreeItem {
+  constructor(public readonly pullRequest: PRTreeItem) {
+    super('Load more changed files', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('more');
+    this.contextValue = 'prFileLoadMore';
+    this.id = `${pullRequest.id ?? ''}/files/load-more/${String(pullRequest.filesNextPage)}`;
+    this.command = { command: 'forgejo.loadMorePullRequestFiles', title: 'Load More Changed Files', arguments: [this] };
   }
 }
 
@@ -453,7 +467,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     } else if (element instanceof PRTreeItem) {
       // Fetch and show files for this PR
       return this.getPRFiles(element);
-    } else if (element instanceof PRMessageItem || element instanceof PRLoadingItem || element instanceof PRLoadMoreItem) {
+    } else if (element instanceof PRMessageItem || element instanceof PRLoadingItem || element instanceof PRLoadMoreItem || element instanceof PRFileLoadMoreItem) {
       // Message items have no children
       return [];
     }
@@ -475,7 +489,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const fileItems = prItem.files.map(file =>
         new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef, prItem.config?.instanceUrl, prItem.treeContext)
       );
-      return [overviewItem, ...fileItems];
+      return [overviewItem, ...fileItems, ...(prItem.filesHasMore ? [new PRFileLoadMoreItem(prItem)] : [])];
     }
 
     // Return error if previous fetch failed
@@ -493,15 +507,20 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       console.log(`[Forgejo] Fetching files for PR #${prItem.pr.number}...`);
 
       // Fetch both files and PR details (for diff refs)
-      const [files, refs] = await Promise.all([
-        client.getPullRequestFiles(prItem.owner, prItem.repo, prItem.pr.number),
+      const [filePage, refs] = await Promise.all([
+        typeof client.getPullRequestFilesPage === 'function'
+          ? client.getPullRequestFilesPage(prItem.owner, prItem.repo, prItem.pr.number, { page: 1, limit: PULL_REQUEST_FILE_PAGE_SIZE })
+          : client.getPullRequestFiles(prItem.owner, prItem.repo, prItem.pr.number).then(items => ({ items, hasMore: false })),
         getPRDiffRefs(client, prItem.owner, prItem.repo, prItem.pr.number)
       ]);
+      const files = filePage.items;
 
       // Cache the results
       prItem.files = files;
       prItem.baseRef = refs.base;
       prItem.headRef = refs.head;
+      prItem.filesNextPage = 2;
+      prItem.filesHasMore = filePage.hasMore;
 
       console.log(`[Forgejo] Fetched ${files.length} files for PR #${prItem.pr.number}`);
 
@@ -517,13 +536,33 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const fileItems = sortedFiles.map(file =>
         new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head, config.instanceUrl, prItem.treeContext)
       );
-      return [overviewItem, ...fileItems];
+      return [overviewItem, ...fileItems, ...(prItem.filesHasMore ? [new PRFileLoadMoreItem(prItem)] : [])];
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to fetch files';
       prItem.filesError = errorMsg;
       console.error(`[Forgejo] Error fetching files for PR #${prItem.pr.number}:`, error);
       return [overviewItem, new PRMessageItem(errorMsg, true, prItem.id)];
     }
+  }
+
+  async loadMorePullRequestFiles(item: PRFileLoadMoreItem): Promise<void> {
+    const prItem = item.pullRequest;
+    const config = prItem.config ?? await getForgejoConfigFor(prItem.owner, prItem.repo);
+    if (!config || !prItem.filesHasMore) return;
+    const page = await new ForgejoClient(config.instanceUrl, config.token).getPullRequestFilesPage(
+      prItem.owner, prItem.repo, prItem.pr.number,
+      { page: prItem.filesNextPage, limit: PULL_REQUEST_FILE_PAGE_SIZE }
+    );
+    const seen = new Set((prItem.files ?? []).map(file => file.filename));
+    for (const file of page.items) {
+      if (!seen.has(file.filename)) {
+        seen.add(file.filename);
+        (prItem.files ??= []).push(file);
+      }
+    }
+    prItem.filesNextPage += 1;
+    prItem.filesHasMore = page.hasMore;
+    this._onDidChangeTreeData.fire(prItem);
   }
 
   private configKeyPrefix(config: ForgejoConfig): string {
@@ -697,7 +736,9 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     config: ForgejoConfig,
     pullRequests: PullRequestListItemWithMergeability[]
   ): Promise<PullRequestListItemWithMergeability[]> {
-    const needsHydration = pullRequests.filter(pr => pr.state === 'open' && !pr.draft && pr.mergeable === undefined);
+    const needsHydration = pullRequests
+      .filter(pr => pr.state === 'open' && !pr.draft && pr.mergeable === undefined)
+      .slice(0, MAX_MERGEABILITY_HYDRATIONS_PER_RENDER);
     if (needsHydration.length === 0) {
       return pullRequests;
     }

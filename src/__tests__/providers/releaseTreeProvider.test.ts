@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ReleaseGroupItem, ReleaseMessageItem, ReleaseRepositoryItem, ReleaseTreeItem, ReleaseTreeProvider } from '../../providers/releaseTreeProvider';
+import { ReleaseGroupItem, ReleaseLoadMoreItem, ReleaseMessageItem, ReleaseRepositoryItem, ReleaseTreeItem, ReleaseTreeProvider } from '../../providers/releaseTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoRepositoryConfigs } from '../../utils/config';
 import { type Release } from 'forgejo-ts';
@@ -41,6 +41,7 @@ describe('ReleaseTreeProvider', () => {
   beforeEach(() => {
     mockClient = {
       listReleases: jest.fn(),
+      listReleasesPage: undefined,
     } as any;
 
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
@@ -345,6 +346,22 @@ describe('ReleaseTreeProvider', () => {
       provider.refresh();
       expect(listener).toHaveBeenCalled();
     });
+  });
+
+  test('loads and deduplicates later release pages explicitly', async () => {
+    mockClient.listReleasesPage = jest.fn()
+      .mockResolvedValueOnce({ items: [makeRelease({ id: 1 })], page: 1, limit: 50, hasMore: true })
+      .mockResolvedValueOnce({ items: [makeRelease({ id: 1 }), makeRelease({ id: 2, tag_name: 'v2' })], page: 2, limit: 50, hasMore: false });
+
+    const groups = await provider.getChildren();
+    const loadMore = groups.find(item => item instanceof ReleaseLoadMoreItem) as ReleaseLoadMoreItem;
+    expect(loadMore).toBeDefined();
+    await provider.loadMoreReleases(loadMore);
+
+    const loadedGroups = await provider.getChildren();
+    const released = loadedGroups.find(item => item instanceof ReleaseGroupItem) as ReleaseGroupItem;
+    expect(released.releases.map(release => release.id)).toEqual([1, 2]);
+    expect(loadedGroups.some(item => item instanceof ReleaseLoadMoreItem)).toBe(false);
   });
 
   describe('ReleaseMessageItem', () => {

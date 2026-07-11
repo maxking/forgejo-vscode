@@ -116,13 +116,24 @@ export class ReleaseMessageItem extends vscode.TreeItem {
   }
 }
 
-export type ReleaseTreeElement = ReleaseRepositoryItem | ReleaseTreeItem | ReleaseGroupItem | ReleaseMessageItem;
+export class ReleaseLoadMoreItem extends vscode.TreeItem {
+  constructor(public readonly config: ForgejoConfig) {
+    super('Load more releases', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('more');
+    this.contextValue = 'releaseLoadMore';
+    this.id = releaseTreeItemId(['release-load-more', ...repositoryIdParts(config)]);
+    this.command = { command: 'forgejo.loadMoreReleases', title: 'Load More Releases', arguments: [this] };
+  }
+}
+
+export type ReleaseTreeElement = ReleaseRepositoryItem | ReleaseTreeItem | ReleaseGroupItem | ReleaseMessageItem | ReleaseLoadMoreItem;
+interface ReleasePageCache { releases: Release[]; nextPage: number; hasMore: boolean }
 
 export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ReleaseTreeElement | undefined | null | void> = new vscode.EventEmitter<ReleaseTreeElement | undefined | null | void>();
   readonly onDidChangeTreeData: vscode.Event<ReleaseTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
 
-  private releases = new Map<string, Release[]>();
+  private releases = new Map<string, ReleasePageCache>();
   private error: string | null = null;
   private owner = '';
   private repo = '';
@@ -132,7 +143,7 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
   }
 
   refresh(): void {
-	this.releases.clear();
+    this.releases.clear();
     this._onDidChangeTreeData.fire();
   }
 
@@ -179,10 +190,11 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
       const prereleases = releases.filter(r => !r.draft && r.prerelease);
       const drafts = releases.filter(r => r.draft);
 
-      const groups: ReleaseGroupItem[] = [];
+      const groups: ReleaseTreeElement[] = [];
       if (published.length > 0) groups.push(new ReleaseGroupItem('Released', published, config, 'released'));
       if (prereleases.length > 0) groups.push(new ReleaseGroupItem('Pre-releases', prereleases, config, 'prereleases'));
       if (drafts.length > 0) groups.push(new ReleaseGroupItem('Drafts', drafts, config, 'drafts'));
+      if (this.releases.get(this.configKey(config))?.hasMore) groups.push(new ReleaseLoadMoreItem(config));
 
       return groups;
     } catch (error) {
@@ -194,15 +206,18 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
   private async _fetchReleases(config: ForgejoConfig): Promise<Release[]> {
     console.log('[Forgejo] Fetching releases...');
     const key = this.configKey(config);
-	const cached = this.releases.get(key);
-	if (cached) {
-		return cached;
-	}
+    const cached = this.releases.get(key);
+    if (cached) {
+      return cached.releases;
+    }
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const releases = await client.listReleases(config.owner, config.repo);
-      this.releases.set(key, releases);
+      const page = typeof client.listReleasesPage === 'function'
+        ? await client.listReleasesPage(config.owner, config.repo, { page: 1, limit: 50 })
+        : { items: await client.listReleases(config.owner, config.repo), hasMore: false };
+      const releases = page.items;
+      this.releases.set(key, { releases, nextPage: 2, hasMore: page.hasMore });
       this.owner = config.owner;
       this.repo = config.repo;
       this.error = null;
@@ -210,9 +225,24 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
       return releases;
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Failed to fetch releases';
-      this.releases.set(key, []);
+      this.releases.delete(key);
       console.error('[Forgejo] Error fetching releases:', error);
       throw error;
     }
+  }
+
+  async loadMoreReleases(item: ReleaseLoadMoreItem): Promise<void> {
+    const cache = this.releases.get(this.configKey(item.config));
+    if (!cache?.hasMore) return;
+    const page = await new ForgejoClient(item.config.instanceUrl, item.config.token)
+      .listReleasesPage(item.config.owner, item.config.repo, { page: cache.nextPage, limit: 50 });
+    const seen = new Set(cache.releases.map(release => String(releaseIdentity(release))));
+    for (const release of page.items) {
+      const key = String(releaseIdentity(release));
+      if (!seen.has(key)) { seen.add(key); cache.releases.push(release); }
+    }
+    cache.nextPage += 1;
+    cache.hasMore = page.hasMore;
+    this._onDidChangeTreeData.fire();
   }
 }

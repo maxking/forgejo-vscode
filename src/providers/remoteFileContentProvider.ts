@@ -159,12 +159,7 @@ export class RemoteFileContentProvider implements vscode.TextDocumentContentProv
     }
   }
 
-  clearCache(uri?: vscode.Uri): void {
-	void uri;
-  }
-
   refresh(uri: vscode.Uri): void {
-    this.clearCache(uri);
     this._onDidChange.fire(uri);
   }
 }
