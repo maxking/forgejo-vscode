@@ -31,10 +31,10 @@ describe('PR detail Git actions', () => {
     (provider as any)._selectLocalRepository = jest.fn().mockResolvedValue(repository);
 
     await (provider as any)._checkoutBranch('owner', 'repo', 42, 'https://git.example.com');
-    await (provider as any)._revertCommit('abcdef1234567890', 'owner', 'repo', 'https://git.example.com');
+    await (provider as any)._revertCommit('abcdef1234567890', 'owner', 'repo', 42, 'https://git.example.com');
 
     expect(repository.fetch).toHaveBeenNthCalledWith(1, 'upstream', 'refs/pull/42/head');
-    expect(repository.fetch).toHaveBeenNthCalledWith(2, 'upstream', 'abcdef1234567890');
+    expect(repository.fetch).toHaveBeenNthCalledWith(2, 'upstream', 'refs/pull/42/head');
     expect(execFile).toHaveBeenCalledWith('git', ['revert', 'abcdef1234567890'], { cwd: '/workspace/repo' }, expect.any(Function));
   });
 });

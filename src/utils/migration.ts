@@ -57,37 +57,46 @@ export async function migrateTokensToSecretStorage(): Promise<void> {
 		return;
 	}
 
-	const config = vscode.workspace.getConfiguration('forgejo');
-	const scopes = [
-		{ value: 'globalValue' as const, target: vscode.ConfigurationTarget.Global },
-		{ value: 'workspaceValue' as const, target: vscode.ConfigurationTarget.Workspace },
-		{ value: 'workspaceFolderValue' as const, target: vscode.ConfigurationTarget.WorkspaceFolder }
-	];
-	const instanceInspection = config.inspect<ForgejoInstance[]>('instances');
-	const effectiveInstances = config.get<ForgejoInstance[]>('instances', []);
-
-	for (const scope of scopes) {
-		const instances = instanceInspection?.[scope.value];
-		if (!instances) continue;
-		const tokenBearing = instances.filter(instance => instance.id && instance.token?.trim());
-		for (const instance of tokenBearing) {
-			const token = instance.token?.trim();
-			if (token) await setToken(instance.id, token);
+	type ScopeKey = 'globalValue' | 'workspaceValue' | 'workspaceFolderValue';
+	const migrateConfig = async (config: vscode.WorkspaceConfiguration, scopes: { value: ScopeKey; target: vscode.ConfigurationTarget }[]): Promise<void> => {
+		const instanceInspection = config.inspect<ForgejoInstance[]>('instances');
+		const effectiveInstances = config.get<ForgejoInstance[]>('instances', []);
+		for (const scope of scopes) {
+			const instances = instanceInspection?.[scope.value];
+			if (!instances) continue;
+			let changed = false;
+			for (const instance of instances) {
+				const token = instance.token?.trim();
+				if (!instance.id || !token) continue;
+				await setToken(instance.id, token);
+				changed = true;
+			}
+			if (changed) await config.update('instances', instances.map(({ token: _token, ...rest }) => rest), scope.target);
 		}
-		if (tokenBearing.length > 0) {
-			await config.update('instances', instances.map(({ token: _token, ...rest }) => rest), scope.target);
-		}
-	}
 
-	const tokenInspection = config.inspect<string>('token');
-	const defaultInstance: ForgejoInstance | undefined = effectiveInstances.find(instance => instance.isDefault)
-		?? (effectiveInstances.length > 0 ? effectiveInstances[0] : undefined);
-	for (const scope of scopes) {
-		const legacyToken = tokenInspection?.[scope.value];
-		if (!legacyToken?.trim()) continue;
-		if (defaultInstance) await setToken(defaultInstance.id, legacyToken.trim());
-		else logWarn('Legacy forgejo.token could not be migrated because no instance exists');
-		await config.update('token', undefined, scope.target);
+		const defaultInstance: ForgejoInstance | undefined = effectiveInstances.find(instance => instance.isDefault)
+			?? (effectiveInstances.length > 0 ? effectiveInstances[0] : undefined);
+		const tokenInspection = config.inspect<string>('token');
+		for (const scope of scopes) {
+			const legacyToken = tokenInspection?.[scope.value]?.trim();
+			if (!legacyToken) continue;
+			if (!defaultInstance) {
+				logWarn('Legacy forgejo.token could not be migrated because no instance exists');
+				continue;
+			}
+			await setToken(defaultInstance.id, legacyToken);
+			await config.update('token', undefined, scope.target);
+		}
+	};
+
+	await migrateConfig(vscode.workspace.getConfiguration('forgejo'), [
+		{ value: 'globalValue', target: vscode.ConfigurationTarget.Global },
+		{ value: 'workspaceValue', target: vscode.ConfigurationTarget.Workspace }
+	]);
+	for (const folder of vscode.workspace.workspaceFolders ?? []) {
+		await migrateConfig(vscode.workspace.getConfiguration('forgejo', folder.uri), [
+			{ value: 'workspaceFolderValue', target: vscode.ConfigurationTarget.WorkspaceFolder }
+		]);
 	}
 	logInfo('Token migration to SecretStorage complete');
 }

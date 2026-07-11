@@ -5,7 +5,7 @@ import { PullRequest, CommitStatus } from '../../models/pullRequest';
 import { executeCommand } from '../../commands/registry';
 import { openWorkflowFileForCIStatus, viewCIStatusLogs } from '../../commands/ciNavigation';
 import { logDebug, logInfo, logError } from '../../utils/logger';
-import { getTimelineEventName, type TimelineActivity } from '../shared/helpers';
+import { fetchNewestActivityPage, getTimelineEventName, type TimelineActivity } from '../shared/helpers';
 import { activateGitExtension } from '../../utils/gitExtension';
 import { matchingRemote, repositoryMatchesConfig } from '../../utils/gitRepositoryMatch';
 import type { Repository } from '../../types/git';
@@ -125,6 +125,7 @@ export interface PRDetailViewData {
   repo: string;
   instanceUrl?: string;
   historyTruncated: boolean;
+  historyIsNewest: boolean;
 }
 
 interface PanelState {
@@ -247,7 +248,7 @@ export class PRDetailWebviewProvider {
       if (requestVersion !== state.requestVersion) return;
       logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length, raw: allStatuses.length });
 
-      state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl, historyTruncated: activityResult.truncated || statusPage.hasMore };
+      state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl, historyTruncated: activityResult.truncated || statusPage.hasMore, historyIsNewest: activityResult.newest && !statusPage.hasMore };
       state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
 
@@ -300,25 +301,18 @@ export class PRDetailWebviewProvider {
     return config;
   }
 
-  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: PRActivity[]; truncated: boolean }> {
+  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: PRActivity[]; truncated: boolean; newest: boolean }> {
     const activities: PRActivity[] = [];
     const pageClient = client as Partial<ForgejoClient>;
-    const newestPage = async <T>(paged: ((page: number) => Promise<{ items: T[]; hasMore: boolean; totalCount?: number | null }>) | undefined, legacy: () => Promise<T[]>): Promise<{ items: T[]; truncated: boolean }> => {
-      if (!paged) return legacy().then(items => ({ items, truncated: false }));
-      const first = await paged(1);
-      if (!first.hasMore || typeof first.totalCount !== 'number') return { items: first.items, truncated: first.hasMore };
-      const lastPage = Math.ceil(first.totalCount / 50);
-      return { items: lastPage > 1 ? (await paged(lastPage)).items : first.items, truncated: true };
-    };
     const commentsPage = pageClient.getIssueCommentsPage;
     const reviewsPage = pageClient.getPullRequestReviewsPage;
     const commitsPage = pageClient.getPullRequestCommitsPage;
     const timelinePage = pageClient.getIssueTimelinePage;
     const [comments, reviews, commits, timeline] = await Promise.all([
-      newestPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false }; }),
-      newestPage(reviewsPage ? page => reviewsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestReviews(owner, repo, number)).catch(e => { logDebug('Could not fetch reviews:', e); return { items: [], truncated: false }; }),
-      newestPage(commitsPage ? page => commitsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestCommits(owner, repo, number)).catch(e => { logDebug('Could not fetch commits:', e); return { items: [], truncated: false }; }),
-      newestPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false }; })
+      fetchNewestActivityPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(reviewsPage ? page => reviewsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestReviews(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch reviews:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(commitsPage ? page => commitsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestCommits(owner, repo, number), item => String(item.sha)).catch(e => { logDebug('Could not fetch commits:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false, newest: true }; })
     ]);
       activities.push(...(comments.items as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
       activities.push(...(reviews.items as PRActivity[]).map((r) => ({ ...r, type: 'review' as const })));
@@ -335,7 +329,7 @@ export class PRDetailWebviewProvider {
       const dateB = new Date(b.created_at ?? b.submitted_at ?? b.committed_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
-    return { items, truncated: comments.truncated || reviews.truncated || commits.truncated || timeline.truncated };
+    return { items, truncated: comments.truncated || reviews.truncated || commits.truncated || timeline.truncated, newest: comments.newest && reviews.newest && commits.newest && timeline.newest };
   }
 
   private async _handleMessage(message: WebviewMessage, panelKey: string): Promise<void> {
@@ -363,7 +357,7 @@ export class PRDetailWebviewProvider {
       case 'checkout': await this._checkoutBranch(owner, repo, number, instanceUrl); break;
       case 'refresh': await this._fetchPRData(panelKey); break;
       case 'merge': await this._mergePR(owner, repo, number, message.strategy, panelKey, instanceUrl); break;
-      case 'revert': await this._revertCommit(message.commitSha, owner, repo, instanceUrl); break;
+      case 'revert': await this._revertCommit(message.commitSha, owner, repo, number, instanceUrl); break;
       case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey, instanceUrl); break;
       case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey, instanceUrl); break;
       case 'openInBrowser': await this._openInBrowser(owner, repo, number, instanceUrl); break;
@@ -457,7 +451,7 @@ export class PRDetailWebviewProvider {
     }
   }
 
-  private async _revertCommit(commitSha: string, owner: string, repo: string, instanceUrl?: string): Promise<void> {
+  private async _revertCommit(commitSha: string, owner: string, repo: string, number: number, instanceUrl?: string): Promise<void> {
     if (!/^[0-9a-f]{7,64}$/i.test(commitSha)) {
       void vscode.window.showErrorMessage('Cannot revert an invalid commit identifier.');
       return;
@@ -468,7 +462,7 @@ export class PRDetailWebviewProvider {
       if (!repository) return;
       const remote = matchingRemote(repository, owner, repo, config.instanceUrl);
       if (!remote) throw new Error('The selected repository has no remote matching this pull request');
-      await repository.fetch(remote.name, commitSha);
+      await repository.fetch(remote.name, `refs/pull/${String(number)}/head`);
       await new Promise<void>((resolve, reject) => {
         execFile('git', ['revert', commitSha], { cwd: repository.rootUri.fsPath }, error => {
           if (error) reject(error instanceof Error ? error : new Error(String(error)));

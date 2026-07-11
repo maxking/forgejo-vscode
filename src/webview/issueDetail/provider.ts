@@ -3,7 +3,7 @@ import { ForgejoClient, type ForgejoStopwatch, type ForgejoTrackedTime } from '.
 import { getForgejoConfigFor } from '../../utils/config';
 import { Issue } from '../../models/issue';
 import { logDebug, logInfo, logError } from '../../utils/logger';
-import { getTimelineEventName, type TimelineActivity } from '../shared/helpers';
+import { fetchNewestActivityPage, getTimelineEventName, type TimelineActivity } from '../shared/helpers';
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -51,6 +51,7 @@ export interface IssueDetailViewData {
   canComment: boolean;
   instanceUrl?: string;
   historyTruncated: boolean;
+  historyIsNewest: boolean;
 }
 
 export interface IssueTimeTrackingViewData {
@@ -174,6 +175,7 @@ export class IssueDetailWebviewProvider {
         canComment: config.token.trim().length > 0,
         instanceUrl: state.instanceUrl
         , historyTruncated: activityResult.truncated
+        , historyIsNewest: activityResult.newest
       };
       state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
@@ -219,21 +221,14 @@ export class IssueDetailWebviewProvider {
     await this._fetchIssueData(panelKey);
   }
 
-  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: IssueActivity[]; truncated: boolean }> {
+  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: IssueActivity[]; truncated: boolean; newest: boolean }> {
     const activities: IssueActivity[] = [];
     const pageClient = client as Partial<ForgejoClient>;
-    const newestPage = async <T>(paged: ((page: number) => Promise<{ items: T[]; hasMore: boolean; totalCount?: number | null }>) | undefined, legacy: () => Promise<T[]>): Promise<{ items: T[]; truncated: boolean }> => {
-      if (!paged) return legacy().then(items => ({ items, truncated: false }));
-      const first = await paged(1);
-      if (!first.hasMore || typeof first.totalCount !== 'number') return { items: first.items, truncated: first.hasMore };
-      const lastPage = Math.ceil(first.totalCount / 50);
-      return { items: lastPage > 1 ? (await paged(lastPage)).items : first.items, truncated: true };
-    };
     const commentsPage = pageClient.getIssueCommentsPage;
     const timelinePage = pageClient.getIssueTimelinePage;
     const [comments, timeline] = await Promise.all([
-      newestPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false }; }),
-      newestPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false }; })
+      fetchNewestActivityPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false, newest: true }; })
     ]);
       activities.push(...(comments.items as IssueActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
       activities.push(...(timeline.items as IssueTimelineApiActivity[]).flatMap((t): IssueActivity[] => {
@@ -248,7 +243,7 @@ export class IssueDetailWebviewProvider {
       const dateB = new Date(b.created_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
-    return { items, truncated: comments.truncated || timeline.truncated };
+    return { items, truncated: comments.truncated || timeline.truncated, newest: comments.newest && timeline.newest };
   }
 
   private async _fetchTimeTracking(

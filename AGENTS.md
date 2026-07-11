@@ -62,7 +62,7 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - Remote repository browsing must keep instance URL, owner, repo, branch, and path identity in tree items and virtual document URIs, and public no-token access must not fall back to unrelated configured instances or tokens.
 - PR detail commands that open local files must preserve the PR's instance, owner, and repo identity when resolving local Git repositories; do not fall back to workspace-wide file searches when that explicit identity has no matching local checkout.
 - Credential migrations and final-instance removal must inspect and clear global, workspace, and workspace-folder settings; cleaning only the effective or global value can leave plaintext tokens or recreate a deleted instance.
-- Bounded issue and pull request detail histories must retain the newest API page when older activity is omitted, and visibly report truncation.
+- Bounded issue and pull request detail histories must retain the newest 50 entries across API page boundaries, deduplicate overlapping pages, and avoid claiming the sample is newest if bounded page discovery cannot prove that.
 - Local PR Git operations must select the remote matching the PR's instance/owner/repository identity and fetch required commit objects before checkout or revert.
 - Treat SecretStorage token writes and deletes as observable configuration changes: authentication sessions, remote-source providers, and authenticated views must refresh without requiring an unrelated settings edit.
 - Connection tests with a supplied token must call an authenticated endpoint such as `/user`; a successful public `/version` response does not validate credentials.

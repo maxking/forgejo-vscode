@@ -141,20 +141,22 @@ describe('detail webview timeline activity normalization', () => {
 
     const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 1);
 
-    expect(result).toEqual({ items: [], truncated: true });
+    expect(result).toEqual({ items: [], truncated: true, newest: false });
   });
 
   test('issue details fetch the last activity page when the API reports a total', async () => {
     const provider = new IssueDetailWebviewProvider({} as never);
+    const issueRows = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, index) => ({ id: start + index, created_at: new Date(2026, 0, start + index).toISOString() }));
     const getIssueCommentsPage = jest.fn((_owner, _repo, _number, { page }) => Promise.resolve(page === 1
-      ? { items: [{ id: 1, created_at: '2020-01-01' }], hasMore: true, totalCount: 101 }
-      : { items: [{ id: 101, created_at: '2026-01-01' }], hasMore: false, totalCount: 101 }));
+      ? { items: issueRows(1, 50), hasMore: true, totalCount: 51 }
+      : { items: [{ ...issueRows(50, 50)[0] }, ...issueRows(51, 51)], hasMore: false, totalCount: 51 }));
     const client = { getIssueCommentsPage, getIssueTimelinePage: jest.fn().mockResolvedValue({ items: [], hasMore: false, totalCount: 0 }) };
 
     const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 1);
 
-    expect(getIssueCommentsPage).toHaveBeenLastCalledWith('owner', 'repo', 1, { page: 3, limit: 50 });
-    expect(result.items.map((item: any) => item.id)).toEqual([101]);
+    expect(getIssueCommentsPage).toHaveBeenLastCalledWith('owner', 'repo', 1, { page: 2, limit: 50 });
+    expect(result.items).toHaveLength(50);
+    expect(new Set(result.items.map((item: any) => item.id))).toEqual(new Set(issueRows(2, 51).map(item => item.id)));
   });
 
   test('PR details skip duplicate timeline comments and preserve Forgejo type actions', async () => {
@@ -226,8 +228,8 @@ describe('detail webview timeline activity normalization', () => {
   test('PR details retain the newest page from each bounded activity stream', async () => {
     const provider = new PRDetailWebviewProvider({} as never);
     const page = (type: string) => jest.fn((_owner, _repo, _number, options) => Promise.resolve(options.page === 1
-      ? { items: [], hasMore: true, totalCount: 51 }
-      : { items: [{ id: 51, body: type, created_at: '2026-01-01' }], hasMore: false, totalCount: 51 }));
+      ? { items: Array.from({ length: 50 }, (_, index) => ({ id: index + 1, sha: `${type}-${String(index + 1)}`, body: type, created_at: new Date(2026, 0, index + 1).toISOString() })), hasMore: true, totalCount: 51 }
+      : { items: [{ id: 51, sha: `${type}-51`, body: type, created_at: new Date(2026, 0, 51).toISOString() }], hasMore: false, totalCount: 51 }));
     const client = {
       getIssueCommentsPage: page('comment'),
       getPullRequestReviewsPage: page('review'),
@@ -238,7 +240,9 @@ describe('detail webview timeline activity normalization', () => {
     const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
 
     expect(result.truncated).toBe(true);
-    expect(result.items.map((item: any) => item.type).sort()).toEqual(['comment', 'commit', 'review']);
+    expect(result.items.filter((item: any) => item.type === 'comment')).toHaveLength(50);
+    expect(result.items.filter((item: any) => item.type === 'review')).toHaveLength(50);
+    expect(result.items.filter((item: any) => item.type === 'commit')).toHaveLength(50);
     expect(client.getPullRequestCommitsPage).toHaveBeenLastCalledWith('owner', 'repo', 42, { page: 2, limit: 50 });
   });
 });

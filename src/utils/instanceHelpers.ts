@@ -211,9 +211,18 @@ export async function removeInstance(id: string): Promise<void> {
 	} else if (filtered.length === 0) {
 		// Do not leave compatibility settings capable of recreating the deleted
 		// instance on the next activation.
-		for (const target of [vscode.ConfigurationTarget.Global, vscode.ConfigurationTarget.Workspace, vscode.ConfigurationTarget.WorkspaceFolder]) {
-			await config.update('instanceUrl', undefined, target);
-			await config.update('token', undefined, target);
+		for (const key of ['instanceUrl', 'token'] as const) {
+			const inspection = config.inspect(key);
+			if (inspection?.globalValue !== undefined) await config.update(key, undefined, vscode.ConfigurationTarget.Global);
+			if (inspection?.workspaceValue !== undefined) await config.update(key, undefined, vscode.ConfigurationTarget.Workspace);
+		}
+		for (const folder of vscode.workspace.workspaceFolders ?? []) {
+			const folderConfig = vscode.workspace.getConfiguration('forgejo', folder.uri);
+			for (const key of ['instanceUrl', 'token'] as const) {
+				if (folderConfig.inspect(key)?.workspaceFolderValue !== undefined) {
+					await folderConfig.update(key, undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+				}
+			}
 		}
 	}
 }
