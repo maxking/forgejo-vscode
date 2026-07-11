@@ -227,6 +227,34 @@ describe('BranchStatusBarController', () => {
   });
 
   describe('debounced triggers', () => {
+    it('activate() schedules exactly one bounded refresh after the debounce, and none before it', () => {
+      jest.useFakeTimers();
+      mockGetActiveGitRepository.mockReturnValue(null);
+
+      const controller = new BranchStatusBarController();
+      const refreshSpy = jest.spyOn(controller, 'refresh');
+      const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+
+      controller.activate(context);
+
+      // activate() itself must not fetch/refresh synchronously.
+      expect(refreshSpy).not.toHaveBeenCalled();
+
+      // Before the debounce elapses, still nothing.
+      jest.advanceTimersByTime(200);
+      expect(refreshSpy).not.toHaveBeenCalled();
+
+      // Once the debounce elapses, exactly one gated/cached refresh runs.
+      jest.advanceTimersByTime(200);
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+
+      // No further refreshes happen on their own (no polling).
+      jest.advanceTimersByTime(60_000);
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+
+      jest.useRealTimers();
+    });
+
     it('collapses rapid-fire trigger events into a single refresh', () => {
       jest.useFakeTimers();
       mockGetActiveGitRepository.mockReturnValue(null);

@@ -907,8 +907,9 @@ export async function activate(context: vscode.ExtensionContext) {
   const actionDetailWebviewProvider = new ActionDetailWebviewProvider(context.extensionUri);
 
   // Status bar item showing the active repository's branch/PR/CI status.
-  // activate() only registers listeners (no network); the first refresh is
-  // scheduled through the same debounced path as every later trigger.
+  // activate() schedules one debounced, gated, cached initial refresh so the
+  // item populates without waiting for a user action; every later refresh
+  // goes through that same bounded path (see BranchStatusBarController).
   const branchStatusBarController = new BranchStatusBarController();
   branchStatusBarController.activate(context);
   context.subscriptions.push(

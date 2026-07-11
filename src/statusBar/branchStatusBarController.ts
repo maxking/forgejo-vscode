@@ -30,10 +30,12 @@ interface CacheEntry {
  * to open the PR, drill into CI details, or create a PR for the branch.
  *
  * Design constraints (see issue #189 acceptance criteria):
- * - Never fetches from `activate()` directly; every refresh -- including the
- *   first one -- is triggered by a real VS Code event (active editor change,
- *   Git repository open/close, branch checkout, or a `forgejo.*` config
- *   change) and funneled through the same debounce + per-branch cache below.
+ * - `activate()` schedules exactly one debounced, gated, cached initial
+ *   refresh so the item populates without waiting for a user action --
+ *   it does not fetch synchronously, and every later refresh (active editor
+ *   change, Git repository open/close, branch checkout, or a `forgejo.*`
+ *   config change) goes through that same debounce + per-branch cache, so
+ *   there is exactly one bounded request path, never a fan-out or a poll.
  * - Resolves the *active* repository (via `getActiveGitRepository`, which
  *   prefers the repo owning the active editor over `workspaceFolders[0]`),
  *   so multi-root workspaces reflect whichever repository the user is
@@ -58,10 +60,13 @@ export class BranchStatusBarController implements vscode.Disposable {
   }
 
   /**
-   * Registers listeners and pushes this controller into `context.subscriptions`.
-   * Does not fetch anything synchronously -- the first `refresh()` call below
-   * is itself scheduled through the debounce, so it behaves exactly like any
-   * later trigger (no special activation-time network path).
+   * Registers listeners and pushes this controller into `context.subscriptions`,
+   * then schedules one debounced initial refresh so the item populates without
+   * waiting for a user action. This does not fetch synchronously: the refresh
+   * still goes through the same ~250ms debounce, gating (disabled/no-repo/
+   * no-config all bail out before any network call), and TTL cache as every
+   * other trigger, so activation never causes an unbounded or unconditional
+   * network request -- just this one bounded, cached refresh.
    */
   activate(context: vscode.ExtensionContext): void {
     this.disposables.push(
