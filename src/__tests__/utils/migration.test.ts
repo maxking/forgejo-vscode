@@ -199,14 +199,16 @@ describe('migration', () => {
 				inspect: jest.fn((key) => key === 'instances' ? {
 					globalValue: [{ id: 'global', name: 'Global', instanceUrl: 'g', token: 'g-token' }],
 					workspaceValue: [{ id: 'workspace', name: 'Workspace', instanceUrl: 'w', token: 'w-token', isDefault: true }]
-				} : { globalValue: 'legacy-global', workspaceValue: 'legacy-workspace' }),
+				} : key === 'instanceUrl'
+					? { globalValue: 'g', workspaceValue: 'w/' }
+					: { globalValue: 'legacy-global', workspaceValue: 'legacy-workspace' }),
 				update: baseUpdate
 			};
 			const folderConfig = (id: string, update: jest.Mock) => ({
 				get: jest.fn((key) => key === 'instances' ? [{ id, name: id, instanceUrl: id, token: `${id}-token`, isDefault: true }] : key === 'instanceUrl' ? `${id}/` : undefined),
 				inspect: jest.fn((key) => key === 'instances'
 					? { workspaceFolderValue: [{ id, name: id, instanceUrl: id, token: `${id}-token`, isDefault: true }] }
-					: { workspaceFolderValue: `legacy-${id}` }),
+					: key === 'instanceUrl' ? { workspaceFolderValue: `${id}/` } : { workspaceFolderValue: `legacy-${id}` }),
 				update
 			});
 			const oneConfig = folderConfig('folder-one', folderOneUpdate);
@@ -231,6 +233,31 @@ describe('migration', () => {
 			expect(vscode.workspace.getConfiguration).toHaveBeenCalledWith('forgejo', folderTwo.uri);
 		});
 
+		it('pairs global and workspace legacy tokens with URLs from the same scopes', async () => {
+			const update = jest.fn().mockResolvedValue(undefined);
+			const instances = [
+				{ id: 'a', name: 'A', instanceUrl: 'https://a.example' },
+				{ id: 'b', name: 'B', instanceUrl: 'https://b.example/' }
+			];
+			(vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+				get: jest.fn((key) => key === 'instances' ? instances : undefined),
+				inspect: jest.fn((key) => key === 'instances'
+					? { globalValue: instances, workspaceValue: instances }
+					: key === 'instanceUrl'
+						? { globalValue: 'a.example/', workspaceValue: 'https://b.example' }
+						: { globalValue: 'token-a', workspaceValue: 'token-b' }),
+				update
+			});
+
+			await migrateTokensToSecretStorage();
+
+			expect(mockSetToken).toHaveBeenCalledWith('a', 'token-a');
+			expect(mockSetToken).toHaveBeenCalledWith('b', 'token-b');
+			expect(mockSetToken).not.toHaveBeenCalledWith('a', 'token-b');
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Global);
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Workspace);
+		});
+
 		it('preserves a legacy token when no instance exists to receive it', async () => {
 			const { update } = mockConfig({ instances: [], instanceUrl: 'https://missing.example', token: 'keep-me' });
 
@@ -249,7 +276,9 @@ describe('migration', () => {
 				get: jest.fn((key) => key === 'instances'
 					? [{ id: 'global', name: 'Global', instanceUrl: 'https://global.example', isDefault: true }]
 					: key === 'instanceUrl' ? 'https://folder.example/' : undefined),
-				inspect: jest.fn((key) => key === 'token' ? { workspaceFolderValue: 'folder-token' } : undefined),
+				inspect: jest.fn((key) => key === 'token'
+					? { workspaceFolderValue: 'folder-token' }
+					: key === 'instanceUrl' ? { workspaceFolderValue: 'https://folder.example/' } : undefined),
 				update: folderUpdate
 			};
 			(vscode.workspace.getConfiguration as jest.Mock).mockImplementation((_section, resource) => resource ? folderConfig : {
@@ -272,10 +301,12 @@ describe('migration', () => {
 					{ id: 'other', name: 'Other', instanceUrl: 'https://other.example', isDefault: true },
 					{ id: 'matching', name: 'Matching', instanceUrl: 'folder.example' }
 				] : key === 'instanceUrl' ? 'https://folder.example/' : undefined),
-				inspect: jest.fn((key) => key === 'token' ? { workspaceFolderValue: 'folder-token' } : undefined),
+				inspect: jest.fn((key) => key === 'token'
+					? { workspaceFolderValue: 'folder-token' }
+					: key === 'instanceUrl' ? { workspaceFolderValue: 'https://folder.example/' } : undefined),
 				update
 			};
-			(vscode.workspace.getConfiguration as jest.Mock).mockImplementation((_section, resource) => resource ? config : { get: jest.fn(), inspect: jest.fn(), update: jest.fn() });
+			(vscode.workspace.getConfiguration as jest.Mock).mockImplementation((_section, resource) => resource ? config : { get: jest.fn((_key, defaultValue) => defaultValue), inspect: jest.fn(), update: jest.fn() });
 
 			await migrateTokensToSecretStorage();
 

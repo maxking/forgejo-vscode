@@ -61,6 +61,10 @@ export async function migrateTokensToSecretStorage(): Promise<void> {
 	const migrateConfig = async (config: vscode.WorkspaceConfiguration, scopes: { value: ScopeKey; target: vscode.ConfigurationTarget }[]): Promise<void> => {
 		const instanceInspection = config.inspect<ForgejoInstance[]>('instances');
 		const effectiveInstances = config.get<ForgejoInstance[]>('instances', []);
+		const candidateInstances = [
+			...effectiveInstances,
+			...scopes.flatMap(scope => instanceInspection?.[scope.value] ?? [])
+		];
 		for (const scope of scopes) {
 			const instances = instanceInspection?.[scope.value];
 			if (!instances) continue;
@@ -74,15 +78,16 @@ export async function migrateTokensToSecretStorage(): Promise<void> {
 			if (changed) await config.update('instances', instances.map(({ token: _token, ...rest }) => rest), scope.target);
 		}
 
-		const legacyInstanceUrl = config.get<string>('instanceUrl')?.trim();
-		const normalizedLegacyUrl = legacyInstanceUrl ? normalizeUrl(legacyInstanceUrl) : undefined;
-		const matchingInstance = normalizedLegacyUrl
-			? effectiveInstances.find(instance => normalizeUrl(instance.instanceUrl) === normalizedLegacyUrl)
-			: undefined;
+		const urlInspection = config.inspect<string>('instanceUrl');
 		const tokenInspection = config.inspect<string>('token');
 		for (const scope of scopes) {
 			const legacyToken = tokenInspection?.[scope.value]?.trim();
 			if (!legacyToken) continue;
+			const legacyInstanceUrl = urlInspection?.[scope.value]?.trim();
+			const normalizedLegacyUrl = legacyInstanceUrl ? normalizeUrl(legacyInstanceUrl) : undefined;
+			const matchingInstance = normalizedLegacyUrl
+				? candidateInstances.find(instance => normalizeUrl(instance.instanceUrl) === normalizedLegacyUrl)
+				: undefined;
 			if (!matchingInstance) {
 				logWarn('Legacy forgejo.token could not be migrated because no instance matches forgejo.instanceUrl');
 				continue;
