@@ -27,6 +27,10 @@
   const issueCreated = document.getElementById('issue-created');
   const labelsContainer = document.getElementById('labels-container');
   const assigneesContainer = document.getElementById('assignees-container');
+  const milestoneContainer = document.getElementById('milestone-container');
+  const editLabelsBtn = document.getElementById('edit-labels-btn');
+  const editAssigneesBtn = document.getElementById('edit-assignees-btn');
+  const editMilestoneBtn = document.getElementById('edit-milestone-btn');
 
   const refreshBtn = document.getElementById('refresh-btn');
   const startWorkBtn = document.getElementById('start-work-btn');
@@ -127,6 +131,21 @@
     reopenIssueBtn.addEventListener('click', () => {
       console.log('[Forgejo Issue Webview] Reopen issue clicked');
       vscode.postMessage({ type: 'reopenIssue' });
+    });
+
+    editLabelsBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Edit labels clicked');
+      vscode.postMessage({ type: 'editLabels' });
+    });
+
+    editAssigneesBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Edit assignees clicked');
+      vscode.postMessage({ type: 'editAssignees' });
+    });
+
+    editMilestoneBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Edit milestone clicked');
+      vscode.postMessage({ type: 'editMilestone' });
     });
 
     startTimerBtn.addEventListener('click', () => {
@@ -349,6 +368,15 @@
         issue.assignees.map(a => `<span class="assignee">${escapeHtml(a.login)}</span>`).join(', ');
     } else {
       assigneesContainer.style.display = 'none';
+    }
+
+    // Update milestone
+    if (issue.milestone) {
+      milestoneContainer.style.display = 'flex';
+      milestoneContainer.innerHTML = '<span class="milestone-label">Milestone:</span> ' +
+        `<span class="milestone">${escapeHtml(issue.milestone.title)}</span>`;
+    } else {
+      milestoneContainer.style.display = 'none';
     }
 
     // Update description with Markdown rendering

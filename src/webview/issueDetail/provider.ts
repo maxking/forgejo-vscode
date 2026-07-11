@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import { ForgejoClient, type ForgejoStopwatch, type ForgejoTrackedTime } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
-import { Issue } from '../../models/issue';
+import { IssueWithMilestone } from '../../models/issue';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 import { fetchNewestActivityPage, getTimelineEventName, type TimelineActivity } from '../shared/helpers';
+import { pickLabels, pickAssignees, pickMilestone } from '../shared/metadataPickers';
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -18,7 +19,10 @@ export type WebviewMessage =
   | { type: 'stopTimer' }
   | { type: 'cancelTimer' }
   | { type: 'addManualTime'; seconds: number }
-  | { type: 'setActivitySortOrder'; order: ActivitySortOrder };
+  | { type: 'setActivitySortOrder'; order: ActivitySortOrder }
+  | { type: 'editLabels' }
+  | { type: 'editAssignees' }
+  | { type: 'editMilestone' };
 
 export type ExtensionMessage =
   | { type: 'update'; data: IssueDetailViewData }
@@ -46,7 +50,7 @@ type IssueTimelineApiActivity = Omit<IssueActivity, 'type' | 'event'> & Timeline
 export type ActivitySortOrder = 'newest-first' | 'oldest-first';
 
 export interface IssueDetailViewData {
-  issue: Issue;
+  issue: IssueWithMilestone;
   activities: IssueActivity[];
   activitySortOrder: ActivitySortOrder;
   timeTracking: IssueTimeTrackingViewData;
@@ -339,6 +343,9 @@ export class IssueDetailWebviewProvider {
       case 'cancelTimer': await this._cancelTimer(owner, repo, number, panelKey, instanceUrl); break;
       case 'addManualTime': await this._addManualTime(owner, repo, number, message.seconds, panelKey, instanceUrl); break;
       case 'setActivitySortOrder': await this._setActivitySortOrder(message.order); break;
+      case 'editLabels': await this._editLabels(owner, repo, number, panelKey, instanceUrl); break;
+      case 'editAssignees': await this._editAssignees(owner, repo, number, panelKey, instanceUrl); break;
+      case 'editMilestone': await this._editMilestone(owner, repo, number, panelKey, instanceUrl); break;
     }
   }
 
@@ -415,6 +422,66 @@ export class IssueDetailWebviewProvider {
       if (panelState) {
         void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: false });
       }
+    }
+  }
+
+  private async _editLabels(owner: string, repo: string, number: number, panelKey?: string, instanceUrl?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await this._getConfig(owner, repo, instanceUrl);
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const currentLabelNames = panelState?.pendingData?.issue.labels.map(label => label.name) ?? [];
+      const labelIds = await pickLabels(client, owner, repo, currentLabelNames);
+      if (labelIds === undefined) return; // User cancelled
+
+      await client.setIssueLabels(owner, repo, number, labelIds);
+      void vscode.window.showInformationMessage(`Labels updated for Issue #${String(number)}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editLabels', success: true });
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      logError('Failed to update labels:', error);
+      void vscode.window.showErrorMessage(`Failed to update labels: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editLabels', success: false });
+    }
+  }
+
+  private async _editAssignees(owner: string, repo: string, number: number, panelKey?: string, instanceUrl?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await this._getConfig(owner, repo, instanceUrl);
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const currentLogins = panelState?.pendingData?.issue.assignees.map(assignee => assignee.login) ?? [];
+      const assignees = await pickAssignees(client, owner, repo, currentLogins);
+      if (assignees === undefined) return; // User cancelled
+
+      await client.updateIssueMetadata(owner, repo, number, { assignees });
+      void vscode.window.showInformationMessage(`Assignees updated for Issue #${String(number)}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editAssignees', success: true });
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      logError('Failed to update assignees:', error);
+      void vscode.window.showErrorMessage(`Failed to update assignees: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editAssignees', success: false });
+    }
+  }
+
+  private async _editMilestone(owner: string, repo: string, number: number, panelKey?: string, instanceUrl?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await this._getConfig(owner, repo, instanceUrl);
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const currentMilestoneId = panelState?.pendingData?.issue.milestone?.id;
+      const milestone = await pickMilestone(client, owner, repo, currentMilestoneId);
+      if (milestone === undefined) return; // User cancelled
+
+      await client.updateIssueMetadata(owner, repo, number, { milestone });
+      void vscode.window.showInformationMessage(`Milestone updated for Issue #${String(number)}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editMilestone', success: true });
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      logError('Failed to update milestone:', error);
+      void vscode.window.showErrorMessage(`Failed to update milestone: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editMilestone', success: false });
     }
   }
 
@@ -580,8 +647,18 @@ export class IssueDetailWebviewProvider {
         <span id="issue-created" class="issue-date"></span>
       </div>
 
-      <div id="labels-container" class="labels-container" style="display: none;"></div>
-      <div id="assignees-container" class="assignees-container" style="display: none;"></div>
+      <div class="metadata-row">
+        <div id="labels-container" class="labels-container" style="display: none;"></div>
+        <button id="edit-labels-btn" class="icon-btn" title="Edit labels">🏷️</button>
+      </div>
+      <div class="metadata-row">
+        <div id="assignees-container" class="assignees-container" style="display: none;"></div>
+        <button id="edit-assignees-btn" class="icon-btn" title="Edit assignees">👤</button>
+      </div>
+      <div class="metadata-row">
+        <div id="milestone-container" class="milestone-container" style="display: none;"></div>
+        <button id="edit-milestone-btn" class="icon-btn" title="Edit milestone">🎯</button>
+      </div>
     </header>
 
     <nav class="action-bar">

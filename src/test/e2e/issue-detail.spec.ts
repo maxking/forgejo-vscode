@@ -232,6 +232,55 @@ test.describe('Issue Detail Webview', () => {
     await expect(page.locator('#assignees-container')).toBeHidden();
   });
 
+  test('displays milestone when set', async ({ page }) => {
+    await harness.sendIssueUpdate(createMockIssueData({
+      milestone: { id: 1, title: 'v1.0' },
+    }));
+
+    const milestone = page.locator('#milestone-container');
+    await expect(milestone).toBeVisible();
+    await expect(milestone).toContainText('v1.0');
+  });
+
+  test('hides milestone when unset', async ({ page }) => {
+    await harness.sendIssueUpdate(createMockIssueData({ milestone: null }));
+
+    await expect(page.locator('#milestone-container')).toBeHidden();
+  });
+
+  test('edit-labels button is always visible, even with no labels', async ({ page }) => {
+    await harness.sendIssueUpdate(createMockIssueData({ labels: [] }));
+
+    await expect(page.locator('#edit-labels-btn')).toBeVisible();
+  });
+
+  test('clicking edit labels posts an editLabels message', async ({ page }) => {
+    await harness.sendIssueUpdate(createMockIssueData());
+
+    await page.locator('#edit-labels-btn').click();
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'editLabels' });
+  });
+
+  test('clicking edit assignees posts an editAssignees message', async ({ page }) => {
+    await harness.sendIssueUpdate(createMockIssueData());
+
+    await page.locator('#edit-assignees-btn').click();
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'editAssignees' });
+  });
+
+  test('clicking edit milestone posts an editMilestone message', async ({ page }) => {
+    await harness.sendIssueUpdate(createMockIssueData());
+
+    await page.locator('#edit-milestone-btn').click();
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'editMilestone' });
+  });
+
   test('displays activity timeline with comments', async ({ page }) => {
     const data = createMockIssueData();
     data.activities = [
