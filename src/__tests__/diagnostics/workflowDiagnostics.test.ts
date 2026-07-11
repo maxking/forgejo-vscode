@@ -21,13 +21,11 @@ describe('workflowDiagnostics', () => {
     expect(workflowSchema.definitions['service-container-registry-credentials'].mapping.properties.password).toEqual({ type: 'non-empty-string' });
   });
 
-  test('relaxes cancel-in-progress and step with schema types beyond upstream non-empty-string', () => {
+  test('keeps the vendored upstream non-empty-string types for cancel-in-progress and step with', () => {
     expect(workflowSchema.definitions['concurrency-mapping'].mapping.properties['cancel-in-progress']).toEqual(
-      expect.objectContaining({ type: 'concurrency-cancel-in-progress' })
+      expect.objectContaining({ type: 'non-empty-string' })
     );
-    expect(workflowSchema.definitions['concurrency-cancel-in-progress']['one-of']).toEqual(['boolean', 'non-empty-string']);
-    expect(workflowSchema.definitions['step-with'].mapping['loose-value-type']).toBe('step-with-value');
-    expect(workflowSchema.definitions['step-with-value']['one-of']).toEqual(['string', 'boolean', 'number']);
+    expect(workflowSchema.definitions['step-with'].mapping['loose-value-type']).toBe('string');
   });
 
   test('contributes the Forgejo schema to YAML language tooling', () => {
@@ -289,22 +287,6 @@ describe('workflowDiagnostics', () => {
     expect(issues).toEqual([]);
   });
 
-  test('still rejects a bare number for concurrency.cancel-in-progress', () => {
-    const issues = validateWorkflowText([
-      'on: push',
-      'concurrency:',
-      '  group: ci',
-      '  cancel-in-progress: 1',
-      'jobs:',
-      '  test:',
-      '    runs-on: docker',
-      '    steps:',
-      '      - run: npm test',
-    ].join('\n'), workflowPath);
-
-    expect(issues.length).toBeGreaterThan(0);
-  });
-
   test('accepts a bare number for a step with value like fetch-depth: 0', () => {
     const issues = validateWorkflowText([
       'on: push',
@@ -350,5 +332,136 @@ describe('workflowDiagnostics', () => {
     ].join('\n'), workflowPath);
 
     expect(issues.length).toBeGreaterThan(0);
+  });
+
+  test('accepts boolean cancel-in-progress like Forgejo runner scalar decoding', () => {
+    const issues = validateWorkflowText([
+      'name: Test',
+      'on: push',
+      'concurrency:',
+      '  group: ${{ github.workflow }}-${{ github.ref }}',
+      '  cancel-in-progress: true',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    concurrency:',
+      '      group: test',
+      '      cancel-in-progress: false',
+      '    steps:',
+      '      - run: npm test',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('accepts number and boolean step inputs as string-compatible YAML scalars', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - uses: actions/checkout@v7',
+      '        with:',
+      '          fetch-depth: 0',
+      '          persist-credentials: false',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('applies runner scalar-to-string behavior to all string schema definitions', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'env:',
+      '  RETRIES: 3',
+      '  ENABLED: true',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - run: npm test',
+      '        env:',
+      '          OPTIONAL: null',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('accepts yaml.v3 legacy boolean and underscored number decoding', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    timeout-minutes: 1_000',
+      '    steps:',
+      '      - run: npm test',
+      '        continue-on-error: "yes"',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('does not decode quoted scalars as runner boolean or number types', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    timeout-minutes: "10"',
+      '    steps:',
+      '      - run: npm test',
+      '        continue-on-error: "true"',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: 'Expected a boolean for step continue on error.' }),
+    ]));
+  });
+
+  test('ignores require-non-empty schema metadata like the runner schema decoder', () => {
+    const issues = validateWorkflowText([
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - uses: ""',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual([]);
+  });
+
+  test('rejects insert directives when the mapping has no expression context', () => {
+    const issues = validateWorkflowText([
+      '${{ insert }}:',
+      '  name: inserted',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - run: npm test',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: 'insert is not allowed here' }),
+    ]));
+  });
+
+  test('rejects non-literal expressions where the runner schema provides no context', () => {
+    const issues = validateWorkflowText([
+      'name: ${{ contains(github.ref, "main") }}',
+      'on: push',
+      'jobs:',
+      '  test:',
+      '    runs-on: docker',
+      '    steps:',
+      '      - run: npm test',
+    ].join('\n'), workflowPath);
+
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: 'Expressions are not allowed here.' }),
+    ]));
   });
 });
