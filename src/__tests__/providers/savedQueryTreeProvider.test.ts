@@ -247,10 +247,13 @@ describe('SavedQueryTreeProvider', () => {
       expect(children[0]).toBeInstanceOf(IssueTreeItem);
     });
 
-    test('loadMoreSavedQuery fetches the next page and appends without duplicating items', async () => {
+    test('loadMoreSavedQuery fetches the next page and dedups an item repeated across pages', async () => {
+      // Page 2 deliberately repeats #7 from page 1 (overlapping paged results,
+      // as can happen with live data shifting between requests) so this test
+      // actually exercises appendUniquePullRequests instead of just appending.
       mockClient.getPullRequestsPage
         .mockResolvedValueOnce({ items: [mockPR], page: 1, limit: 50, hasMore: true })
-        .mockResolvedValueOnce({ items: [{ ...mockPR, number: 8 }], page: 2, limit: 50, hasMore: false });
+        .mockResolvedValueOnce({ items: [{ ...mockPR, number: 7 }, { ...mockPR, number: 8 }], page: 2, limit: 50, hasMore: false });
       const section = new SavedQuerySectionItem(assignedGroup, configA, 'pullRequests');
 
       const firstPage = await provider.getChildren(section);
@@ -264,6 +267,25 @@ describe('SavedQueryTreeProvider', () => {
       expect((secondPage[0] as SavedQueryPullRequestItem).pr.number).toBe(7);
       expect((secondPage[1] as SavedQueryPullRequestItem).pr.number).toBe(8);
       expect(mockClient.getPullRequestsPage).toHaveBeenCalledTimes(2);
+    });
+
+    test('loadMoreSavedQuery dedups an issue repeated across pages', async () => {
+      mockClient.getIssuesPage
+        .mockResolvedValueOnce({ items: [mockIssue], page: 1, limit: 50, hasMore: true })
+        .mockResolvedValueOnce({ items: [{ ...mockIssue, number: 9 }, { ...mockIssue, number: 10 }], page: 2, limit: 50, hasMore: false });
+      const section = new SavedQuerySectionItem(assignedGroup, configA, 'issues');
+
+      const firstPage = await provider.getChildren(section);
+      expect(firstPage).toHaveLength(2);
+
+      const loadMoreItem = firstPage[1] as SavedQueryLoadMoreItem;
+      await provider.loadMoreSavedQuery(loadMoreItem);
+
+      const secondPage = await provider.getChildren(section);
+      expect(secondPage).toHaveLength(2);
+      expect((secondPage[0] as IssueTreeItem).issue.number).toBe(9);
+      expect((secondPage[1] as IssueTreeItem).issue.number).toBe(10);
+      expect(mockClient.getIssuesPage).toHaveBeenCalledTimes(2);
     });
 
     test('concurrent expansions of the same section reuse the in-flight request instead of double-fetching', async () => {
