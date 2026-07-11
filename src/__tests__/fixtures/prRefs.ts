@@ -70,9 +70,16 @@ export const mockPRWithRefs = {
       full_name: 'owner/repo'
     }
   },
+  // base.sha is the *live tip* of the base branch (moves as the base branch
+  // advances) and must NOT be used for diff purposes. merge_base is the
+  // frozen divergence commit and is the correct field to diff against.
+  // Kept deliberately distinct from merge_base so tests that accidentally
+  // read base.sha instead of merge_base fail loudly. See issue #182.
   base: {
-    ref: mockStandardRefs.base
+    ref: mockStandardRefs.base,
+    sha: 'basebranchtip789'
   },
+  merge_base: 'mergebasecommit123',
   mergeable: true,
   merged: false,
   merge_commit_sha: null,

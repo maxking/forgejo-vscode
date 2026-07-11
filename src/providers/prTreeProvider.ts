@@ -3,6 +3,46 @@ import { ForgejoClient, ForgejoItemQueryOptions, PullRequestPage } from '../api/
 import { getPullRequestMergeability, PullRequestFile, PullRequestListItemWithMergeability } from '../models/pullRequest';
 import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoConfigFor, getForgejoRepositoryConfigs } from '../utils/config';
 
+/**
+ * The Forgejo pull request API response includes `merge_base` (the frozen
+ * three-dot-diff divergence commit) and `base.sha` (the *live* tip of the
+ * base branch, recomputed on every request). forgejo-ts's `PullRequest`
+ * type omits both. We only ever want `merge_base` for diff purposes.
+ */
+interface PullRequestWithMergeBase {
+  merge_base?: string;
+  base: { ref: string };
+  head: { ref: string; sha?: string };
+}
+
+/**
+ * Resolve stable diff refs for a PR's changed-file content fetches.
+ *
+ * `client.getPullRequestRefs()` returns branch *names*
+ * (`pr.base.ref`/`pr.head.ref`), which are moving targets: once the base
+ * branch advances past the PR's divergence point, fetching "before"
+ * content at that ref pulls in unrelated upstream changes and the diff
+ * view balloons to look like the whole file changed (issue #182).
+ *
+ * Use `merge_base` (the actual divergence commit) for the base side and
+ * `head.sha` (already an immutable commit) for the head side instead.
+ * Falling back to `base.ref` when `merge_base` is missing (older/
+ * nonstandard Forgejo responses) reintroduces the drift bug, but is
+ * preferable to failing outright.
+ */
+async function getPRDiffRefs(
+  client: ForgejoClient,
+  owner: string,
+  repo: string,
+  number: number
+): Promise<{ base: string; head: string }> {
+  const pr = await client.getPullRequest(owner, repo, number) as PullRequestWithMergeBase;
+  return {
+    base: pr.merge_base ?? pr.base.ref,
+    head: pr.head.sha ?? pr.head.ref
+  };
+}
+
 const PULL_REQUEST_PAGE_SIZE = 50;
 const PULL_REQUEST_MERGEABILITY_BATCH_SIZE = 5;
 
@@ -452,10 +492,10 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       console.log(`[Forgejo] Fetching files for PR #${prItem.pr.number}...`);
 
-      // Fetch both files and PR details (for refs)
+      // Fetch both files and PR details (for diff refs)
       const [files, refs] = await Promise.all([
         client.getPullRequestFiles(prItem.owner, prItem.repo, prItem.pr.number),
-        client.getPullRequestRefs(prItem.owner, prItem.repo, prItem.pr.number)
+        getPRDiffRefs(client, prItem.owner, prItem.repo, prItem.pr.number)
       ]);
 
       // Cache the results
