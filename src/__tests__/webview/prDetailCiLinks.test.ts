@@ -1,11 +1,15 @@
 import { CommitStatus } from '../../models/pullRequest';
 import { openWorkflowFileForCIStatus, viewCIStatusLogs } from '../../commands/ciNavigation';
 import { PRDetailWebviewProvider } from '../../webview/prDetail/provider';
+import { getForgejoConfigFor } from '../../utils/config';
 
 jest.mock('../../commands/ciNavigation', () => ({
   openWorkflowFileForCIStatus: jest.fn(),
   viewCIStatusLogs: jest.fn(),
 }));
+jest.mock('../../utils/config');
+
+const mockGetForgejoConfigFor = getForgejoConfigFor as jest.MockedFunction<typeof getForgejoConfigFor>;
 
 describe('PR detail CI links', () => {
   const status: CommitStatus = {
@@ -18,10 +22,11 @@ describe('PR detail CI links', () => {
     updated_at: '2026-02-22T06:30:57Z'
   };
 
-  function createProvider(): PRDetailWebviewProvider {
+  function createProvider(): { provider: PRDetailWebviewProvider; postMessage: jest.Mock } {
     const provider = new PRDetailWebviewProvider({} as never);
+	const postMessage = jest.fn();
     (provider as any)._panels.set('panel', {
-      panel: { webview: { postMessage: jest.fn() } },
+	  panel: { webview: { postMessage } },
       owner: 'maxking',
       repo: 'forgejo-vscode',
       number: 191,
@@ -29,7 +34,7 @@ describe('PR detail CI links', () => {
       isReady: true,
       pendingData: null
     });
-    return provider;
+	return { provider, postMessage };
   }
 
   beforeEach(() => {
@@ -37,7 +42,7 @@ describe('PR detail CI links', () => {
   });
 
   test('routes failed status log requests through extension-side log navigation', async () => {
-    const provider = createProvider();
+	const { provider } = createProvider();
 
     await (provider as any)._handleMessage({ type: 'viewCIStatusLogs', status }, 'panel');
 
@@ -50,7 +55,7 @@ describe('PR detail CI links', () => {
   });
 
   test('routes workflow file requests with repository identity', async () => {
-    const provider = createProvider();
+	const { provider } = createProvider();
 
     await (provider as any)._handleMessage({ type: 'openCIWorkflowFile', status }, 'panel');
 
@@ -61,5 +66,16 @@ describe('PR detail CI links', () => {
       instanceUrl: 'https://git.example.com'
     });
   });
-});
 
+	test('delivers a fetch error that occurs before the webview is ready', async () => {
+		const { provider, postMessage } = createProvider();
+		(provider as any)._panels.get('panel').isReady = false;
+		mockGetForgejoConfigFor.mockRejectedValueOnce(new Error('Authentication failed'));
+
+		await (provider as any)._fetchPRData('panel');
+		expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+
+		await (provider as any)._handleMessage({ type: 'ready' }, 'panel');
+		expect(postMessage).toHaveBeenCalledWith({ type: 'error', message: 'Authentication failed' });
+	});
+});

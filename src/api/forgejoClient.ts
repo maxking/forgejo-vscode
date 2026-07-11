@@ -377,6 +377,22 @@ export class ForgejoClient extends BaseClient {
     return this.updatePullRequest(owner, repo, number, { body });
   }
 
+  async getWorkflowRunByNumber(owner: string, repo: string, runNumber: number): Promise<WorkflowRun | null> {
+    // Temporary compatibility wrapper: forgejo-ts 0.4.1 exposes paged run
+    // listing but not Forgejo's run_number filter. Remove when the client does.
+    const response = await this.rawRequest<{ workflow_runs?: WorkflowRun[] }>(
+      'GET',
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs?run_number=${encodeURIComponent(String(runNumber))}&page=1&limit=2`
+    );
+    return response.workflow_runs?.find(run => run.run_number === runNumber) ?? null;
+  }
+
+  async rerunWorkflowByNumber(owner: string, repo: string, runNumber: number): Promise<void> {
+    const run = await this.getWorkflowRunByNumber(owner, repo, runNumber);
+    if (!run) throw new Error(`Workflow run #${String(runNumber)} was not found`);
+    await this.rerunWorkflow(owner, repo, run.id);
+  }
+
   async updateIssueBody(owner: string, repo: string, number: number, body: string): Promise<Issue> {
     return this.updateIssue(owner, repo, number, { body });
   }

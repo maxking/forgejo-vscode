@@ -61,7 +61,7 @@ async function collectInputs(folderName: string) {
 	return { repoName: repoName.trim(), description: description.trim(), visibility };
 }
 
-async function doPublish(
+export async function doPublish(
 	repository: Repository,
 	instanceUrl: string,
 	token: string,
@@ -69,6 +69,23 @@ async function doPublish(
 	description: string,
 	isPrivate: boolean,
 ) {
+	const remoteName = repository.state.remotes.length > 0 ? 'forgejo' : 'origin';
+	if (repository.state.remotes.some(remote => remote.name === remoteName)) {
+		void vscode.window.showErrorMessage(`A Git remote named '${remoteName}' already exists. Rename or remove it before publishing.`);
+		return;
+	}
+	if (!repository.state.HEAD?.commit) {
+		const pendingChanges = [
+			...(repository.state.indexChanges ?? []),
+			...(repository.state.workingTreeChanges ?? []),
+			...(repository.state.mergeChanges ?? [])
+		];
+		if (pendingChanges.length === 0) {
+			void vscode.window.showErrorMessage('Add at least one file to the workspace before publishing a new repository.');
+			return;
+		}
+	}
+
 	const client = new ForgejoClient(instanceUrl, token);
 
 	logInfo(`Publishing repository "${repoName}" to ${instanceUrl}`);
@@ -87,8 +104,6 @@ async function doPublish(
 		);
 		return;
 	}
-
-	const remoteName = repository.state.remotes.length > 0 ? 'forgejo' : 'origin';
 
 	try {
 		await repository.addRemote(remoteName, remoteRepo.clone_url);

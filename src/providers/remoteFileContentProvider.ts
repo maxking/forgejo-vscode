@@ -133,21 +133,16 @@ export function decodeRemoteFileContent(entry: RepositoryContentEntry, uri: vsco
 }
 
 export class RemoteFileContentProvider implements vscode.TextDocumentContentProvider {
-  private cache = new Map<string, string>();
   private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
+  private readonly _knownUris = new Map<string, vscode.Uri>();
   readonly onDidChange = this._onDidChange.event;
 
   dispose(): void {
-    this.cache.clear();
     this._onDidChange.dispose();
   }
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
-    const cacheKey = uri.toString();
-    if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey) ?? '';
-    }
-
+    this._knownUris.set(uri.toString(), uri);
     const { instanceUrl, owner, repo, ref, filepath } = parseRemoteFileUri(uri);
     try {
       const config = await getForgejoConfigFor(owner, repo, instanceUrl);
@@ -158,7 +153,6 @@ export class RemoteFileContentProvider implements vscode.TextDocumentContentProv
       }
 
       const content = decodeRemoteFileContent(entry, uri);
-      this.cache.set(cacheKey, content);
       return content;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to fetch remote file';
@@ -167,16 +161,11 @@ export class RemoteFileContentProvider implements vscode.TextDocumentContentProv
     }
   }
 
-  clearCache(uri?: vscode.Uri): void {
+  refresh(uri?: vscode.Uri): void {
     if (uri) {
-      this.cache.delete(uri.toString());
+      this._onDidChange.fire(uri);
       return;
     }
-    this.cache.clear();
-  }
-
-  refresh(uri: vscode.Uri): void {
-    this.clearCache(uri);
-    this._onDidChange.fire(uri);
+    for (const knownUri of this._knownUris.values()) this._onDidChange.fire(knownUri);
   }
 }

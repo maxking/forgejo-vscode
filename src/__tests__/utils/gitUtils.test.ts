@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { parseRemoteUrl, detectGitRemote, hasGitRepository } from '../../utils/gitUtils';
+import { parseRemoteUrl, detectGitRemote, hasGitRepository, waitForGitRepositoryDiscovery, resetGitRepositoryReadinessForTesting } from '../../utils/gitUtils';
 
 jest.mock('child_process');
 
@@ -306,6 +306,28 @@ describe('gitUtils', () => {
 
       const result = await hasGitRepository();
       expect(result).toBe(false);
+    });
+  });
+
+  describe('Git repository readiness', () => {
+    it('shares the settling wait across concurrent and later consumers', async () => {
+      jest.useFakeTimers();
+      resetGitRepositoryReadinessForTesting();
+      const dispose = jest.fn();
+      const onDidOpenRepository = jest.fn(() => ({ dispose }));
+      const git = { repositories: [{}], onDidOpenRepository } as any;
+
+      const first = waitForGitRepositoryDiscovery(git);
+      const second = waitForGitRepositoryDiscovery(git);
+      expect(second).toBe(first);
+      expect(onDidOpenRepository).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(750);
+      await Promise.all([first, second]);
+      await waitForGitRepositoryDiscovery(git);
+      expect(onDidOpenRepository).toHaveBeenCalledTimes(1);
+      expect(dispose).toHaveBeenCalledTimes(1);
+      jest.useRealTimers();
     });
   });
 });

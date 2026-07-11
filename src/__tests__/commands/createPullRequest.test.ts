@@ -470,6 +470,21 @@ describe('createPullRequestCommand', () => {
     );
   });
 
+	it('rejects detached HEAD instead of creating a PR from a branch named HEAD', async () => {
+		const matching = createRepository('/workspace/repo', 'https://git.example.com/test-owner/test-repo.git');
+		mockGitApi([matching]);
+		mockGetForgejoConfig.mockResolvedValue(mockConfig);
+		mockedExecSync.mockReset();
+		mockedExecSync.mockReturnValueOnce('HEAD\n' as any);
+
+		await createPullRequestCommand(mockPRTreeProvider as any);
+
+		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+			'Cannot create a pull request from a detached HEAD. Check out a branch first.'
+		);
+		expect(mockCreatePullRequest).not.toHaveBeenCalled();
+	});
+
   it('prompts for a repository when multiple checkouts match the resolved config', async () => {
     const first = createRepository('/workspace/one', 'https://git.example.com/test-owner/test-repo.git');
     const second = createRepository('/workspace/two', 'https://git.example.com/test-owner/test-repo.git');

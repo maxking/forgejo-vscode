@@ -5,13 +5,17 @@ import { PullRequest, CommitStatus } from '../../models/pullRequest';
 import { executeCommand } from '../../commands/registry';
 import { openWorkflowFileForCIStatus, viewCIStatusLogs } from '../../commands/ciNavigation';
 import { logDebug, logInfo, logError } from '../../utils/logger';
-import { getTimelineEventName, type TimelineActivity } from '../shared/helpers';
+import { fetchNewestActivityPage, getTimelineEventName, type TimelineActivity } from '../shared/helpers';
+import { activateGitExtension } from '../../utils/gitExtension';
+import { matchingRemote, repositoryMatchesConfig } from '../../utils/gitRepositoryMatch';
+import type { Repository } from '../../types/git';
+import { execFile } from 'child_process';
 
 export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'checkout' }
   | { type: 'refresh' }
-  | { type: 'merge'; strategy: string; message?: string }
+  | { type: 'merge'; strategy: string }
   | { type: 'revert'; commitSha: string }
   | { type: 'addComment'; body: string }
   | { type: 'addReview'; state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; body: string }
@@ -113,6 +117,22 @@ function normalizeCommitActivity(commit: PRCommitApiActivity): PRActivity {
   };
 }
 
+function isValidGitBranchRef(ref: string): boolean {
+  const hasControlOrSpace = Array.from(ref).some(character => {
+    const code = character.charCodeAt(0);
+    return code <= 32 || code === 127;
+  });
+  return ref.length > 0
+    && !ref.startsWith('/')
+    && !ref.endsWith('/')
+    && !ref.endsWith('.')
+    && !ref.endsWith('.lock')
+    && !ref.includes('..')
+    && !ref.includes('@{')
+    && !hasControlOrSpace
+    && !/[~^:?*[\\]/.test(ref);
+}
+
 export interface PRDetailViewData {
   pr: PullRequest;
   activities: PRActivity[];
@@ -120,6 +140,8 @@ export interface PRDetailViewData {
   owner: string;
   repo: string;
   instanceUrl?: string;
+  historyTruncated: boolean;
+  historyIsNewest: boolean;
 }
 
 interface PanelState {
@@ -130,6 +152,8 @@ interface PanelState {
   instanceUrl?: string;
   isReady: boolean;
   pendingData?: PRDetailViewData | null;
+  pendingError?: string | null;
+  requestVersion?: number;
 }
 
 export class PRDetailWebviewProvider {
@@ -170,7 +194,9 @@ export class PRDetailWebviewProvider {
       number,
       instanceUrl,
       isReady: false,
-      pendingData: null
+      pendingData: null,
+      pendingError: null,
+      requestVersion: 0
     };
     this._panels.set(panelKey, state);
 
@@ -197,6 +223,7 @@ export class PRDetailWebviewProvider {
     if (!state) return;
 
     const { panel, owner, repo, number } = state;
+    const requestVersion = state.requestVersion = (state.requestVersion ?? 0) + 1;
     logInfo('_fetchPRData starting:', { panelKey, isReady: state.isReady });
 
     try {
@@ -206,11 +233,18 @@ export class PRDetailWebviewProvider {
       logInfo('Fetching PR details from API...');
       const prDetails = await client.getPullRequestDetails(owner, repo, number);
       logInfo('PR details fetched:', { title: prDetails.title });
+      const pageClient = client as Partial<ForgejoClient>;
 
-      const [activities, allStatuses] = await Promise.all([
+      const [activityResult, statusPage] = await Promise.all([
         this._fetchActivities(client, owner, repo, number),
-        prDetails.head.sha ? client.getCommitStatuses(owner, repo, prDetails.head.sha) : Promise.resolve([])
+        prDetails.head.sha && typeof pageClient.getCommitStatusesPage === 'function'
+          ? pageClient.getCommitStatusesPage.call(client, owner, repo, prDetails.head.sha, { page: 1, limit: 50 })
+          : prDetails.head.sha
+          ? client.getCommitStatuses(owner, repo, prDetails.head.sha).then(items => ({ items, hasMore: false }))
+          : Promise.resolve({ items: [], hasMore: false })
       ]);
+      const activities = activityResult.items;
+      const allStatuses = statusPage.items;
 
       // Deduplicate statuses by context, keeping only the latest per context.
       // The API returns all historical statuses (pending + final) for a SHA.
@@ -227,9 +261,11 @@ export class PRDetailWebviewProvider {
         }
       }
       const statuses = Array.from(latestByContext.values());
+      if (requestVersion !== state.requestVersion) return;
       logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length, raw: allStatuses.length });
 
-      state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl };
+      state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl, historyTruncated: activityResult.truncated || statusPage.hasMore, historyIsNewest: activityResult.newest && !statusPage.hasMore };
+      state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
 
       if (state.isReady) {
@@ -239,12 +275,16 @@ export class PRDetailWebviewProvider {
         logInfo('Webview not ready yet, data will be sent when ready');
       }
     } catch (error) {
+      if (requestVersion !== state.requestVersion) return;
       logError('Failed to fetch PR data:', error);
+      const message = error instanceof Error ? error.message : 'Failed to load PR details';
       if (state.isReady) {
         void panel.webview.postMessage({
           type: 'error',
-          message: error instanceof Error ? error.message : 'Failed to load PR details'
+          message
         });
+      } else {
+        state.pendingError = message;
       }
     }
   }
@@ -277,35 +317,35 @@ export class PRDetailWebviewProvider {
     return config;
   }
 
-  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<PRActivity[]> {
+  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: PRActivity[]; truncated: boolean; newest: boolean }> {
     const activities: PRActivity[] = [];
-    try {
-      const comments = await client.getIssueComments(owner, repo, number);
-      activities.push(...(comments as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
-    } catch (e) { logDebug('Could not fetch comments:', e); }
-    try {
-      const reviews = await client.getPullRequestReviews(owner, repo, number);
-      activities.push(...(reviews as PRActivity[]).map((r) => ({ ...r, type: 'review' as const })));
-    } catch (e) { logDebug('Could not fetch reviews:', e); }
-    try {
-      const commits = await client.getPullRequestCommits(owner, repo, number);
-      activities.push(...(commits as PRCommitApiActivity[]).map(normalizeCommitActivity));
-    } catch (e) { logDebug('Could not fetch commits:', e); }
-    try {
-      const timeline = await client.getIssueTimeline(owner, repo, number);
-      activities.push(...(timeline as PRTimelineApiActivity[]).flatMap((t): PRActivity[] => {
+    const pageClient = client as Partial<ForgejoClient>;
+    const commentsPage = pageClient.getIssueCommentsPage;
+    const reviewsPage = pageClient.getPullRequestReviewsPage;
+    const commitsPage = pageClient.getPullRequestCommitsPage;
+    const timelinePage = pageClient.getIssueTimelinePage;
+    const [comments, reviews, commits, timeline] = await Promise.all([
+      fetchNewestActivityPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(reviewsPage ? page => reviewsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestReviews(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch reviews:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(commitsPage ? page => commitsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestCommits(owner, repo, number), item => String(item.sha)).catch(e => { logDebug('Could not fetch commits:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false, newest: true }; })
+    ]);
+      activities.push(...(comments.items as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
+      activities.push(...(reviews.items as PRActivity[]).map((r) => ({ ...r, type: 'review' as const })));
+      activities.push(...(commits.items as PRCommitApiActivity[]).map(normalizeCommitActivity));
+      activities.push(...(timeline.items as PRTimelineApiActivity[]).flatMap((t): PRActivity[] => {
         const event = getTimelineEventName(t);
         if (!event || event === 'comment' || event === 'commented') {
           return [];
         }
         return [{ ...t, event, type: 'timeline' as const }];
       }));
-    } catch (e) { logDebug('Could not fetch timeline:', e); }
-    return activities.sort((a, b) => {
+    const items = activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? a.submitted_at ?? a.committed_at ?? 0);
       const dateB = new Date(b.created_at ?? b.submitted_at ?? b.committed_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
+    return { items, truncated: comments.truncated || reviews.truncated || commits.truncated || timeline.truncated, newest: comments.newest && reviews.newest && commits.newest && timeline.newest };
   }
 
   private async _handleMessage(message: WebviewMessage, panelKey: string): Promise<void> {
@@ -319,7 +359,10 @@ export class PRDetailWebviewProvider {
       case 'ready':
         logInfo('Webview ready message received, pendingData exists:', !!state.pendingData);
         state.isReady = true;
-        if (state.pendingData) {
+        if (state.pendingError) {
+          void panel.webview.postMessage({ type: 'error', message: state.pendingError });
+          state.pendingError = null;
+        } else if (state.pendingData) {
           logInfo('Sending pending data to webview...');
           this._sendDataToPanel(panelKey);
         } else {
@@ -329,8 +372,8 @@ export class PRDetailWebviewProvider {
         break;
       case 'checkout': await this._checkoutBranch(owner, repo, number, instanceUrl); break;
       case 'refresh': await this._fetchPRData(panelKey); break;
-      case 'merge': await this._mergePR(owner, repo, number, message.strategy, message.message, panelKey, instanceUrl); break;
-      case 'revert': this._revertCommit(message.commitSha); break;
+      case 'merge': await this._mergePR(owner, repo, number, message.strategy, panelKey, instanceUrl); break;
+      case 'revert': await this._revertCommit(message.commitSha, owner, repo, number, instanceUrl); break;
       case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey, instanceUrl); break;
       case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey, instanceUrl); break;
       case 'openInBrowser': await this._openInBrowser(owner, repo, number, instanceUrl); break;
@@ -360,16 +403,12 @@ export class PRDetailWebviewProvider {
       try {
         const config = await this._getConfig(owner, repo, instanceUrl);
 
-        // Fetch workflow runs and find the matching one by run_number
         const client = new ForgejoClient(config.instanceUrl, config.token);
-        const response = await client.getWorkflowRuns(owner, repo);
-        const matchingRun = response.workflow_runs.find(r => r.run_number === runNumber);
-
-        if (matchingRun) {
-          // Deep-link to the action detail webview within the extension
-          await executeCommand('forgejo.showActionDetails', matchingRun, owner, repo, instanceUrl);
-          return;
-        }
+        const locatedRun = await client.getWorkflowRunByNumber(owner, repo, runNumber);
+        if (!locatedRun) throw new Error(`Workflow run #${String(runNumber)} was not found`);
+        const matchingRun = await client.getWorkflowRunDetails(owner, repo, locatedRun.id);
+        await executeCommand('forgejo.showActionDetails', matchingRun, owner, repo, instanceUrl);
+        return;
       } catch (error) {
         logError('Failed to open CI status in extension:', error);
       }
@@ -394,18 +433,22 @@ export class PRDetailWebviewProvider {
     try {
       const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const refs = await client.getPullRequestRefs(owner, repo, number);
-      const terminal = vscode.window.createTerminal('Forgejo Checkout');
-      terminal.sendText(`git fetch origin ${refs.head}:${refs.head}`);
-      terminal.sendText(`git checkout ${refs.head}`);
-      terminal.show();
-      void vscode.window.showInformationMessage(`Checked out branch: ${refs.head}`);
+      const details = await client.getPullRequestDetails(owner, repo, number);
+      const repository = await this._selectLocalRepository(owner, repo, config.instanceUrl, 'Checkout Pull Request');
+      if (!repository) return;
+      const remote = matchingRemote(repository, owner, repo, config.instanceUrl);
+      if (!remote) throw new Error('The selected repository has no remote matching this pull request');
+      await repository.fetch(remote.name, `refs/pull/${String(number)}/head`);
+      const localBranch = `forgejo-pr-${String(number)}-${details.head.sha.slice(0, 8)}`;
+      try { await repository.checkout(localBranch); }
+      catch { await repository.createBranch(localBranch, true, 'FETCH_HEAD'); }
+      void vscode.window.showInformationMessage(`Checked out branch: ${localBranch}`);
     } catch (error) {
       void vscode.window.showErrorMessage(`Failed to checkout: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async _mergePR(owner: string, repo: string, number: number, strategy: string, message?: string, panelKey?: string, instanceUrl?: string): Promise<void> {
+  private async _mergePR(owner: string, repo: string, number: number, strategy: string, panelKey?: string, instanceUrl?: string): Promise<void> {
     const panelState = panelKey ? this._panels.get(panelKey) : undefined;
     try {
       const config = await this._getConfig(owner, repo, instanceUrl);
@@ -424,10 +467,52 @@ export class PRDetailWebviewProvider {
     }
   }
 
-  private _revertCommit(commitSha: string): void {
-    const terminal = vscode.window.createTerminal('Forgejo Revert');
-    terminal.sendText(`git revert ${commitSha}`);
-    terminal.show();
+  private async _revertCommit(commitSha: string, owner: string, repo: string, number: number, instanceUrl?: string): Promise<void> {
+    if (!/^[0-9a-f]{7,64}$/i.test(commitSha)) {
+      void vscode.window.showErrorMessage('Cannot revert an invalid commit identifier.');
+      return;
+    }
+    try {
+      const config = await this._getConfig(owner, repo, instanceUrl);
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const details = await client.getPullRequestDetails(owner, repo, number);
+      const baseRef = details.base.ref;
+      if (!isValidGitBranchRef(baseRef)) throw new Error('The pull request has an invalid base branch ref');
+      const repository = await this._selectLocalRepository(owner, repo, config.instanceUrl, 'Revert Pull Request');
+      if (!repository) return;
+      const remote = matchingRemote(repository, owner, repo, config.instanceUrl);
+      if (!remote) throw new Error('The selected repository has no remote matching this pull request');
+      await repository.fetch(remote.name, `refs/heads/${baseRef}`);
+      await new Promise<void>((resolve, reject) => {
+        execFile('git', ['revert', commitSha], { cwd: repository.rootUri.fsPath }, error => {
+          if (error) reject(error instanceof Error ? error : new Error(String(error)));
+          else resolve();
+        });
+      });
+      void vscode.window.showInformationMessage(`Reverted commit ${commitSha.slice(0, 8)}`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to revert: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _selectLocalRepository(owner: string, repo: string, instanceUrl: string, title: string): Promise<Repository | undefined> {
+    const gitExtension = await activateGitExtension();
+    if (!gitExtension?.enabled) {
+      throw new Error('The VS Code Git extension is unavailable');
+    }
+    const matches = gitExtension.getAPI(1).repositories.filter(repository =>
+      repositoryMatchesConfig(repository, owner, repo, instanceUrl)
+    );
+    if (matches.length === 1) return matches[0];
+    if (matches.length === 0) {
+      throw new Error(`No local checkout matches ${owner}/${repo}`);
+    }
+    const picked = await vscode.window.showQuickPick(matches.map(repository => ({
+      label: repository.rootUri.fsPath.split('/').pop() ?? repo,
+      description: repository.rootUri.fsPath,
+      repository
+    })), { title, placeHolder: 'Select the local checkout' });
+    return picked?.repository;
   }
 
   private async _addComment(owner: string, repo: string, number: number, body: string, panelKey?: string, instanceUrl?: string): Promise<void> {
@@ -627,7 +712,6 @@ export class PRDetailWebviewProvider {
         <option value="squash">Squash and merge</option>
         <option value="rebase">Rebase and merge</option>
       </select>
-      <textarea id="merge-message" placeholder="Merge message (optional)"></textarea>
       <div class="merge-actions">
         <button id="confirm-merge-btn" class="btn btn-success">Merge</button>
         <button id="cancel-merge-btn" class="btn btn-secondary">Cancel</button>

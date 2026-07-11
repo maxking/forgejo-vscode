@@ -54,7 +54,7 @@ describe('testInstanceConnection', () => {
   });
 
   it('should return true on successful connection', async () => {
-    MockForgejoClient.prototype.testConnection = jest.fn().mockResolvedValue(true);
+	MockForgejoClient.prototype.rawRequest = jest.fn().mockResolvedValue({ login: 'alice' });
     mockConfig([]);
 
     const instance = createInstance();
@@ -66,7 +66,7 @@ describe('testInstanceConnection', () => {
   });
 
   it('should return false on failed connection', async () => {
-    MockForgejoClient.prototype.testConnection = jest.fn().mockResolvedValue(false);
+	MockForgejoClient.prototype.rawRequest = jest.fn().mockResolvedValue(undefined);
     mockConfig([]);
 
     const instance = createInstance();
@@ -79,7 +79,7 @@ describe('testInstanceConnection', () => {
   });
 
   it('should return false on error and set error message', async () => {
-    MockForgejoClient.prototype.testConnection = jest.fn().mockRejectedValue(
+	MockForgejoClient.prototype.rawRequest = jest.fn().mockRejectedValue(
       new Error('Network timeout')
     );
     mockConfig([]);
@@ -93,7 +93,7 @@ describe('testInstanceConnection', () => {
   });
 
   it('should handle non-Error thrown values', async () => {
-    MockForgejoClient.prototype.testConnection = jest.fn().mockRejectedValue('string error');
+	MockForgejoClient.prototype.rawRequest = jest.fn().mockRejectedValue('string error');
     mockConfig([]);
 
     const instance = createInstance();
@@ -104,7 +104,7 @@ describe('testInstanceConnection', () => {
   });
 
   it('should save result when saveResult=true and instance exists in config', async () => {
-    MockForgejoClient.prototype.testConnection = jest.fn().mockResolvedValue(true);
+	MockForgejoClient.prototype.rawRequest = jest.fn().mockResolvedValue({ login: 'alice' });
     const existingInstance = createInstance();
     const { update } = mockConfig([existingInstance]);
 
@@ -115,7 +115,7 @@ describe('testInstanceConnection', () => {
   });
 
   it('should not save result when saveResult=false', async () => {
-    MockForgejoClient.prototype.testConnection = jest.fn().mockResolvedValue(true);
+	MockForgejoClient.prototype.rawRequest = jest.fn().mockResolvedValue({ login: 'alice' });
     const { update } = mockConfig([]);
 
     const instance = createInstance();
@@ -125,7 +125,7 @@ describe('testInstanceConnection', () => {
   });
 
   it('should save error result when saveResult=true and instance exists', async () => {
-    MockForgejoClient.prototype.testConnection = jest.fn().mockRejectedValue(
+	MockForgejoClient.prototype.rawRequest = jest.fn().mockRejectedValue(
       new Error('Auth failed')
     );
     const existingInstance = createInstance();
@@ -138,7 +138,7 @@ describe('testInstanceConnection', () => {
   });
 
   it('should set timestamp on connection test result', async () => {
-    MockForgejoClient.prototype.testConnection = jest.fn().mockResolvedValue(true);
+	MockForgejoClient.prototype.rawRequest = jest.fn().mockResolvedValue({ login: 'alice' });
     mockConfig([]);
 
     const now = Date.now();
@@ -148,4 +148,16 @@ describe('testInstanceConnection', () => {
     expect(instance.lastConnectionTest!.timestamp).toBeGreaterThanOrEqual(now);
     expect(instance.lastConnectionTest!.timestamp).toBeLessThanOrEqual(Date.now());
   });
+
+	it('uses the public connection check only when no token is configured', async () => {
+		MockForgejoClient.prototype.testConnection = jest.fn().mockResolvedValue(true);
+		MockForgejoClient.prototype.rawRequest = jest.fn();
+		mockConfig([]);
+
+		const result = await testInstanceConnection(createInstance({ token: undefined }), false);
+
+		expect(result).toBe(true);
+		expect(MockForgejoClient.prototype.testConnection).toHaveBeenCalled();
+		expect(MockForgejoClient.prototype.rawRequest).not.toHaveBeenCalled();
+	});
 });

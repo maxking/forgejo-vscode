@@ -18,11 +18,11 @@ import type { PullRequestListItem, PullRequestFile, CommitStatus } from '../mode
 import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
 import type { IssueLoadMoreItem, IssueRepositoryItem, IssueTreeItem } from '../providers/issueTreeProvider';
-import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem, PRLoadMoreItem } from '../providers/prTreeProvider';
+import type { PRTreeItem, PROverviewItem, PRFileItem, PRRepositoryItem, PRLoadMoreItem, PRFileLoadMoreItem } from '../providers/prTreeProvider';
 import type { RemoteRepositoryBrowseItem, RemoteRepositoryFileItem, RemoteRepositoryInstanceItem, RemoteRepositoryItem } from '../providers/remoteRepositoryTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs, ActionLoadMoreItem } from '../providers/actionsTreeProvider';
 import type { TodoIssueDraft } from '../providers/referenceLanguageProvider';
-import type { ReleaseGroupItem, ReleaseRepositoryItem } from '../providers/releaseTreeProvider';
+import type { ReleaseGroupItem, ReleaseRepositoryItem, ReleaseLoadMoreItem } from '../providers/releaseTreeProvider';
 
 // ---------------------------------------------------------------------------
 // Command argument map
@@ -46,12 +46,14 @@ export interface CommandMap {
   'forgejo.refreshRepositoryPullRequests': [repositoryItem: PRRepositoryItem];
   'forgejo.searchPullRequests': [];
   'forgejo.loadMorePullRequests': [item: PRLoadMoreItem];
+  'forgejo.loadMorePullRequestFiles': [item: PRFileLoadMoreItem];
   'forgejo.refreshIssues': [];
   'forgejo.searchIssues': [];
   'forgejo.loadMoreIssues': [item: IssueLoadMoreItem];
   'forgejo.refreshActions': [];
   'forgejo.loadMoreActions': [item: ActionLoadMoreItem];
   'forgejo.refreshReleases': [];
+  'forgejo.loadMoreReleases': [item: ReleaseLoadMoreItem];
   'forgejo.refreshRemoteRepositories': [];
   'forgejo.configureInstanceUrl': [];
   'forgejo.setAuthToken': [];
@@ -85,6 +87,8 @@ export interface CommandMap {
     baseRef: string,
     headRef: string,
     instanceUrl?: string,
+    headOwner?: string,
+    headRepo?: string,
   ];
 
   // -- Context menu commands -----------------------------------------------

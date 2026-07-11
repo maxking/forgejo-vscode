@@ -150,6 +150,10 @@ export async function createPullRequestCommand(prTreeProvider: PRTreeProvider, r
 				cwd: workspaceRoot,
 				encoding: 'utf-8'
 			}).trim();
+			if (!currentBranch || currentBranch === 'HEAD') {
+				void vscode.window.showErrorMessage('Cannot create a pull request from a detached HEAD. Check out a branch first.');
+				return;
+			}
 		} catch {
 			void vscode.window.showErrorMessage('Could not determine the current git branch.');
 			return;

@@ -153,10 +153,16 @@ export class ForgejoCommentController implements vscode.Disposable {
         existingThreads.forEach(t => t.dispose());
       }
 
-      // Group comments by line number
+      const headSide = this.isHeadSide(document.uri);
+      // Group comments by the line number for this side of the diff. Forgejo's
+      // generic `line` value is not sufficient for modified-file split diffs.
       const commentsByLine = new Map<number, ReviewComment[]>();
       for (const comment of fileComments) {
-        const line = comment.line;
+		const positioned = comment as ReviewComment & { old_position?: number; new_position?: number };
+		const line = headSide ? positioned.new_position : positioned.old_position;
+		if (typeof line !== 'number') {
+			continue;
+		}
         if (line <= 0) {
           continue;
         }

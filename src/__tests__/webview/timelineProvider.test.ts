@@ -35,7 +35,7 @@ describe('detail webview timeline activity normalization', () => {
       ])
     };
 
-    const activities = await (provider as any)._fetchActivities(client, 'forgejo', 'forgejo', 13020);
+    const { items: activities } = await (provider as any)._fetchActivities(client, 'forgejo', 'forgejo', 13020);
 
     expect(activities).toHaveLength(2);
     expect(activities.map((activity: { type: string }) => activity.type)).toEqual(['comment', 'timeline']);
@@ -105,6 +105,60 @@ describe('detail webview timeline activity normalization', () => {
     expect(client.getUserStopwatches).not.toHaveBeenCalled();
   });
 
+  test('tracked-time pagination deduplicates overlapping ids before totals', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const pageOne = Array.from({ length: 50 }, (_, index) => ({ id: index + 1, time: 60 }));
+    const client = {
+      getIssueTrackedTimes: jest.fn()
+        .mockResolvedValueOnce(pageOne)
+        .mockResolvedValueOnce([{ id: 50, time: 60 }, { id: 51, time: 120 }]),
+      getUserStopwatches: jest.fn().mockResolvedValue([])
+    };
+
+    const result = await (provider as any)._fetchTimeTracking(client, 'owner', 'repo', 1, true);
+
+    expect(result.entries).toHaveLength(51);
+    expect(result.totalSeconds).toBe(3120);
+  });
+
+  test('tracked-time safety cap marks the displayed total incomplete', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const fullPage = Array.from({ length: 50 }, (_, index) => ({ id: index + 1, time: 60 }));
+    const client = { getIssueTrackedTimes: jest.fn().mockResolvedValue(fullPage), getUserStopwatches: jest.fn().mockResolvedValue([]) };
+
+    const result = await (provider as any)._fetchTimeTracking(client, 'owner', 'repo', 1, true);
+
+    expect(client.getIssueTrackedTimes).toHaveBeenCalledTimes(4);
+    expect(result.error).toContain('incomplete');
+  });
+
+  test('bounded activity pages report when older history is available', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const client = {
+      getIssueCommentsPage: jest.fn().mockResolvedValue({ items: [], hasMore: true }),
+      getIssueTimelinePage: jest.fn().mockResolvedValue({ items: [], hasMore: false })
+    };
+
+    const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 1);
+
+    expect(result).toEqual({ items: [], truncated: true, newest: false });
+  });
+
+  test('issue details fetch the last activity page when the API reports a total', async () => {
+    const provider = new IssueDetailWebviewProvider({} as never);
+    const issueRows = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, index) => ({ id: start + index, created_at: new Date(2026, 0, start + index).toISOString() }));
+    const getIssueCommentsPage = jest.fn((_owner, _repo, _number, { page }) => Promise.resolve(page === 1
+      ? { items: issueRows(1, 50), hasMore: true, totalCount: 51 }
+      : { items: [{ ...issueRows(50, 50)[0] }, ...issueRows(51, 51)], hasMore: false, totalCount: 51 }));
+    const client = { getIssueCommentsPage, getIssueTimelinePage: jest.fn().mockResolvedValue({ items: [], hasMore: false, totalCount: 0 }) };
+
+    const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 1);
+
+    expect(getIssueCommentsPage).toHaveBeenLastCalledWith('owner', 'repo', 1, { page: 2, limit: 50 });
+    expect(result.items).toHaveLength(50);
+    expect(new Set(result.items.map((item: any) => item.id))).toEqual(new Set(issueRows(2, 51).map(item => item.id)));
+  });
+
   test('PR details skip duplicate timeline comments and preserve Forgejo type actions', async () => {
     const provider = new PRDetailWebviewProvider({} as never);
     const client = {
@@ -133,7 +187,7 @@ describe('detail webview timeline activity normalization', () => {
       ])
     };
 
-    const activities = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
+    const { items: activities } = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
 
     expect(activities).toHaveLength(2);
     expect(activities.map((activity: { type: string }) => activity.type)).toEqual(['comment', 'timeline']);
@@ -154,7 +208,7 @@ describe('detail webview timeline activity normalization', () => {
       getIssueTimeline: jest.fn().mockResolvedValue([])
     };
 
-    const activities = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
+    const { items: activities } = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
 
     expect(activities).toHaveLength(1);
     expect(activities[0]).toMatchObject({
@@ -169,5 +223,26 @@ describe('detail webview timeline activity normalization', () => {
       html_url: mockCommit.html_url
     });
     expect(activities[0]).not.toHaveProperty('commit');
+  });
+
+  test('PR details retain the newest page from each bounded activity stream', async () => {
+    const provider = new PRDetailWebviewProvider({} as never);
+    const page = (type: string) => jest.fn((_owner, _repo, _number, options) => Promise.resolve(options.page === 1
+      ? { items: Array.from({ length: 50 }, (_, index) => ({ id: index + 1, sha: `${type}-${String(index + 1)}`, body: type, created_at: new Date(2026, 0, index + 1).toISOString() })), hasMore: true, totalCount: 51 }
+      : { items: [{ id: 51, sha: `${type}-51`, body: type, created_at: new Date(2026, 0, 51).toISOString() }], hasMore: false, totalCount: 51 }));
+    const client = {
+      getIssueCommentsPage: page('comment'),
+      getPullRequestReviewsPage: page('review'),
+      getPullRequestCommitsPage: page('commit'),
+      getIssueTimelinePage: jest.fn().mockResolvedValue({ items: [], hasMore: false, totalCount: 0 })
+    };
+
+    const result = await (provider as any)._fetchActivities(client, 'owner', 'repo', 42);
+
+    expect(result.truncated).toBe(true);
+    expect(result.items.filter((item: any) => item.type === 'comment')).toHaveLength(50);
+    expect(result.items.filter((item: any) => item.type === 'review')).toHaveLength(50);
+    expect(result.items.filter((item: any) => item.type === 'commit')).toHaveLength(50);
+    expect(client.getPullRequestCommitsPage).toHaveBeenLastCalledWith('owner', 'repo', 42, { page: 2, limit: 50 });
   });
 });

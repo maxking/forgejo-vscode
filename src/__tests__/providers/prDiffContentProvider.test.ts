@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PRDiffContentProvider, createPRFileUri, PR_DIFF_SCHEME, parsePRFileUri, PR_DIFF_URI_VERSION } from '../../providers/prDiffContentProvider';
+import { PRDiffContentProvider, createPRFileUri, createPRFileUris, PR_DIFF_SCHEME, parsePRFileUri, PR_DIFF_URI_VERSION } from '../../providers/prDiffContentProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig, getForgejoConfigFor } from '../../utils/config';
 import { mockPlainTextContent, mockModifiedContent } from '../fixtures/fileContents';
@@ -471,5 +471,30 @@ describe('PRDiffContentProvider', () => {
         instanceUrl: 'https://codeberg.org'
       });
     });
+  });
+});
+
+describe('createPRFileUris repository identity', () => {
+  const base = { owner: 'upstream', repo: 'project', ref: 'base-sha', instanceUrl: 'https://git.example.com' };
+  const head = { owner: 'contributor', repo: 'fork', ref: 'head-sha', instanceUrl: 'https://git.example.com' };
+  const file = (status: string, filename: string, previous_filename?: string) => ({ status, filename, previous_filename } as any);
+
+  test.each([
+    ['added', file('added', 'src/new.ts'), undefined, ['contributor', 'fork', 'src/new.ts']],
+    ['removed', file('removed', 'src/old.ts'), ['upstream', 'project', 'src/old.ts'], undefined],
+    ['renamed', file('renamed', 'src/new-name.ts', 'src/old-name.ts'), ['upstream', 'project', 'src/old-name.ts'], ['contributor', 'fork', 'src/new-name.ts']]
+  ])('%s files use the repository that owns each immutable side', (_status, changedFile, expectedBefore, expectedAfter) => {
+    const uris = createPRFileUris(changedFile, base, head);
+
+    expect(uris.before ? [parsePRFileUri(uris.before).owner, parsePRFileUri(uris.before).repo, parsePRFileUri(uris.before).filepath] : undefined).toEqual(expectedBefore);
+    expect(uris.after ? [parsePRFileUri(uris.after).owner, parsePRFileUri(uris.after).repo, parsePRFileUri(uris.after).filepath] : undefined).toEqual(expectedAfter);
+  });
+
+  test('same-repository modified files keep both sides in the base PR repository', () => {
+    const sameRepoHead = { ...head, owner: base.owner, repo: base.repo };
+    const uris = createPRFileUris(file('modified', 'src/file.ts'), base, sameRepoHead);
+
+    expect(parsePRFileUri(uris.before!).owner).toBe('upstream');
+    expect(parsePRFileUri(uris.after!).repo).toBe('project');
   });
 });

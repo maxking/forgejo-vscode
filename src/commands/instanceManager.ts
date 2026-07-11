@@ -288,7 +288,7 @@ async function handleEditToken(instanceId: string): Promise<void> {
 			cancellable: false
 		},
 		async () => {
-			return await testInstanceConnection(tempInstance);
+			return await testInstanceConnection(tempInstance, false);
 		}
 	);
 

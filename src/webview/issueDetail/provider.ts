@@ -3,7 +3,7 @@ import { ForgejoClient, type ForgejoStopwatch, type ForgejoTrackedTime } from '.
 import { getForgejoConfigFor } from '../../utils/config';
 import { Issue } from '../../models/issue';
 import { logDebug, logInfo, logError } from '../../utils/logger';
-import { getTimelineEventName, type TimelineActivity } from '../shared/helpers';
+import { fetchNewestActivityPage, getTimelineEventName, type TimelineActivity } from '../shared/helpers';
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -50,6 +50,8 @@ export interface IssueDetailViewData {
   repo: string;
   canComment: boolean;
   instanceUrl?: string;
+  historyTruncated: boolean;
+  historyIsNewest: boolean;
 }
 
 export interface IssueTimeTrackingViewData {
@@ -69,6 +71,8 @@ interface PanelState {
   instanceUrl?: string;
   isReady: boolean;
   pendingData?: IssueDetailViewData | null;
+  pendingError?: string | null;
+  requestVersion?: number;
 }
 
 export class IssueDetailWebviewProvider {
@@ -109,7 +113,9 @@ export class IssueDetailWebviewProvider {
       number,
       instanceUrl,
       isReady: false,
-      pendingData: null
+      pendingData: null,
+      pendingError: null,
+      requestVersion: 0
     };
     this._panels.set(panelKey, state);
 
@@ -136,6 +142,7 @@ export class IssueDetailWebviewProvider {
     if (!state) return;
 
     const { panel, owner, repo, number, instanceUrl } = state;
+    const requestVersion = state.requestVersion = (state.requestVersion ?? 0) + 1;
     logInfo('_fetchIssueData starting:', { panelKey, isReady: state.isReady });
 
     try {
@@ -146,10 +153,12 @@ export class IssueDetailWebviewProvider {
       const issueDetails = await client.getIssueDetails(owner, repo, number);
       logInfo('Issue details fetched:', { title: issueDetails.title });
 
-      const activities = await this._fetchActivities(client, owner, repo, number);
+      const activityResult = await this._fetchActivities(client, owner, repo, number);
+      const activities = activityResult.items;
       logInfo('Activities fetched:', { activities: activities.length });
 
       const timeTracking = await this._fetchTimeTracking(client, owner, repo, number, Boolean(config.token));
+      if (requestVersion !== state.requestVersion) return;
       logInfo('Time tracking fetched:', {
         totalSeconds: timeTracking.totalSeconds,
         entries: timeTracking.entries.length,
@@ -165,7 +174,10 @@ export class IssueDetailWebviewProvider {
         repo,
         canComment: config.token.trim().length > 0,
         instanceUrl: state.instanceUrl
+        , historyTruncated: activityResult.truncated
+        , historyIsNewest: activityResult.newest
       };
+      state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
 
       if (state.isReady) {
@@ -175,12 +187,16 @@ export class IssueDetailWebviewProvider {
         logInfo('Webview not ready yet, data will be sent when ready');
       }
     } catch (error) {
+      if (requestVersion !== state.requestVersion) return;
       logError('Failed to fetch Issue data:', error);
+      const message = error instanceof Error ? error.message : 'Failed to load Issue details';
       if (state.isReady) {
         void panel.webview.postMessage({
           type: 'error',
-          message: error instanceof Error ? error.message : 'Failed to load Issue details'
+          message
         });
+      } else {
+        state.pendingError = message;
       }
     }
   }
@@ -205,27 +221,29 @@ export class IssueDetailWebviewProvider {
     await this._fetchIssueData(panelKey);
   }
 
-  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<IssueActivity[]> {
+  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<{ items: IssueActivity[]; truncated: boolean; newest: boolean }> {
     const activities: IssueActivity[] = [];
-    try {
-      const comments = await client.getIssueComments(owner, repo, number);
-      activities.push(...(comments as IssueActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
-    } catch (e) { logDebug('Could not fetch comments:', e); }
-    try {
-      const timeline = await client.getIssueTimeline(owner, repo, number);
-      activities.push(...(timeline as IssueTimelineApiActivity[]).flatMap((t): IssueActivity[] => {
+    const pageClient = client as Partial<ForgejoClient>;
+    const commentsPage = pageClient.getIssueCommentsPage;
+    const timelinePage = pageClient.getIssueTimelinePage;
+    const [comments, timeline] = await Promise.all([
+      fetchNewestActivityPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false, newest: true }; })
+    ]);
+      activities.push(...(comments.items as IssueActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
+      activities.push(...(timeline.items as IssueTimelineApiActivity[]).flatMap((t): IssueActivity[] => {
         const event = getTimelineEventName(t);
         if (!event || event === 'comment' || event === 'commented') {
           return [];
         }
         return [{ ...t, event, type: 'timeline' as const }];
       }));
-    } catch (e) { logDebug('Could not fetch timeline:', e); }
-    return activities.sort((a, b) => {
+    const items = activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? 0);
       const dateB = new Date(b.created_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
+    return { items, truncated: comments.truncated || timeline.truncated, newest: comments.newest && timeline.newest };
   }
 
   private async _fetchTimeTracking(
@@ -235,13 +253,22 @@ export class IssueDetailWebviewProvider {
     number: number,
     canTrack: boolean
   ): Promise<IssueTimeTrackingViewData> {
-    let entries: ForgejoTrackedTime[] = [];
+    const entries: ForgejoTrackedTime[] = [];
     let currentStopwatch: ForgejoStopwatch | undefined;
     let otherStopwatch: ForgejoStopwatch | undefined;
     let error: string | undefined;
 
     try {
-      entries = await client.getIssueTrackedTimes(owner, repo, number);
+      const pageSize = 50;
+      let reachedSafetyCap = false;
+      for (let page = 1; page <= 4; page += 1) {
+        const pageEntries = await client.getIssueTrackedTimes(owner, repo, number, page, pageSize);
+        entries.push(...pageEntries);
+        if (pageEntries.length < pageSize) break;
+        if (page === 4) reachedSafetyCap = true;
+      }
+      entries.splice(0, entries.length, ...Array.from(new Map(entries.map(entry => [entry.id, entry])).values()));
+      if (reachedSafetyCap) error = 'Tracked-time history exceeds 200 rows; the displayed total is incomplete.';
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not fetch tracked time';
       logDebug('Could not fetch tracked time:', e);
@@ -284,7 +311,10 @@ export class IssueDetailWebviewProvider {
       case 'ready':
         logInfo('Webview ready message received, pendingData exists:', !!state.pendingData);
         state.isReady = true;
-        if (state.pendingData) {
+        if (state.pendingError) {
+          void state.panel.webview.postMessage({ type: 'error', message: state.pendingError });
+          state.pendingError = null;
+        } else if (state.pendingData) {
           logInfo('Sending pending data to webview...');
           this._sendDataToPanel(panelKey);
         } else {

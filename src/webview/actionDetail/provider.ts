@@ -45,6 +45,7 @@ interface PanelState {
   isReady: boolean;
   pendingData?: ActionDetailViewData | null;
   pendingError?: string | null;
+  requestVersion?: number;
 }
 
 export class ActionDetailWebviewProvider {
@@ -115,6 +116,7 @@ export class ActionDetailWebviewProvider {
     if (!state) return;
 
     const { panel, owner, repo, run, instanceUrl } = state;
+    const requestVersion = state.requestVersion = (state.requestVersion ?? 0) + 1;
     logInfo('_fetchActionData starting:', { panelKey, isReady: state.isReady });
 
     try {
@@ -123,19 +125,28 @@ export class ActionDetailWebviewProvider {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       logInfo('Fetching jobs from API...');
 
-      // Use the run data we already have (passed from the tree view)
-      // Convert WorkflowRunListItem to WorkflowRun with default values for timing fields
-      const fullRun: WorkflowRun = {
-        ...run,
-        started_at: run.created_at,
-        stopped_at: null,
-        run_started_at: run.created_at
-      };
+      // Task-list rows use an instance-wide task id, while repository Actions
+      // endpoints use the repository-local run number.
+      let fullRun: WorkflowRun;
+      const locatedRun = await client.getWorkflowRunByNumber(owner, repo, run.run_number);
+      try {
+        if (!locatedRun) throw new Error('Run id lookup returned no match');
+        fullRun = await client.getWorkflowRunDetails(owner, repo, locatedRun.id);
+      } catch (runError) {
+        logError('Failed to refresh workflow run details (using tree snapshot):', runError);
+        fullRun = {
+          ...run,
+          started_at: run.created_at,
+          stopped_at: null,
+          run_started_at: run.created_at
+        };
+      }
 
-      // Only fetch jobs - the run details API uses incompatible IDs
+      // Run/job endpoints require the API run id obtained above.
       let jobs: WorkflowJob[] = [];
       try {
-        const jobsResponse = await client.getWorkflowJobs(owner, repo, run.id);
+        if (!locatedRun) throw new Error('Cannot fetch jobs without a resolved workflow run id');
+        const jobsResponse = await client.getWorkflowJobs(owner, repo, locatedRun.id);
         jobs = jobsResponse.jobs;
         logInfo('Jobs fetched:', { jobCount: jobs.length });
       } catch (jobError) {
@@ -143,6 +154,7 @@ export class ActionDetailWebviewProvider {
         // Continue with empty jobs - at least show the run info
       }
 
+      if (requestVersion !== state.requestVersion) return;
       state.pendingData = { run: fullRun, jobs, owner, repo };
       state.pendingError = null; // Clear any previous error
       logInfo('pendingData set, isReady:', state.isReady);
@@ -154,6 +166,7 @@ export class ActionDetailWebviewProvider {
         logInfo('Webview not ready yet, data will be sent when ready');
       }
     } catch (error) {
+      if (requestVersion !== state.requestVersion) return;
       logError('Failed to fetch action data:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to load action details';
       if (state.isReady) {
@@ -215,7 +228,7 @@ export class ActionDetailWebviewProvider {
         await this._fetchActionData(panelKey);
         break;
       case 'rerun':
-        await this._rerunWorkflow(owner, repo, runId, panelKey, instanceUrl);
+        await this._rerunWorkflow(owner, repo, state.run.run_number, panelKey, instanceUrl);
         break;
       case 'openInBrowser':
         await this._openInBrowser(owner, repo, runId, instanceUrl);
@@ -238,11 +251,13 @@ export class ActionDetailWebviewProvider {
     return config;
   }
 
-  private async _rerunWorkflow(owner: string, repo: string, runId: number, panelKey: string, instanceUrl?: string): Promise<void> {
+  private async _rerunWorkflow(owner: string, repo: string, runNumber: number, panelKey: string, instanceUrl?: string): Promise<void> {
     try {
       const config = await this._getConfig(owner, repo, instanceUrl);
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.rerunWorkflow(owner, repo, runId);
+      const locatedRun = await client.getWorkflowRunByNumber(owner, repo, runNumber);
+      if (!locatedRun) throw new Error(`Workflow run #${String(runNumber)} was not found`);
+      await client.rerunWorkflow(owner, repo, locatedRun.id);
       void vscode.window.showInformationMessage('Workflow re-run triggered successfully');
       await this._fetchActionData(panelKey);
     } catch (error) {

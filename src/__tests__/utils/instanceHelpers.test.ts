@@ -48,16 +48,18 @@ const mockConfig = (initialInstances: any[]) => {
 		}
 		return Promise.resolve();
 	});
+	const inspect = jest.fn((key) => key === 'instanceUrl' || key === 'token' ? { globalValue: 'configured' } : undefined);
 
 	(vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
 		get,
 		update,
-		inspect: jest.fn()
+		inspect
 	});
 
 	return {
 		get,
 		update,
+		inspect,
 		getCurrentInstances: () => currentInstances
 	};
 };
@@ -65,6 +67,7 @@ const mockConfig = (initialInstances: any[]) => {
 describe('instanceHelpers', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		Object.defineProperty(vscode.workspace, 'workspaceFolders', { value: undefined, configurable: true, writable: true });
 		// Re-set mock implementations after clearAllMocks
 		mockGetToken.mockResolvedValue(undefined);
 		mockSetToken.mockResolvedValue(undefined);
@@ -264,6 +267,37 @@ describe('instanceHelpers', () => {
 			]);
 			// Token should not be in settings
 			expect(lastInstancesUpdate[1][0].token).toBeUndefined();
+		});
+
+		it('clears legacy settings when the final instance is removed', async () => {
+			const { update } = mockConfig([{ id: '1', name: 'Only', instanceUrl: 'https://only.example', isDefault: true }]);
+
+			await removeInstance('1');
+
+			expect(update).toHaveBeenCalledWith('instanceUrl', undefined, vscode.ConfigurationTarget.Global);
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Global);
+			expect(update).not.toHaveBeenCalledWith('instanceUrl', undefined, vscode.ConfigurationTarget.Workspace);
+			expect(update).not.toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+		});
+
+		it('clears only defined workspace and resource-scoped folder legacy settings', async () => {
+			const folder = { uri: vscode.Uri.parse('file:///workspace'), name: 'workspace', index: 0 };
+			Object.defineProperty(vscode.workspace, 'workspaceFolders', { value: [folder], configurable: true, writable: true });
+			const { get, update, inspect } = mockConfig([{ id: '1', name: 'Only', instanceUrl: 'https://only.example', isDefault: true }]);
+			inspect.mockImplementation(((key: string) => key === 'instanceUrl' ? { workspaceValue: 'workspace-url' } : undefined) as any);
+			const folderUpdate = jest.fn().mockResolvedValue(undefined);
+			const folderConfig = {
+				get: jest.fn(), update: folderUpdate,
+				inspect: jest.fn((key) => key === 'token' ? { workspaceFolderValue: 'folder-token' } : undefined)
+			};
+			(vscode.workspace.getConfiguration as jest.Mock).mockImplementation((_section, resource) => resource ? folderConfig : { get, update, inspect });
+
+			await removeInstance('1');
+
+			expect(update).toHaveBeenCalledWith('instanceUrl', undefined, vscode.ConfigurationTarget.Workspace);
+			expect(update).not.toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Workspace);
+			expect(folderUpdate).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+			expect(folderUpdate).not.toHaveBeenCalledWith('instanceUrl', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
 		});
 	});
 

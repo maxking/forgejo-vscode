@@ -204,7 +204,6 @@ export class WebviewHarness {
         <option value="squash">Squash and merge</option>
         <option value="rebase">Rebase and merge</option>
       </select>
-      <textarea id="merge-message" placeholder="Merge message (optional)"></textarea>
       <div class="merge-actions">
         <button id="confirm-merge-btn" class="btn btn-success">Merge</button>
         <button id="cancel-merge-btn" class="btn btn-secondary">Cancel</button>

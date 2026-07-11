@@ -208,6 +208,22 @@ export async function removeInstance(id: string): Promise<void> {
 		filtered[0].isDefault = true;
 		await config.update('instances', filtered.map(stripTokenFromInstance), vscode.ConfigurationTarget.Global);
 		await syncToLegacySettings(filtered[0]);
+	} else if (filtered.length === 0) {
+		// Do not leave compatibility settings capable of recreating the deleted
+		// instance on the next activation.
+		for (const key of ['instanceUrl', 'token'] as const) {
+			const inspection = config.inspect(key);
+			if (inspection?.globalValue !== undefined) await config.update(key, undefined, vscode.ConfigurationTarget.Global);
+			if (inspection?.workspaceValue !== undefined) await config.update(key, undefined, vscode.ConfigurationTarget.Workspace);
+		}
+		for (const folder of vscode.workspace.workspaceFolders ?? []) {
+			const folderConfig = vscode.workspace.getConfiguration('forgejo', folder.uri);
+			for (const key of ['instanceUrl', 'token'] as const) {
+				if (folderConfig.inspect(key)?.workspaceFolderValue !== undefined) {
+					await folderConfig.update(key, undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+				}
+			}
+		}
 	}
 }
 
@@ -243,7 +259,11 @@ export async function testInstanceConnection(instance: ForgejoInstance, saveResu
 	try {
 		const client = new ForgejoClient(instance.instanceUrl, instance.token);
 		logInfo('Calling testConnection API...');
-		const success = await client.testConnection();
+		// `/version` is public and only proves that a Forgejo server is reachable.
+		// When a token is supplied, validate it against an authenticated endpoint.
+		const success = instance.token?.trim()
+			? Boolean(await client.rawRequest<{ login?: string }>('GET', '/user'))
+			: await client.testConnection();
 
 		logInfo('Connection test result:', success ? 'SUCCESS' : 'FAILED');
 

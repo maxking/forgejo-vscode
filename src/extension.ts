@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import { PRTreeProvider, PRTreeItem, PROverviewItem } from './providers/prTreeProvider';
 import { IssueTreeProvider, IssueTreeItem } from './providers/issueTreeProvider';
-import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from './providers/actionsTreeProvider';
+import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs, workflowRunNumberForItem } from './providers/actionsTreeProvider';
 import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
 import { RemoteRepositoryTreeProvider, RemoteRepositoryItem, openRemoteFile } from './providers/remoteRepositoryTreeProvider';
-import { WorkflowRunListItem, WorkflowJob } from './models/action';
-import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
+import { WorkflowRunListItem } from './models/action';
+import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUris } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
 import { RemoteFileContentProvider, REMOTE_FILE_SCHEME } from './providers/remoteFileContentProvider';
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
@@ -32,7 +32,7 @@ import { registerCommand } from './commands/registry';
 import { logger, logInfo } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { ForgejoConfig, getForgejoConfig, getForgejoConfigFor } from './utils/config';
-import { initializeSecretStorage } from './utils/secretStorage';
+import { initializeSecretStorage, onDidChangeToken } from './utils/secretStorage';
 import { migrateTokensToSecretStorage } from './utils/migration';
 import { ForgejoRemoteSourceProvider } from './providers/forgejoRemoteSourceProvider';
 import { ForgejoAuthenticationProvider } from './auth/forgejoAuthenticationProvider';
@@ -65,6 +65,16 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Late-bound so addInstance/manageInstances can trigger a re-registration
   let refreshRemoteSourceProviders: () => Promise<void> = () => Promise.resolve();
+	const remoteFileProvider = new RemoteFileContentProvider();
+	context.subscriptions.push(onDidChangeToken(() => {
+		prTreeProvider.refresh();
+		issueTreeProvider.refresh();
+		actionsTreeProvider.refresh();
+		releaseTreeProvider.refresh();
+		remoteRepositoryTreeProvider.refresh();
+		remoteFileProvider.refresh();
+		void refreshRemoteSourceProviders();
+	}));
 
   // Helper to update the context key for viewsWelcome
   async function updateNoInstanceContext() {
@@ -137,7 +147,6 @@ export async function activate(context: vscode.ExtensionContext) {
     prDetailsProvider
   );
 
-  const remoteFileProvider = new RemoteFileContentProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(REMOTE_FILE_SCHEME, remoteFileProvider),
     remoteFileProvider
@@ -154,6 +163,7 @@ export async function activate(context: vscode.ExtensionContext) {
         actionsTreeProvider.refresh();
         releaseTreeProvider.refresh();
         remoteRepositoryTreeProvider.refresh();
+        remoteFileProvider.refresh();
         await refreshRemoteSourceProviders();
       }
     })
@@ -168,6 +178,7 @@ export async function activate(context: vscode.ExtensionContext) {
       actionsTreeProvider.refresh();
       releaseTreeProvider.refresh();
       remoteRepositoryTreeProvider.refresh();
+      remoteFileProvider.refresh();
       await refreshRemoteSourceProviders();
     })
   );
@@ -201,6 +212,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand('forgejo.refreshRemoteRepositories', () => {
       remoteRepositoryTreeProvider.refresh();
+      remoteFileProvider.refresh();
       void vscode.window.showInformationMessage('Remote repositories refreshed');
     })
   );
@@ -247,6 +259,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     registerCommand('forgejo.loadMorePullRequests', (item) => prTreeProvider.loadMorePullRequests(item))
+  );
+  context.subscriptions.push(
+    registerCommand('forgejo.loadMorePullRequestFiles', (item) => prTreeProvider.loadMorePullRequestFiles(item))
   );
 
   context.subscriptions.push(
@@ -350,14 +365,22 @@ export async function activate(context: vscode.ExtensionContext) {
         repo: string,
         baseRef: string,
         headRef: string,
-        instanceUrl?: string
+        instanceUrl?: string,
+        headOwner: string = owner,
+        headRepo: string = repo
       ) => {
         console.log('[Forgejo] Opening diff for file:', file.filename);
 
         try {
+          const uris = createPRFileUris(
+            file,
+            { owner, repo, ref: baseRef, instanceUrl },
+            { owner: headOwner, repo: headRepo, ref: headRef, instanceUrl }
+          );
           // Handle deleted files (no "after" version)
           if (file.status === 'removed') {
-            const beforeUri = createPRFileUri(owner, repo, baseRef, file.filename, instanceUrl);
+            const beforeUri = uris.before;
+            if (!beforeUri) throw new Error('Removed file is missing its base document URI');
             commentController.registerPRContext(beforeUri, {
               owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename, instanceUrl
             });
@@ -372,7 +395,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
           // Handle added files (no "before" version)
           if (file.status === 'added') {
-            const afterUri = createPRFileUri(owner, repo, headRef, file.filename, instanceUrl);
+            const afterUri = uris.after;
+            if (!afterUri) throw new Error('Added file is missing its head document URI');
             commentController.registerPRContext(afterUri, {
               owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename, instanceUrl
             });
@@ -389,8 +413,8 @@ export async function activate(context: vscode.ExtensionContext) {
           const beforePath = file.previous_filename ?? file.filename;
           const afterPath = file.filename;
 
-          const beforeUri = createPRFileUri(owner, repo, baseRef, beforePath, instanceUrl);
-          const afterUri = createPRFileUri(owner, repo, headRef, afterPath, instanceUrl);
+          const { before: beforeUri, after: afterUri } = uris;
+          if (!beforeUri || !afterUri) throw new Error('Changed file is missing a diff document URI');
 
           // Register PR context for both sides of the diff
           commentController.registerPRContext(beforeUri, {
@@ -606,7 +630,7 @@ export async function activate(context: vscode.ExtensionContext) {
       'forgejo.rerunAction',
       async (item: WorkflowRunTreeItem | JobTreeItem) => {
         // Get the run data from either a run item or a job item
-        let run: WorkflowRunListItem | WorkflowJob | undefined;
+        let run: WorkflowRunListItem | undefined;
         if (item instanceof WorkflowRunTreeItem) {
           run = item.jobs.length > 0 ? item.jobs[0] : undefined;
         } else {
@@ -635,7 +659,7 @@ export async function activate(context: vscode.ExtensionContext) {
           }
 
           const client = new ForgejoClient(config.instanceUrl, config.token);
-          await client.rerunWorkflow(item.owner, item.repo, run.id);
+          await client.rerunWorkflowByNumber(item.owner, item.repo, workflowRunNumberForItem(item));
 
           void vscode.window.showInformationMessage('Workflow re-run triggered!');
           actionsTreeProvider.refresh();
@@ -933,6 +957,9 @@ export async function activate(context: vscode.ExtensionContext) {
       void vscode.window.showInformationMessage('Releases refreshed');
     })
   );
+  context.subscriptions.push(registerCommand(
+    'forgejo.loadMoreReleases', item => releaseTreeProvider.loadMoreReleases(item)
+  ));
 
   context.subscriptions.push(
     registerCommand('forgejo.openReleaseInBrowser', (url: string) => {
@@ -979,14 +1006,23 @@ export async function activate(context: vscode.ExtensionContext) {
     const git = gitExtension.getAPI(1);
 
     let providerDisposables: vscode.Disposable[] = [];
+    let providerRefreshGeneration = 0;
 
     refreshRemoteSourceProviders = async () => {
-      for (const d of providerDisposables) d.dispose();
-      providerDisposables = [];
+      const generation = ++providerRefreshGeneration;
       const instances = await getAllInstances();
+      if (generation !== providerRefreshGeneration) return;
+      const replacements: vscode.Disposable[] = [];
       for (const instance of instances) {
-        providerDisposables.push(git.registerRemoteSourceProvider(new ForgejoRemoteSourceProvider(instance)));
+        replacements.push(git.registerRemoteSourceProvider(new ForgejoRemoteSourceProvider(instance)));
       }
+      if (generation !== providerRefreshGeneration) {
+        for (const disposable of replacements) disposable.dispose();
+        return;
+      }
+      const previous = providerDisposables;
+      providerDisposables = replacements;
+      for (const disposable of previous) disposable.dispose();
       logInfo(`Remote source providers registered for ${instances.length} instance(s)`);
     };
 

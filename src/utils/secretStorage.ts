@@ -4,6 +4,10 @@ import { logInfo } from './logger';
 const TOKEN_KEY_PREFIX = 'forgejo-token-';
 
 let secretStorage: vscode.SecretStorage | undefined;
+const tokenChangeEmitter = new vscode.EventEmitter<string>();
+
+/** Fires with the instance id whenever its stored credential changes. */
+export const onDidChangeToken = tokenChangeEmitter.event;
 
 /**
  * Initialize the secret storage with the extension context's secrets API.
@@ -35,6 +39,7 @@ export async function getToken(instanceId: string): Promise<string | undefined> 
 export async function setToken(instanceId: string, token: string): Promise<void> {
 	const storage = getStorage();
 	await storage.store(`${TOKEN_KEY_PREFIX}${instanceId}`, token);
+	tokenChangeEmitter.fire(instanceId);
 	logInfo(`Token stored securely for instance: ${instanceId}`);
 }
 
@@ -44,6 +49,7 @@ export async function setToken(instanceId: string, token: string): Promise<void>
 export async function deleteToken(instanceId: string): Promise<void> {
 	const storage = getStorage();
 	await storage.delete(`${TOKEN_KEY_PREFIX}${instanceId}`);
+	tokenChangeEmitter.fire(instanceId);
 	logInfo(`Token deleted for instance: ${instanceId}`);
 }
 

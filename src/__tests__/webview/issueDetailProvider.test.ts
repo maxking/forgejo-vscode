@@ -113,4 +113,17 @@ describe('IssueDetailWebviewProvider', () => {
     expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('Issue details are not loaded yet.');
   });
+
+	it('delivers a fetch error that occurs before the webview is ready', async () => {
+		const { provider, postMessage } = createProvider('test-token');
+		const state = (provider as any)._panels.get('panel');
+		state.isReady = false;
+		mockGetForgejoConfigFor.mockRejectedValueOnce(new Error('Authentication failed'));
+
+		await (provider as any)._fetchIssueData('panel');
+		expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+
+		await (provider as any)._handleMessage({ type: 'ready' }, 'panel');
+		expect(postMessage).toHaveBeenCalledWith({ type: 'error', message: 'Authentication failed' });
+	});
 });
