@@ -25,7 +25,8 @@ export type WebviewMessage =
   | { type: 'updateBody'; body: string }
   | { type: 'openCIStatus'; url: string }
   | { type: 'viewCIStatusLogs'; status: CommitStatus }
-  | { type: 'openCIWorkflowFile'; status: CommitStatus };
+  | { type: 'openCIWorkflowFile'; status: CommitStatus }
+  | { type: 'setActivitySortOrder'; order: ActivitySortOrder };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
@@ -133,9 +134,12 @@ function isValidGitBranchRef(ref: string): boolean {
     && !/[~^:?*[\\]/.test(ref);
 }
 
+export type ActivitySortOrder = 'newest-first' | 'oldest-first';
+
 export interface PRDetailViewData {
   pr: PullRequest;
   activities: PRActivity[];
+  activitySortOrder: ActivitySortOrder;
   statuses: CommitStatus[];
   owner: string;
   repo: string;
@@ -264,7 +268,17 @@ export class PRDetailWebviewProvider {
       if (requestVersion !== state.requestVersion) return;
       logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length, raw: allStatuses.length });
 
-      state.pendingData = { pr: prDetails, activities, statuses, owner, repo, instanceUrl: state.instanceUrl, historyTruncated: activityResult.truncated || statusPage.hasMore, historyIsNewest: activityResult.newest && !statusPage.hasMore };
+      state.pendingData = {
+        pr: prDetails,
+        activities,
+        activitySortOrder: this._getActivitySortOrder(),
+        statuses,
+        owner,
+        repo,
+        instanceUrl: state.instanceUrl,
+        historyTruncated: activityResult.truncated || statusPage.hasMore,
+        historyIsNewest: activityResult.newest && !statusPage.hasMore
+      };
       state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
 
@@ -391,7 +405,17 @@ export class PRDetailWebviewProvider {
         break;
       case 'viewCommit': break;
       case 'viewFile': break;
+      case 'setActivitySortOrder': await this._setActivitySortOrder(message.order); break;
     }
+  }
+
+  private _getActivitySortOrder(): ActivitySortOrder {
+    const configured = vscode.workspace.getConfiguration('forgejo').get<ActivitySortOrder>('activityTimelineSortOrder', 'newest-first');
+    return configured === 'oldest-first' ? 'oldest-first' : 'newest-first';
+  }
+
+  private async _setActivitySortOrder(order: ActivitySortOrder): Promise<void> {
+    await vscode.workspace.getConfiguration('forgejo').update('activityTimelineSortOrder', order, vscode.ConfigurationTarget.Global);
   }
 
   private async _openCIStatus(url: string, owner: string, repo: string, instanceUrl?: string): Promise<void> {
@@ -679,7 +703,10 @@ export class PRDetailWebviewProvider {
     </section>
 
     <section class="activity-section">
-      <h2>Activity <span id="activity-count"></span></h2>
+      <div class="activity-section-header">
+        <h2>Activity <span id="activity-count"></span></h2>
+        <button id="activity-sort-btn" class="icon-btn" title="Toggle activity sort order">Newest first</button>
+      </div>
       <div id="activity-timeline"></div>
     </section>
 

@@ -38,6 +38,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - **Command palette manifest fix ([#236](https://git.araj.me/maxking/forgejo-vscode/issues/236)):** context-only commands now share one `commandPalette` contribution block, so VS Code receives every hidden-command rule instead of dropping earlier entries during manifest parsing.
 - **Remote branch picker pagination ([#234](https://git.araj.me/maxking/forgejo-vscode/issues/234)):** remote repository browsing and branch switching now expose branches beyond the first API page through an explicit load-more item, so repositories with more than 100 branches can browse refs returned on later pages without unbounded startup requests.
 - **PR file diff drift fix ([#182](https://git.araj.me/maxking/forgejo-vscode/issues/182)):** pull request file diffs now compare against the PR's actual merge-base commit and head commit instead of the live base/head branch names. Previously, once the base branch advanced past the point the PR diverged from, the diff view would pull in unrelated upstream changes and could look like the whole file had changed instead of just the PR's diff.
+- **Activity timeline sort order ([#181](https://git.araj.me/maxking/forgejo-vscode/issues/181)):** the Activity section in Issue and Pull Request detail views now has a toggle button to switch between newest-first (the existing default) and oldest-first ordering. The choice is remembered across sessions via the `forgejo.activityTimelineSortOrder` setting.
 
 ### 0.3.24
 

@@ -670,6 +670,12 @@
           "type": "string",
           "default": "origin/master",
           "description": "Git ref to create Start Work on Issue branches from"
+        },
+        "forgejo.activityTimelineSortOrder": {
+          "type": "string",
+          "enum": ["newest-first", "oldest-first"],
+          "default": "newest-first",
+          "description": "Sort order for the Activity timeline in Issue and Pull Request detail views"
         }
       }
     }

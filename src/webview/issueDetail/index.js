@@ -2,6 +2,12 @@
   const vscode = acquireVsCodeApi();
   let currentData = null;
   let isReady = false;
+  let currentOwner = '';
+  let currentRepo = '';
+  let currentActivities = [];
+  let currentActivitySortOrder = 'newest-first';
+  let currentHistoryTruncated = false;
+  let currentHistoryIsNewest = true;
 
   console.log('[Forgejo Issue Webview] Script loaded');
 
@@ -49,6 +55,7 @@
   const cancelDescriptionBtn = document.getElementById('cancel-description-btn');
   const activityCountEl = document.getElementById('activity-count');
   const activityTimeline = document.getElementById('activity-timeline');
+  const activitySortBtn = document.getElementById('activity-sort-btn');
 
   const commentInputContainer = document.getElementById('comment-input-container');
   const commentInput = document.getElementById('comment-input');
@@ -92,6 +99,15 @@
       console.log('[Forgejo Issue Webview] Refresh clicked');
       vscode.postMessage({ type: 'refresh' });
     });
+
+    if (activitySortBtn) {
+      activitySortBtn.addEventListener('click', () => {
+        currentActivitySortOrder = currentActivitySortOrder === 'oldest-first' ? 'newest-first' : 'oldest-first';
+        console.log('[Forgejo Issue Webview] Activity sort toggled:', currentActivitySortOrder);
+        renderActivityTimeline();
+        vscode.postMessage({ type: 'setActivitySortOrder', order: currentActivitySortOrder });
+      });
+    }
 
     startWorkBtn.addEventListener('click', () => {
       console.log('[Forgejo Issue Webview] Start work clicked');
@@ -367,24 +383,43 @@
     updateTimeTracking(data.timeTracking);
 
     // Update activity timeline
-    const activityCount = activities ? activities.length : 0;
-    console.log('[Forgejo Issue Webview] Activities:', activityCount);
-    activityCountEl.textContent = `(${activityCount} events)`;
-
-    if (activities && activities.length > 0) {
-      activityTimeline.innerHTML = activities.map(activity => renderActivity(activity, owner, repo)).join('');
-    } else {
-      activityTimeline.innerHTML = '<p style="color: var(--vscode-descriptionForeground); padding: 16px;">No activity yet.</p>';
-    }
-    if (data.historyTruncated) {
-      activityTimeline.innerHTML += data.historyIsNewest === false
-        ? '<p class="activity-history-notice">Showing a bounded activity sample; the newest entries could not be located safely. Use Open in Web to view the complete history.</p>'
-        : '<p class="activity-history-notice">Showing the newest 50 entries per activity source. Use Open in Web to view older history.</p>';
-    }
+    currentOwner = owner;
+    currentRepo = repo;
+    currentActivities = activities || [];
+    currentActivitySortOrder = data.activitySortOrder === 'oldest-first' ? 'oldest-first' : 'newest-first';
+    currentHistoryTruncated = Boolean(data.historyTruncated);
+    currentHistoryIsNewest = data.historyIsNewest !== false;
+    renderActivityTimeline();
 
     // Show content
     setLoading(false);
     console.log('[Forgejo Issue Webview] Issue details updated successfully');
+  }
+
+  function renderActivityTimeline() {
+    const activityCount = currentActivities.length;
+    console.log('[Forgejo Issue Webview] Activities:', activityCount, 'order:', currentActivitySortOrder);
+    activityCountEl.textContent = `(${activityCount} events)`;
+
+    if (activitySortBtn) {
+      activitySortBtn.textContent = currentActivitySortOrder === 'oldest-first' ? 'Oldest first' : 'Newest first';
+    }
+
+    if (currentActivities.length > 0) {
+      // The provider always returns activities sorted newest-first; reverse
+      // a copy for oldest-first display instead of re-parsing dates here.
+      const ordered = currentActivitySortOrder === 'oldest-first'
+        ? currentActivities.slice().reverse()
+        : currentActivities;
+      activityTimeline.innerHTML = ordered.map(activity => renderActivity(activity, currentOwner, currentRepo)).join('');
+    } else {
+      activityTimeline.innerHTML = '<p style="color: var(--vscode-descriptionForeground); padding: 16px;">No activity yet.</p>';
+    }
+    if (currentHistoryTruncated) {
+      activityTimeline.innerHTML += currentHistoryIsNewest === false
+        ? '<p class="activity-history-notice">Showing a bounded activity sample; the newest entries could not be located safely. Use Open in Web to view the complete history.</p>'
+        : '<p class="activity-history-notice">Showing the newest 50 entries per activity source. Use Open in Web to view older history.</p>';
+    }
   }
 
   function updateTimeTracking(timeTracking) {

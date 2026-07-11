@@ -2,6 +2,12 @@
   const vscode = acquireVsCodeApi();
   let currentData = null;
   let isReady = false;
+  let currentOwner = '';
+  let currentRepo = '';
+  let currentActivities = [];
+  let currentActivitySortOrder = 'newest-first';
+  let currentHistoryTruncated = false;
+  let currentHistoryIsNewest = true;
 
   console.log('[Forgejo Webview] Script loaded');
 
@@ -36,6 +42,7 @@
   const ciStatusList = document.getElementById('ci-status-list');
   const activityCountEl = document.getElementById('activity-count');
   const activityTimeline = document.getElementById('activity-timeline');
+  const activitySortBtn = document.getElementById('activity-sort-btn');
 
   const editDescriptionBtn = document.getElementById('edit-description-btn');
   const descriptionEditor = document.getElementById('pr-description-editor');
@@ -99,6 +106,15 @@
       console.log('[Forgejo Webview] Refresh clicked');
       vscode.postMessage({ type: 'refresh' });
     });
+
+    if (activitySortBtn) {
+      activitySortBtn.addEventListener('click', () => {
+        currentActivitySortOrder = currentActivitySortOrder === 'oldest-first' ? 'newest-first' : 'oldest-first';
+        console.log('[Forgejo Webview] Activity sort toggled:', currentActivitySortOrder);
+        renderActivityTimeline();
+        vscode.postMessage({ type: 'setActivitySortOrder', order: currentActivitySortOrder });
+      });
+    }
 
     openWebBtn.addEventListener('click', () => {
       console.log('[Forgejo Webview] Open in web clicked');
@@ -479,24 +495,43 @@
     }
 
     // Update activity timeline
-    const activityCount = activities ? activities.length : 0;
-    console.log('[Forgejo Webview] Activities:', activityCount);
-    activityCountEl.textContent = `(${activityCount} events)`;
-
-    if (activities && activities.length > 0) {
-      activityTimeline.innerHTML = activities.map(activity => renderActivity(activity, owner, repo)).join('');
-    } else {
-      activityTimeline.innerHTML = '<p style="color: var(--vscode-descriptionForeground); padding: 16px;">No activity yet.</p>';
-    }
-    if (data.historyTruncated) {
-      activityTimeline.innerHTML += data.historyIsNewest === false
-        ? '<p class="activity-history-notice">Showing a bounded activity/status sample; the newest entries could not be located safely. Use Open in Web to view the complete history.</p>'
-        : '<p class="activity-history-notice">Showing the newest 50 entries per activity/status source. Use Open in Web to view older history.</p>';
-    }
+    currentOwner = owner;
+    currentRepo = repo;
+    currentActivities = activities || [];
+    currentActivitySortOrder = data.activitySortOrder === 'oldest-first' ? 'oldest-first' : 'newest-first';
+    currentHistoryTruncated = Boolean(data.historyTruncated);
+    currentHistoryIsNewest = data.historyIsNewest !== false;
+    renderActivityTimeline();
 
     // Show content
     setLoading(false);
     console.log('[Forgejo Webview] PR details updated successfully');
+  }
+
+  function renderActivityTimeline() {
+    const activityCount = currentActivities.length;
+    console.log('[Forgejo Webview] Activities:', activityCount, 'order:', currentActivitySortOrder);
+    activityCountEl.textContent = `(${activityCount} events)`;
+
+    if (activitySortBtn) {
+      activitySortBtn.textContent = currentActivitySortOrder === 'oldest-first' ? 'Oldest first' : 'Newest first';
+    }
+
+    if (currentActivities.length > 0) {
+      // The provider always returns activities sorted newest-first; reverse
+      // a copy for oldest-first display instead of re-parsing dates here.
+      const ordered = currentActivitySortOrder === 'oldest-first'
+        ? currentActivities.slice().reverse()
+        : currentActivities;
+      activityTimeline.innerHTML = ordered.map(activity => renderActivity(activity, currentOwner, currentRepo)).join('');
+    } else {
+      activityTimeline.innerHTML = '<p style="color: var(--vscode-descriptionForeground); padding: 16px;">No activity yet.</p>';
+    }
+    if (currentHistoryTruncated) {
+      activityTimeline.innerHTML += currentHistoryIsNewest === false
+        ? '<p class="activity-history-notice">Showing a bounded activity/status sample; the newest entries could not be located safely. Use Open in Web to view the complete history.</p>'
+        : '<p class="activity-history-notice">Showing the newest 50 entries per activity/status source. Use Open in Web to view older history.</p>';
+    }
   }
 
   function getMergeability(pr) {

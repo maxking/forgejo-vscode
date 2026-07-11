@@ -17,7 +17,8 @@ export type WebviewMessage =
   | { type: 'startTimer' }
   | { type: 'stopTimer' }
   | { type: 'cancelTimer' }
-  | { type: 'addManualTime'; seconds: number };
+  | { type: 'addManualTime'; seconds: number }
+  | { type: 'setActivitySortOrder'; order: ActivitySortOrder };
 
 export type ExtensionMessage =
   | { type: 'update'; data: IssueDetailViewData }
@@ -42,9 +43,12 @@ export interface IssueActivity {
 
 type IssueTimelineApiActivity = Omit<IssueActivity, 'type' | 'event'> & TimelineActivity;
 
+export type ActivitySortOrder = 'newest-first' | 'oldest-first';
+
 export interface IssueDetailViewData {
   issue: Issue;
   activities: IssueActivity[];
+  activitySortOrder: ActivitySortOrder;
   timeTracking: IssueTimeTrackingViewData;
   owner: string;
   repo: string;
@@ -169,13 +173,14 @@ export class IssueDetailWebviewProvider {
       state.pendingData = {
         issue: issueDetails,
         activities,
+        activitySortOrder: this._getActivitySortOrder(),
         timeTracking,
         owner,
         repo,
         canComment: config.token.trim().length > 0,
-        instanceUrl: state.instanceUrl
-        , historyTruncated: activityResult.truncated
-        , historyIsNewest: activityResult.newest
+        instanceUrl: state.instanceUrl,
+        historyTruncated: activityResult.truncated,
+        historyIsNewest: activityResult.newest
       };
       state.pendingError = null;
       logInfo('pendingData set, isReady:', state.isReady);
@@ -333,7 +338,17 @@ export class IssueDetailWebviewProvider {
       case 'stopTimer': await this._stopTimer(owner, repo, number, panelKey, instanceUrl); break;
       case 'cancelTimer': await this._cancelTimer(owner, repo, number, panelKey, instanceUrl); break;
       case 'addManualTime': await this._addManualTime(owner, repo, number, message.seconds, panelKey, instanceUrl); break;
+      case 'setActivitySortOrder': await this._setActivitySortOrder(message.order); break;
     }
+  }
+
+  private _getActivitySortOrder(): ActivitySortOrder {
+    const configured = vscode.workspace.getConfiguration('forgejo').get<ActivitySortOrder>('activityTimelineSortOrder', 'newest-first');
+    return configured === 'oldest-first' ? 'oldest-first' : 'newest-first';
+  }
+
+  private async _setActivitySortOrder(order: ActivitySortOrder): Promise<void> {
+    await vscode.workspace.getConfiguration('forgejo').update('activityTimelineSortOrder', order, vscode.ConfigurationTarget.Global);
   }
 
   private async _getConfig(owner: string, repo: string, instanceUrl?: string) {
@@ -616,7 +631,10 @@ export class IssueDetailWebviewProvider {
     </section>
 
     <section class="activity-section">
-      <h2>Activity <span id="activity-count"></span></h2>
+      <div class="activity-section-header">
+        <h2>Activity <span id="activity-count"></span></h2>
+        <button id="activity-sort-btn" class="icon-btn" title="Toggle activity sort order">Newest first</button>
+      </div>
       <div id="activity-timeline"></div>
     </section>
 

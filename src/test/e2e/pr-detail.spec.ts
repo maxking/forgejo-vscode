@@ -263,6 +263,49 @@ test.describe('PR Detail Webview', () => {
     await expect(page.locator('#activity-count')).toHaveText('(3 events)');
   });
 
+  test('toggles activity sort order and reverses the rendered order', async ({ page }) => {
+    const data = createMockPRData();
+    data.activities = [
+      { type: 'comment', id: 1, created_at: '2025-01-03T00:00:00Z', user: { login: 'newest' }, body: 'Most recent' },
+      { type: 'comment', id: 2, created_at: '2025-01-01T00:00:00Z', user: { login: 'oldest' }, body: 'First comment' },
+    ];
+    await harness.sendPRUpdate(data);
+
+    const sortBtn = page.locator('#activity-sort-btn');
+    await expect(sortBtn).toHaveText('Newest first');
+    await expect(page.locator('#activity-timeline .activity-user').first()).toHaveText('newest');
+
+    await sortBtn.click();
+
+    await expect(sortBtn).toHaveText('Oldest first');
+    await expect(page.locator('#activity-timeline .activity-user').first()).toHaveText('oldest');
+    await expect(page.locator('#activity-timeline .activity-user').last()).toHaveText('newest');
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'setActivitySortOrder', order: 'oldest-first' });
+
+    await sortBtn.click();
+
+    await expect(sortBtn).toHaveText('Newest first');
+    await expect(page.locator('#activity-timeline .activity-user').first()).toHaveText('newest');
+
+    const messagesAfterSecondClick = await getPostedMessages(page);
+    expect(messagesAfterSecondClick).toContainEqual({ type: 'setActivitySortOrder', order: 'newest-first' });
+  });
+
+  test('applies the initial activitySortOrder from the extension without requiring a click', async ({ page }) => {
+    const data = createMockPRData();
+    data.activitySortOrder = 'oldest-first';
+    data.activities = [
+      { type: 'comment', id: 1, created_at: '2025-01-03T00:00:00Z', user: { login: 'newest' }, body: 'Most recent' },
+      { type: 'comment', id: 2, created_at: '2025-01-01T00:00:00Z', user: { login: 'oldest' }, body: 'First comment' },
+    ];
+    await harness.sendPRUpdate(data);
+
+    await expect(page.locator('#activity-sort-btn')).toHaveText('Oldest first');
+    await expect(page.locator('#activity-timeline .activity-user').first()).toHaveText('oldest');
+  });
+
   test('renders comment body with bold markdown', async ({ page }) => {
     const data = createMockPRData();
     data.activities = [
