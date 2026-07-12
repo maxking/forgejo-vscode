@@ -1841,6 +1841,192 @@ describe('ForgejoClient', () => {
     });
   });
 
+  describe('metadata: labels, assignees, milestone', () => {
+    test('listRepoLabels should fetch a single page when fewer than the limit', async () => {
+      const labels = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `label-${i + 1}`, color: 'ff0000' }));
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => labels } as unknown as Response);
+
+      const result = await client.listRepoLabels('owner', 'repo');
+
+      expect(result).toEqual(labels);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/labels?page=1&limit=50'),
+        expect.any(Object)
+      );
+    });
+
+    test('listRepoLabels should fetch multiple pages when the first page is full', async () => {
+      const page1 = Array.from({ length: 50 }, (_, i) => ({ id: i + 1, name: `label-${i + 1}`, color: 'ff0000' }));
+      const page2 = Array.from({ length: 5 }, (_, i) => ({ id: i + 51, name: `label-${i + 51}`, color: '00ff00' }));
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page1 } as unknown as Response);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page2 } as unknown as Response);
+
+      const result = await client.listRepoLabels('owner', 'repo');
+
+      expect(result.length).toBe(55);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    test('listMilestones should default to open state and paginate', async () => {
+      const milestones = [{ id: 1, title: 'v1.0', state: 'open' }];
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => milestones } as unknown as Response);
+
+      const result = await client.listMilestones('owner', 'repo');
+
+      expect(result).toEqual(milestones);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('state=open'),
+        expect.any(Object)
+      );
+    });
+
+    test('listMilestones should pass through an explicit state', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as unknown as Response);
+
+      await client.listMilestones('owner', 'repo', 'closed');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('state=closed'),
+        expect.any(Object)
+      );
+    });
+
+    test('listAssignableUsers should fetch the repo assignees endpoint', async () => {
+      const users = [{ id: 1, login: 'alice' }, { id: 2, login: 'bob' }];
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => users } as unknown as Response);
+
+      const result = await client.listAssignableUsers('owner', 'repo');
+
+      expect(result).toEqual(users);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/assignees'),
+        expect.any(Object)
+      );
+    });
+
+    test('setIssueLabels should PUT the full label-ID replacement set to the issue labels endpoint', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as unknown as Response);
+
+      await client.setIssueLabels('owner', 'repo', 42, [3, 7]);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/issues/42/labels'),
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ labels: [3, 7] })
+        })
+      );
+    });
+
+    test('setIssueLabels should support the PR index too (Forgejo stores PRs as issues)', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as unknown as Response);
+
+      await client.setIssueLabels('owner', 'repo', 99, []);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/issues/99/labels'),
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ labels: [] })
+        })
+      );
+    });
+
+    test('updateIssueMetadata should PATCH only the assignees field when milestone is omitted', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ number: 42 }) } as unknown as Response);
+
+      await client.updateIssueMetadata('owner', 'repo', 42, { assignees: ['alice', 'bob'] });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/issues/42'),
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ assignees: ['alice', 'bob'] })
+        })
+      );
+    });
+
+    test('updateIssueMetadata should send milestone: 0 to unset (not omit it)', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ number: 42 }) } as unknown as Response);
+
+      await client.updateIssueMetadata('owner', 'repo', 42, { milestone: 0 });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/issues/42'),
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ milestone: 0 })
+        })
+      );
+    });
+
+    test('updateIssueMetadata should send an empty assignees array to clear all assignees', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ number: 42 }) } as unknown as Response);
+
+      await client.updateIssueMetadata('owner', 'repo', 42, { assignees: [] });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/issues/42'),
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ assignees: [] })
+        })
+      );
+    });
+
+    test('updateIssueMetadata should combine assignees and milestone in one request', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ number: 42 }) } as unknown as Response);
+
+      await client.updateIssueMetadata('owner', 'repo', 42, { assignees: ['alice'], milestone: 5 });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/issues/42'),
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ assignees: ['alice'], milestone: 5 })
+        })
+      );
+    });
+
+    test('updateIssueMetadata should work for a PR index using the same issues endpoint', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ number: 99 }) } as unknown as Response);
+
+      await client.updateIssueMetadata('owner', 'repo', 99, { milestone: 3 });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/issues/99'),
+        expect.objectContaining({ method: 'PATCH' })
+      );
+    });
+
+    test('setIssueLabels should propagate an unauthenticated/permission error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: async () => 'Forbidden'
+      } as unknown as Response);
+
+      await expect(client.setIssueLabels('owner', 'repo', 42, [1]))
+        .rejects
+        .toThrow('HTTP 403: Forbidden');
+    });
+
+    test('updateIssueMetadata should propagate an unauthenticated/permission error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: async () => 'Invalid token'
+      } as unknown as Response);
+
+      await expect(client.updateIssueMetadata('owner', 'repo', 42, { milestone: 1 }))
+        .rejects
+        .toThrow('HTTP 401: Unauthorized');
+    });
+  });
+
   describe('createPullRequest', () => {
     const mockCreatedPR = {
       id: 100,

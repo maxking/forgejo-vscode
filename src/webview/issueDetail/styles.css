@@ -191,6 +191,36 @@ body.has-comment-input #content {
   color: var(--vscode-textLink-foreground);
 }
 
+/* Milestone */
+.milestone-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.milestone-label {
+  font-weight: 600;
+}
+
+.milestone {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* Metadata rows (labels/assignees/milestone + their edit buttons) */
+.metadata-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.metadata-row .icon-btn {
+  font-size: 0.95em;
+  padding: 2px 4px;
+}
+
 /* Action Bar */
 .action-bar {
   display: flex;

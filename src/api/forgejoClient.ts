@@ -26,6 +26,57 @@ export interface CreateIssueOptions {
   due_date?: string;
 }
 
+/**
+ * Repository label as returned by `GET /repos/{owner}/{repo}/labels`.
+ *
+ * forgejo-ts's own `Label` type omits `id`, but editing an issue/PR's
+ * labels requires numeric label IDs, so this extends it locally.
+ */
+export interface ForgejoLabel {
+  id: number;
+  name: string;
+  color: string;
+  description?: string;
+}
+
+/** Milestone as returned by `GET /repos/{owner}/{repo}/milestones`. */
+export interface ForgejoMilestone {
+  id: number;
+  title: string;
+  state: 'open' | 'closed';
+  due_on?: string | null;
+}
+
+/** User eligible to be assigned, as returned by `GET /repos/{owner}/{repo}/assignees`. */
+export interface ForgejoAssignableUser {
+  id: number;
+  login: string;
+  avatar_url?: string;
+}
+
+/**
+ * Fields accepted by `PATCH /repos/{owner}/{repo}/issues/{index}` for
+ * metadata (as opposed to title/body/state, already covered by
+ * `updateIssue`/`updateIssueState`).
+ *
+ * Forgejo stores pull requests as issues internally and this same
+ * endpoint accepts a PR's index, so `updateIssueMetadata` is used for
+ * both issues and PRs — see `EditIssue` in forgejo's
+ * `routers/api/v1/repo/issue.go`, which has no restriction against the
+ * target being a pull request. `EditPullRequestOption` (the `pulls`
+ * endpoint's own edit payload) was deliberately not used here: its
+ * `milestone` field is a non-pointer `int64` guarded by
+ * `form.Milestone != 0`, so `0` there means "leave unchanged" and there
+ * is no way to unset a PR's milestone through it. The issues endpoint's
+ * `milestone` is a pointer, so an explicit `0` does unset.
+ */
+export interface UpdateIssueMetadataOptions {
+  /** Full replacement list of assignee usernames; pass `[]` to clear all. */
+  assignees?: string[];
+  /** Milestone ID; pass `0` to unset, omit to leave unchanged. */
+  milestone?: number;
+}
+
 export interface PullRequestPage {
   items: PullRequestListItemWithMergeability[];
   page: number;
@@ -345,6 +396,60 @@ export class ForgejoClient extends BaseClient {
     };
 
     return this.rawRequest<Issue>('POST', `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`, payload);
+  }
+
+  /** Lists all labels defined on a repository (used to build label-edit pickers for both issues and PRs). */
+  async listRepoLabels(owner: string, repo: string): Promise<ForgejoLabel[]> {
+    const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/labels`;
+    const limit = 50;
+    const labels: ForgejoLabel[] = [];
+    for (let page = 1; ; page++) {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      const batch = await this.rawRequest<ForgejoLabel[]>('GET', `${path}?${params.toString()}`);
+      labels.push(...batch);
+      if (batch.length < limit) break;
+    }
+    return labels;
+  }
+
+  /** Lists milestones defined on a repository (used to build the milestone-edit picker for both issues and PRs). */
+  async listMilestones(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'open'): Promise<ForgejoMilestone[]> {
+    const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/milestones`;
+    const limit = 50;
+    const milestones: ForgejoMilestone[] = [];
+    for (let page = 1; ; page++) {
+      const params = new URLSearchParams({ state, page: String(page), limit: String(limit) });
+      const batch = await this.rawRequest<ForgejoMilestone[]>('GET', `${path}?${params.toString()}`);
+      milestones.push(...batch);
+      if (batch.length < limit) break;
+    }
+    return milestones;
+  }
+
+  /** Lists users eligible for assignment on a repository's issues/PRs. */
+  async listAssignableUsers(owner: string, repo: string): Promise<ForgejoAssignableUser[]> {
+    return this.rawRequest<ForgejoAssignableUser[]>('GET', `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/assignees`);
+  }
+
+  /**
+   * Replaces the full label set on an issue or pull request.
+   *
+   * Forgejo's `EditIssueOption` (the general issue/PR edit payload) has no
+   * `labels` field at all — labels are only editable through this
+   * dedicated endpoint, `PUT /repos/{owner}/{repo}/issues/{index}/labels`.
+   * The same path works for PR indices since PRs are issues internally.
+   */
+  async setIssueLabels(owner: string, repo: string, number: number, labelIds: number[]): Promise<void> {
+    await this.rawRequest<void>('PUT', `${repoIssuePath(owner, repo, number)}/labels`, { labels: labelIds });
+  }
+
+  /** Updates assignees and/or milestone on an issue or pull request. See `UpdateIssueMetadataOptions` for why one shared method covers both. */
+  async updateIssueMetadata(owner: string, repo: string, number: number, options: UpdateIssueMetadataOptions): Promise<Issue> {
+    const payload: Record<string, unknown> = {
+      ...(options.assignees !== undefined ? { assignees: options.assignees } : {}),
+      ...(options.milestone !== undefined ? { milestone: options.milestone } : {})
+    };
+    return this.rawRequest<Issue>('PATCH', repoIssuePath(owner, repo, number), payload);
   }
 
   async getWorkflowRuns(owner: string, repo: string, status?: string): Promise<ActionTasksResponse> {

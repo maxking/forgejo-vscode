@@ -135,6 +135,89 @@ test.describe('PR Detail Webview', () => {
     await expect(page.locator('#head-branch')).toHaveText('feature/awesome');
   });
 
+  // PR Detail previously had no labels/assignees/milestone surface at all,
+  // so these cover brand-new UI, not a pre-existing display path.
+  test('displays labels', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({
+      labels: [
+        { name: 'bug', color: 'f44336' },
+        { name: 'needs-review', color: '2196f3' },
+      ],
+    }));
+
+    const labels = page.locator('#labels-container');
+    await expect(labels).toBeVisible();
+    await expect(labels.locator('.label')).toHaveCount(2);
+    await expect(labels.locator('.label').first()).toContainText('bug');
+    await expect(labels.locator('.label').last()).toContainText('needs-review');
+  });
+
+  test('hides labels when none exist', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({ labels: [] }));
+
+    await expect(page.locator('#labels-container')).toBeHidden();
+  });
+
+  test('displays assignees', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({
+      assignees: [{ login: 'reviewer1' }, { login: 'reviewer2' }],
+    }));
+
+    const assignees = page.locator('#assignees-container');
+    await expect(assignees).toBeVisible();
+    await expect(assignees).toContainText('reviewer1');
+    await expect(assignees).toContainText('reviewer2');
+  });
+
+  test('hides assignees when none exist', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({ assignees: [] }));
+
+    await expect(page.locator('#assignees-container')).toBeHidden();
+  });
+
+  test('displays milestone when set', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({
+      milestone: { id: 1, title: 'v1.0' },
+    }));
+
+    const milestone = page.locator('#milestone-container');
+    await expect(milestone).toBeVisible();
+    await expect(milestone).toContainText('v1.0');
+  });
+
+  test('hides milestone when unset', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData({ milestone: null }));
+
+    await expect(page.locator('#milestone-container')).toBeHidden();
+  });
+
+  test('clicking edit labels posts an editLabels message', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData());
+
+    await page.locator('#edit-labels-btn').click();
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'editLabels' });
+  });
+
+  test('clicking edit assignees posts an editAssignees message', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData());
+
+    await page.locator('#edit-assignees-btn').click();
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'editAssignees' });
+  });
+
+  test('clicking edit milestone posts an editMilestone message', async ({ page }) => {
+    await harness.sendPRUpdate(createMockPRData());
+
+    await page.locator('#edit-milestone-btn').click();
+
+    const messages = await getPostedMessages(page);
+    expect(messages).toContainEqual({ type: 'editMilestone' });
+  });
+
   test('shows merge button for open non-draft PRs', async ({ page }) => {
     await harness.sendPRUpdate(createMockPRData({
       state: 'open',

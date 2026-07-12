@@ -27,6 +27,12 @@
   const authorName = document.getElementById('author-name');
   const baseBranch = document.getElementById('base-branch');
   const headBranch = document.getElementById('head-branch');
+  const labelsContainer = document.getElementById('labels-container');
+  const assigneesContainer = document.getElementById('assignees-container');
+  const milestoneContainer = document.getElementById('milestone-container');
+  const editLabelsBtn = document.getElementById('edit-labels-btn');
+  const editAssigneesBtn = document.getElementById('edit-assignees-btn');
+  const editMilestoneBtn = document.getElementById('edit-milestone-btn');
 
   const checkoutBtn = document.getElementById('checkout-btn');
   const refreshBtn = document.getElementById('refresh-btn');
@@ -125,6 +131,21 @@
       console.log('[Forgejo Webview] Add comment clicked');
       commentInputContainer.style.display = 'block';
       commentInput.focus();
+    });
+
+    editLabelsBtn.addEventListener('click', () => {
+      console.log('[Forgejo Webview] Edit labels clicked');
+      vscode.postMessage({ type: 'editLabels' });
+    });
+
+    editAssigneesBtn.addEventListener('click', () => {
+      console.log('[Forgejo Webview] Edit assignees clicked');
+      vscode.postMessage({ type: 'editAssignees' });
+    });
+
+    editMilestoneBtn.addEventListener('click', () => {
+      console.log('[Forgejo Webview] Edit milestone clicked');
+      vscode.postMessage({ type: 'editMilestone' });
     });
 
     if (mergeBtn) {
@@ -421,6 +442,36 @@
     }
     if (pr.head) {
       headBranch.textContent = pr.head.ref || 'unknown';
+    }
+
+    // Update labels
+    if (pr.labels && pr.labels.length > 0) {
+      labelsContainer.style.display = 'flex';
+      labelsContainer.innerHTML = pr.labels.map(label => {
+        const bgColor = label.color ? `#${label.color}` : 'var(--vscode-badge-background)';
+        const textColor = getContrastColor(label.color || '000000');
+        return `<span class="label" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(label.name)}</span>`;
+      }).join('');
+    } else {
+      labelsContainer.style.display = 'none';
+    }
+
+    // Update assignees
+    if (pr.assignees && pr.assignees.length > 0) {
+      assigneesContainer.style.display = 'flex';
+      assigneesContainer.innerHTML = '<span class="assignees-label">Assignees:</span> ' +
+        pr.assignees.map(a => `<span class="assignee">${escapeHtml(a.login)}</span>`).join(', ');
+    } else {
+      assigneesContainer.style.display = 'none';
+    }
+
+    // Update milestone
+    if (pr.milestone) {
+      milestoneContainer.style.display = 'flex';
+      milestoneContainer.innerHTML = '<span class="milestone-label">Milestone:</span> ' +
+        `<span class="milestone">${escapeHtml(pr.milestone.title)}</span>`;
+    } else {
+      milestoneContainer.style.display = 'none';
     }
 
     // Update description with Markdown rendering
@@ -990,6 +1041,19 @@
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  function getContrastColor(hexColor) {
+    // Convert hex to RGB
+    const r = parseInt(hexColor.substr(0, 2), 16);
+    const g = parseInt(hexColor.substr(2, 2), 16);
+    const b = parseInt(hexColor.substr(4, 2), 16);
+
+    // Calculate luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    // Return black or white based on luminance
+    return luminance > 0.5 ? '#000000' : '#ffffff';
   }
 
   /**

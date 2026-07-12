@@ -135,6 +135,19 @@ export class WebviewHarness {
           <span id="head-branch"></span>
         </span>
       </div>
+
+      <div class="metadata-row">
+        <div id="labels-container" class="labels-container" style="display: none;"></div>
+        <button id="edit-labels-btn" class="icon-btn" title="Edit labels">tag</button>
+      </div>
+      <div class="metadata-row">
+        <div id="assignees-container" class="assignees-container" style="display: none;"></div>
+        <button id="edit-assignees-btn" class="icon-btn" title="Edit assignees">person</button>
+      </div>
+      <div class="metadata-row">
+        <div id="milestone-container" class="milestone-container" style="display: none;"></div>
+        <button id="edit-milestone-btn" class="icon-btn" title="Edit milestone">target</button>
+      </div>
     </header>
 
     <nav class="action-bar">
@@ -265,8 +278,18 @@ export class WebviewHarness {
         <span id="issue-created" class="issue-date"></span>
       </div>
 
-      <div id="labels-container" class="labels-container" style="display: none;"></div>
-      <div id="assignees-container" class="assignees-container" style="display: none;"></div>
+      <div class="metadata-row">
+        <div id="labels-container" class="labels-container" style="display: none;"></div>
+        <button id="edit-labels-btn" class="icon-btn" title="Edit labels">tag</button>
+      </div>
+      <div class="metadata-row">
+        <div id="assignees-container" class="assignees-container" style="display: none;"></div>
+        <button id="edit-assignees-btn" class="icon-btn" title="Edit assignees">person</button>
+      </div>
+      <div class="metadata-row">
+        <div id="milestone-container" class="milestone-container" style="display: none;"></div>
+        <button id="edit-milestone-btn" class="icon-btn" title="Edit milestone">target</button>
+      </div>
     </header>
 
     <nav class="action-bar">
@@ -522,6 +545,9 @@ export interface PRDetailData {
     head?: { ref: string; sha?: string };
     merge_commit_sha?: string;
     mergeable?: boolean | null;
+    labels?: Array<{ name: string; color?: string }>;
+    assignees?: Array<{ login: string }>;
+    milestone?: { id: number; title: string } | null;
   };
   activities: Array<{
     type: string;
@@ -567,6 +593,7 @@ export interface IssueDetailData {
     user?: { login: string; avatar_url?: string };
     labels?: Array<{ name: string; color?: string }>;
     assignees?: Array<{ login: string }>;
+    milestone?: { id: number; title: string } | null;
   };
   activities: Array<{
     type: string;

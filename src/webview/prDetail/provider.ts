@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
-import { PullRequest, CommitStatus } from '../../models/pullRequest';
+import { PullRequestWithMetadata, CommitStatus } from '../../models/pullRequest';
 import { executeCommand } from '../../commands/registry';
 import { openWorkflowFileForCIStatus, viewCIStatusLogs } from '../../commands/ciNavigation';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 import { fetchNewestActivityPage, getTimelineEventName, type TimelineActivity } from '../shared/helpers';
+import { pickLabels, pickAssignees, pickMilestone } from '../shared/metadataPickers';
 import { activateGitExtension } from '../../utils/gitExtension';
 import { matchingRemote, repositoryMatchesConfig } from '../../utils/gitRepositoryMatch';
 import type { Repository } from '../../types/git';
@@ -26,7 +27,10 @@ export type WebviewMessage =
   | { type: 'openCIStatus'; url: string }
   | { type: 'viewCIStatusLogs'; status: CommitStatus }
   | { type: 'openCIWorkflowFile'; status: CommitStatus }
-  | { type: 'setActivitySortOrder'; order: ActivitySortOrder };
+  | { type: 'setActivitySortOrder'; order: ActivitySortOrder }
+  | { type: 'editLabels' }
+  | { type: 'editAssignees' }
+  | { type: 'editMilestone' };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
@@ -137,7 +141,7 @@ function isValidGitBranchRef(ref: string): boolean {
 export type ActivitySortOrder = 'newest-first' | 'oldest-first';
 
 export interface PRDetailViewData {
-  pr: PullRequest;
+  pr: PullRequestWithMetadata;
   activities: PRActivity[];
   activitySortOrder: ActivitySortOrder;
   statuses: CommitStatus[];
@@ -406,6 +410,9 @@ export class PRDetailWebviewProvider {
       case 'viewCommit': break;
       case 'viewFile': break;
       case 'setActivitySortOrder': await this._setActivitySortOrder(message.order); break;
+      case 'editLabels': await this._editLabels(owner, repo, number, panelKey, instanceUrl); break;
+      case 'editAssignees': await this._editAssignees(owner, repo, number, panelKey, instanceUrl); break;
+      case 'editMilestone': await this._editMilestone(owner, repo, number, panelKey, instanceUrl); break;
     }
   }
 
@@ -600,6 +607,66 @@ export class PRDetailWebviewProvider {
     }
   }
 
+  private async _editLabels(owner: string, repo: string, number: number, panelKey?: string, instanceUrl?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await this._getConfig(owner, repo, instanceUrl);
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const currentLabelNames = panelState?.pendingData?.pr.labels.map(label => label.name) ?? [];
+      const labelIds = await pickLabels(client, owner, repo, currentLabelNames);
+      if (labelIds === undefined) return; // User cancelled
+
+      await client.setIssueLabels(owner, repo, number, labelIds);
+      void vscode.window.showInformationMessage(`Labels updated for PR #${String(number)}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editLabels', success: true });
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      logError('Failed to update labels:', error);
+      void vscode.window.showErrorMessage(`Failed to update labels: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editLabels', success: false });
+    }
+  }
+
+  private async _editAssignees(owner: string, repo: string, number: number, panelKey?: string, instanceUrl?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await this._getConfig(owner, repo, instanceUrl);
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const currentLogins = panelState?.pendingData?.pr.assignees?.map(assignee => assignee.login) ?? [];
+      const assignees = await pickAssignees(client, owner, repo, currentLogins);
+      if (assignees === undefined) return; // User cancelled
+
+      await client.updateIssueMetadata(owner, repo, number, { assignees });
+      void vscode.window.showInformationMessage(`Assignees updated for PR #${String(number)}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editAssignees', success: true });
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      logError('Failed to update assignees:', error);
+      void vscode.window.showErrorMessage(`Failed to update assignees: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editAssignees', success: false });
+    }
+  }
+
+  private async _editMilestone(owner: string, repo: string, number: number, panelKey?: string, instanceUrl?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await this._getConfig(owner, repo, instanceUrl);
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const currentMilestoneId = panelState?.pendingData?.pr.milestone?.id;
+      const milestone = await pickMilestone(client, owner, repo, currentMilestoneId);
+      if (milestone === undefined) return; // User cancelled
+
+      await client.updateIssueMetadata(owner, repo, number, { milestone });
+      void vscode.window.showInformationMessage(`Milestone updated for PR #${String(number)}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editMilestone', success: true });
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      logError('Failed to update milestone:', error);
+      void vscode.window.showErrorMessage(`Failed to update milestone: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editMilestone', success: false });
+    }
+  }
+
   private async _openInBrowser(owner: string, repo: string, number: number, instanceUrl?: string): Promise<void> {
     try {
       const config = await this._getConfig(owner, repo, instanceUrl);
@@ -666,6 +733,19 @@ export class PRDetailWebviewProvider {
           <span class="branch-arrow">←</span>
           <span id="head-branch"></span>
         </span>
+      </div>
+
+      <div class="metadata-row">
+        <div id="labels-container" class="labels-container" style="display: none;"></div>
+        <button id="edit-labels-btn" class="icon-btn" title="Edit labels">🏷️</button>
+      </div>
+      <div class="metadata-row">
+        <div id="assignees-container" class="assignees-container" style="display: none;"></div>
+        <button id="edit-assignees-btn" class="icon-btn" title="Edit assignees">👤</button>
+      </div>
+      <div class="metadata-row">
+        <div id="milestone-container" class="milestone-container" style="display: none;"></div>
+        <button id="edit-milestone-btn" class="icon-btn" title="Edit milestone">🎯</button>
       </div>
     </header>
 
