@@ -27,18 +27,14 @@ const WORKFLOW_GLOBS = [
 const WORKFLOW_SCHEMA_ROOT = 'workflow-root';
 const DEFAULT_EXPRESSION_FUNCTIONS = [
   'contains(2,2)',
-  'startsWith(2,2)',
   'endsWith(2,2)',
   'format(1,255)',
   'join(1,2)',
+  'startsWith(2,2)',
   'toJson(1,1)',
   'fromJson(1,1)',
-  'hashFiles(1,255)',
-  'success(0,0)',
-  'failure(0,0)',
-  'always(0,0)',
-  'cancelled(0,0)',
 ];
+const INSERT_DIRECTIVE = /\${{\s*insert\s*}}/;
 
 export interface WorkflowValidationIssue {
   line: number;
@@ -55,6 +51,11 @@ interface YamlLinePosition {
 
 interface RangedYamlNode {
   range?: [number, number, number];
+}
+
+interface SourceYamlScalar {
+  source?: string;
+  type?: string;
 }
 
 interface YamlParserMessage {
@@ -98,7 +99,6 @@ interface SequenceDefinition {
 interface StringDefinition {
   constant?: string;
   'is-expression'?: boolean;
-  'require-non-empty'?: boolean;
 }
 
 const runnerWorkflowSchema = workflowSchema as RunnerWorkflowSchema;
@@ -215,23 +215,46 @@ function scalarValue(node: Node | null | undefined): unknown {
   return isScalar(node) ? node.value : undefined;
 }
 
-function scalarString(node: Node | null | undefined): string | null {
+/** Mirrors yaml.Node.Value, which Forgejo runner uses for string schema checks. */
+function scalarText(node: Node | null | undefined): string | null {
+  if (!isScalar(node)) {
+    return null;
+  }
+  const source = (node as Scalar & SourceYamlScalar).source;
+  if (typeof source === 'string') {
+    return source;
+  }
   const value = scalarValue(node);
-  return typeof value === 'string' ? value : null;
+  return value === null || value === undefined ? '' : String(value);
+}
+
+function isPlainScalar(node: Node | null | undefined): boolean {
+  return isScalar(node) && (node as Scalar & SourceYamlScalar).type === 'PLAIN';
+}
+
+/** Mirrors yaml.Node.Decode(&float64) for the scalar forms used by workflow schemas. */
+function canDecodeRunnerNumber(node: Node | null | undefined): boolean {
+  if (typeof scalarValue(node) === 'number') {
+    return true;
+  }
+  if (!isPlainScalar(node)) {
+    return false;
+  }
+  const value = scalarText(node)?.replace(/_/g, '') ?? '';
+  return /^[+-]?(?:0b[01]+|0o[0-7]+|0x[\da-f]+)$/i.test(value)
+    || /^[+-]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?|\.inf|\.nan)$/i.test(value);
+}
+
+/** Mirrors yaml.v3's typed-bool decoding, including its YAML 1.1 compatibility values. */
+function canDecodeRunnerBoolean(node: Node | null | undefined): boolean {
+  if (typeof scalarValue(node) === 'boolean') {
+    return true;
+  }
+  return /^(?:y|yes|n|no|on|off)$/i.test(scalarText(node) ?? '');
 }
 
 function schemaTypeLabel(definitionName: string): string {
   return definitionName.replace(/-/g, ' ');
-}
-
-function oneOfMessage(definitionName: string, path: string, options: string[]): string {
-  if (definitionName === 'job') {
-    return 'Job must match either a normal job with "runs-on" or a reusable workflow job with "uses".';
-  }
-  if (definitionName === 'steps-item') {
-    return 'Step must define either "run" or "uses".';
-  }
-  return `${schemaTypeLabel(path)} must match one of: ${options.map(schemaTypeLabel).join(', ')}.`;
 }
 
 function pairKey(pair: Pair): string | null {
@@ -240,25 +263,6 @@ function pairKey(pair: Pair): string | null {
 
 function pairValue(pair: Pair): Node | null | undefined {
   return asYamlNode(pair.value);
-}
-
-function mappingHasKey(node: Node | null | undefined, key: string): boolean {
-  return isMap(node) && node.items.some(pair => pairKey(pair) === key);
-}
-
-function selectedOneOfBranch(definitionName: string, node: Node | null | undefined): string | null {
-  if (definitionName === 'job') {
-    return mappingHasKey(node, 'uses') ? 'workflow-job' : 'job-factory';
-  }
-  if (definitionName === 'steps-item') {
-    if (mappingHasKey(node, 'run')) {
-      return 'run-step';
-    }
-    if (mappingHasKey(node, 'uses')) {
-      return 'regular-step';
-    }
-  }
-  return null;
 }
 
 function validateSchemaNode(
@@ -297,20 +301,15 @@ function validateSchemaNode(
   }
 
   if (definition['one-of']) {
-    const selectedBranch = selectedOneOfBranch(definitionName, resolvedNode);
-    if (selectedBranch) {
-      return validateSchemaNode(text, document, resolvedNode, selectedBranch, path, effectiveContext);
-    }
-
+    const branchIssues: WorkflowValidationIssue[][] = [];
     for (const option of definition['one-of']) {
-      if (validateSchemaNode(text, document, resolvedNode, option, path, effectiveContext).length === 0) {
+      const optionIssues = validateSchemaNode(text, document, resolvedNode, option, path, effectiveContext);
+      if (optionIssues.length === 0) {
         return [];
       }
+      branchIssues.push(optionIssues);
     }
-    return [createIssueFromRange(
-      rangeForNode(text, resolvedNode),
-      oneOfMessage(definitionName, path, definition['one-of'])
-    )];
+    return branchIssues.flat();
   }
 
   if (!isScalar(resolvedNode)) {
@@ -325,27 +324,24 @@ function validateSchemaNode(
       return expressionIssues;
     }
 
-    const value = scalarValue(resolvedNode);
-    if (typeof value !== 'string') {
+    const value = scalarText(resolvedNode);
+    if (value === null) {
       return [createIssueFromRange(rangeForNode(text, resolvedNode), `Expected a string for ${schemaTypeLabel(definitionName)}.`)];
     }
     if (definition.string.constant && definition.string.constant !== value) {
       return [createIssueFromRange(rangeForNode(text, resolvedNode), `Expected "${definition.string.constant}" for ${schemaTypeLabel(definitionName)}.`)];
     }
-    if (definition.string['require-non-empty'] && value.length === 0) {
-      return [createIssueFromRange(rangeForNode(text, resolvedNode), `${schemaTypeLabel(definitionName)} must not be empty.`)];
-    }
     return [];
   }
 
   if (definition.number) {
-    return typeof scalarValue(resolvedNode) === 'number'
+    return canDecodeRunnerNumber(resolvedNode)
       ? []
       : [createIssueFromRange(rangeForNode(text, resolvedNode), `Expected a number for ${schemaTypeLabel(definitionName)}.`)];
   }
 
   if (definition.boolean) {
-    return typeof scalarValue(resolvedNode) === 'boolean'
+    return canDecodeRunnerBoolean(resolvedNode)
       ? []
       : [createIssueFromRange(rangeForNode(text, resolvedNode), `Expected a boolean for ${schemaTypeLabel(definitionName)}.`)];
   }
@@ -357,7 +353,7 @@ function validateSchemaNode(
   }
 
   if (definition['allowed-values']) {
-    const value = String(scalarValue(resolvedNode));
+    const value = scalarText(resolvedNode) ?? '';
     return definition['allowed-values'].includes(value)
       ? []
       : [createIssueFromRange(rangeForNode(text, resolvedNode), `Expected one of ${definition['allowed-values'].join(', ')} for ${schemaTypeLabel(definitionName)}.`)];
@@ -388,6 +384,12 @@ function validateMappingNode(
   for (const pair of node.items) {
     const key = pairKey(pair);
     const value = pairValue(pair);
+    if (INSERT_DIRECTIVE.test(scalarText(asYamlNode(pair.key)) ?? '')) {
+      if (context.length === 0) {
+        issues.push(createIssueFromRange(rangeForNode(text, asYamlNode(pair.key)), 'insert is not allowed here'));
+      }
+      continue;
+    }
     const keyExpressionResult = validateEmbeddedExpressions(text, asYamlNode(pair.key), context);
     if (keyExpressionResult.issues.length > 0) {
       issues.push(...keyExpressionResult.issues);
@@ -503,6 +505,11 @@ function validateSingleExpression(
   const allowedFunctions = expressionFunctions(context);
   const unquoted = stripQuotedExpressionText(expression);
 
+  if (context.length === 0 && !/^(?:[+-]?(?:\d+(?:\.\d*)?|\.\d+)|'[^']*'|"[^"]*"|[a-zA-Z_][a-zA-Z0-9_]*)$/.test(expression.trim())) {
+    issues.push(createIssueFromRange(rangeForNode(text, node), 'Expressions are not allowed here.'));
+    return issues;
+  }
+
   let balance = 0;
   for (const char of unquoted) {
     if (char === '(') {
@@ -551,7 +558,7 @@ function validateEmbeddedExpressions(
   node: Node | null | undefined,
   context: string[]
 ): { hadExpression: boolean; issues: WorkflowValidationIssue[] } {
-  const value = scalarString(node);
+  const value = scalarText(node);
   if (value === null || !node) {
     return { hadExpression: false, issues: [] };
   }
@@ -580,7 +587,7 @@ function validateExpressionValue(
   node: Node | null | undefined,
   context: string[]
 ): WorkflowValidationIssue[] {
-  const value = scalarString(node);
+  const value = scalarText(node);
   if (value === null || !node) {
     return [];
   }

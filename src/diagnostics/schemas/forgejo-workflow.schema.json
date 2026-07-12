@@ -1706,15 +1706,11 @@
             "description": "When a concurrent job or workflow is queued, if another job or workflow using the same concurrency group in the repository is in progress, the queued job or workflow will be `pending`. Any previously pending job or workflow in the concurrency group will be canceled. To also cancel any currently running job or workflow in the same concurrency group, specify `cancel-in-progress: true`."
           },
           "cancel-in-progress": {
-            "type": "concurrency-cancel-in-progress",
+            "type": "non-empty-string",
             "description": "To cancel any currently running job or workflow in the same concurrency group, specify cancel-in-progress: true."
           }
         }
       }
-    },
-    "concurrency-cancel-in-progress": {
-      "description": "To cancel any currently running job or workflow in the same concurrency group, specify cancel-in-progress: true.",
-      "one-of": ["boolean", "non-empty-string"]
     },
     "job-environment": {
       "description": "The environment that the job references. All environment protection rules must pass before a job referencing the environment is sent to a runner.",
@@ -2019,12 +2015,8 @@
       ],
       "mapping": {
         "loose-key-type": "non-empty-string",
-        "loose-value-type": "step-with-value"
+        "loose-value-type": "string"
       }
-    },
-    "step-with-value": {
-      "description": "An input value. The runner coerces scalars to strings, so plain numbers and booleans (for example `fetch-depth: 0`) are valid alongside strings.",
-      "one-of": ["string", "boolean", "number"]
     },
     "container": {
       "description": "A container to run any steps in a job that don't already specify a container. If you have steps that use both script and container actions, the container actions will run as sibling containers on the same network with the same volume mounts.\n\nIf you do not set a container, all steps will run directly on the host specified by runs-on unless a step refers to an action configured to run in a container.",
