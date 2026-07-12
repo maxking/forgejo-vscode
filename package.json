@@ -838,7 +838,7 @@
     "test:e2e:vscode:headed": "playwright test --config playwright.vscode.config.ts --headed",
     "test:e2e:vscode:debug": "playwright test --config playwright.vscode.config.ts --debug",
     "test:ci": "npm run lint && npm run test:unit:coverage && npm run test:integration",
-    "test:live": "jest --testPathPattern='forgejoClient\\.live\\.test'",
+    "test:live": "jest --testPathPatterns='forgejoClient\\.live\\.test'",
     "test:e2e:live": "playwright test --config playwright.live.config.ts",
     "test:e2e:live:local": "bash scripts/run-e2e-local.sh",
     "update:workflow-schema": "node scripts/update-workflow-schema.mjs"
