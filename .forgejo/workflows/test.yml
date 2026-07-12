@@ -50,6 +50,23 @@ jobs:
         npm run compile
         xvfb-run -a npm run test:integration
 
+  audit:
+    runs-on: docker
+    container: node:20
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # npm audit only needs the lockfile, not an installed node_modules tree.
+    # Production deps ship inside the VSIX, so any vulnerability there blocks.
+    - name: Audit production dependencies (blocking)
+      run: npm audit --omit=dev --audit-level=low
+
+    # Dev-tooling vulnerabilities never reach users; surface them in the log
+    # without failing the build.
+    - name: Audit all dependencies (informational)
+      run: npm audit || true
+
   build-live-test-image:
     runs-on: docker
     env:
