@@ -263,7 +263,7 @@ export class ForgejoReferenceLanguageProvider implements vscode.HoverProvider, v
 
     return this.cached('reference', config, query, async () => {
       const page = await this.createClient(config).getIssueReferencesPage(config.owner, config.repo, '', 1, COMPLETION_LIMIT);
-      return page.items as ReferenceCompletionItem[];
+      return page.items;
     });
   }
 

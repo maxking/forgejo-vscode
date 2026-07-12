@@ -157,7 +157,7 @@ const PULL_REQUEST_DETAIL_BATCH_SIZE = 5;
 
 function trimmedValue(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
+  return trimmed === '' ? undefined : trimmed;
 }
 
 function normalizeQueryOptions(queryOrOptions?: string | ForgejoItemQueryOptions): ForgejoItemQueryOptions {

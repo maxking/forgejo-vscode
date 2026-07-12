@@ -225,7 +225,13 @@ function scalarText(node: Node | null | undefined): string | null {
     return source;
   }
   const value = scalarValue(node);
-  return value === null || value === undefined ? '' : String(value);
+  if (value === null || value === undefined) {
+    return '';
+  }
+  // Scalars are string | number | boolean here; JSON.stringify renders the
+  // non-string primitives identically to String() without tripping
+  // no-base-to-string on the unknown-typed value.
+  return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
 function isPlainScalar(node: Node | null | undefined): boolean {
@@ -428,7 +434,7 @@ function resolveAlias(document: Document, node: Node | null | undefined): Node |
 }
 
 function functionSpec(value: string): { name: string; min: number; max: number } | null {
-  const match = value.match(/^([a-zA-Z0-9_]+)\((\d+),(\d+|MAX)\)$/);
+  const match = /^([a-zA-Z0-9_]+)\((\d+),(\d+|MAX)\)$/.exec(value);
   if (!match) {
     return null;
   }
@@ -633,7 +639,7 @@ export function validateWorkflowText(text: string, filePath = 'workflow.yml'): W
     return parserIssues;
   }
 
-  return validateSchemaNode(text, document, document.contents as Node | null | undefined, WORKFLOW_SCHEMA_ROOT);
+  return validateSchemaNode(text, document, document.contents, WORKFLOW_SCHEMA_ROOT);
 }
 
 function toDiagnostic(issue: WorkflowValidationIssue): vscode.Diagnostic {

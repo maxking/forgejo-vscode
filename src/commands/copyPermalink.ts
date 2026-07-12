@@ -88,7 +88,7 @@ function isFileDirty(repository: Repository, fileUri: vscode.Uri): boolean {
 export async function copyPermalinkCommand(): Promise<void> {
   try {
     const editor = vscode.window.activeTextEditor;
-    if (!editor || editor.document.uri.scheme !== 'file') {
+    if (editor?.document.uri.scheme !== 'file') {
       void vscode.window.showWarningMessage('Open a file to copy a Forgejo permalink.');
       return;
     }

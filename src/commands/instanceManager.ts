@@ -43,7 +43,7 @@ export async function manageInstances(): Promise<void> {
 			{
 				label: '',
 				kind: vscode.QuickPickItemKind.Separator
-			} as InstanceQuickPickItem,
+			},
 			...validInstances.map(i => ({
 				label: `${i.isDefault ? '$(star-full)' : '$(server)'} ${i.name}`,
 				description: i.sshHost
@@ -60,7 +60,7 @@ export async function manageInstances(): Promise<void> {
 			items.push({
 				label: 'No instances configured',
 				description: 'Add your first instance to get started'
-			} as InstanceQuickPickItem);
+			});
 		}
 
 		const selected = await vscode.window.showQuickPick(items, {

@@ -105,7 +105,7 @@ export class PRDetailsContentProvider implements vscode.TextDocumentContentProvi
       // Deduplicate statuses by context, keeping only the latest per context.
       // The API returns all historical statuses (pending + final) for a SHA,
       // which causes the same CI job to appear multiple times (e.g. "Waiting to run" + "Succeeded").
-      return PRDetailsContentProvider.deduplicateStatuses(allStatuses);
+      return deduplicateCommitStatuses(allStatuses);
     } catch (error) {
       console.log('[Forgejo] Could not fetch commit statuses:', error);
       return [];

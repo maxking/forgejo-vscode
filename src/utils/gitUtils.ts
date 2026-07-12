@@ -457,7 +457,7 @@ export function hasGitRepository(): boolean {
       encoding: 'utf-8'
     });
     return true;
-  } catch (error) {
+  } catch {
     return false;
   }
 }

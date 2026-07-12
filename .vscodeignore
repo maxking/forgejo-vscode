@@ -18,7 +18,7 @@ src/test/**
 .gitignore
 .gitattributes
 .editorconfig
-.eslintrc.json
+eslint.config.mjs
 tsconfig.json
 jest.config.js
 .prettierrc

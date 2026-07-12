@@ -22,7 +22,7 @@ export function normalizeUrl(url: string): string {
 	let normalized = url.trim();
 
 	// Add https:// if no protocol
-	if (!normalized.match(/^https?:\/\//)) {
+	if (!(/^https?:\/\//.exec(normalized))) {
 		normalized = `https://${normalized}`;
 	}
 
@@ -354,7 +354,7 @@ export function findBestInstanceMatch(
 	// trimmed values — the onboarding/schema allow uppercase input.
 	const normalizedRemoteHost = remoteUrl.trim().toLowerCase();
 	for (const instance of instances) {
-		if (instance.sshHost && instance.sshHost.trim().toLowerCase() === normalizedRemoteHost) {
+		if (instance.sshHost?.trim().toLowerCase() === normalizedRemoteHost) {
 			return { instance, confidence: 'domain' };
 		}
 	}
@@ -377,7 +377,7 @@ async function syncToLegacySettings(instance: ForgejoInstance): Promise<void> {
 function stripTokenFromInstance(instance: ForgejoInstance): ForgejoInstance {
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	const { token: _token, ...rest } = instance;
-	return rest as ForgejoInstance;
+	return rest;
 }
 
 /**

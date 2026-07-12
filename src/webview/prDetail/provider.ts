@@ -343,10 +343,10 @@ export class PRDetailWebviewProvider {
     const commitsPage = pageClient.getPullRequestCommitsPage;
     const timelinePage = pageClient.getIssueTimelinePage;
     const [comments, reviews, commits, timeline] = await Promise.all([
-      fetchNewestActivityPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false, newest: true }; }),
-      fetchNewestActivityPage(reviewsPage ? page => reviewsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestReviews(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch reviews:', e); return { items: [], truncated: false, newest: true }; }),
-      fetchNewestActivityPage(commitsPage ? page => commitsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestCommits(owner, repo, number), item => String(item.sha)).catch(e => { logDebug('Could not fetch commits:', e); return { items: [], truncated: false, newest: true }; }),
-      fetchNewestActivityPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false, newest: true }; })
+      fetchNewestActivityPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number), item => String(item.id)).catch((e: unknown) => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(reviewsPage ? page => reviewsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestReviews(owner, repo, number), item => String(item.id)).catch((e: unknown) => { logDebug('Could not fetch reviews:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(commitsPage ? page => commitsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getPullRequestCommits(owner, repo, number), item => item.sha).catch((e: unknown) => { logDebug('Could not fetch commits:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number), item => String(item.id)).catch((e: unknown) => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false, newest: true }; })
     ]);
       activities.push(...(comments.items as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
       activities.push(...(reviews.items as PRActivity[]).map((r) => ({ ...r, type: 'review' as const })));
@@ -428,7 +428,7 @@ export class PRDetailWebviewProvider {
   private async _openCIStatus(url: string, owner: string, repo: string, instanceUrl?: string): Promise<void> {
     // Check if this is a Forgejo Actions URL (e.g., /owner/repo/actions/runs/283/jobs/1)
     // These URLs are relative paths from the Forgejo instance
-    const actionsMatch = url.match(/\/[^/]+\/[^/]+\/actions\/runs\/(\d+)(?:\/jobs\/(\d+))?/);
+    const actionsMatch = /\/[^/]+\/[^/]+\/actions\/runs\/(\d+)(?:\/jobs\/(\d+))?/.exec(url);
     if (actionsMatch) {
       const runNumber = parseInt(actionsMatch[1], 10);
       try {
@@ -516,7 +516,7 @@ export class PRDetailWebviewProvider {
       await repository.fetch(remote.name, `refs/heads/${baseRef}`);
       await new Promise<void>((resolve, reject) => {
         execFile('git', ['revert', commitSha], { cwd: repository.rootUri.fsPath }, error => {
-          if (error) reject(error instanceof Error ? error : new Error(String(error)));
+          if (error) reject(error instanceof Error ? error : new Error(JSON.stringify(error)));
           else resolve();
         });
       });

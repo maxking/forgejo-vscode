@@ -236,8 +236,8 @@ export class IssueDetailWebviewProvider {
     const commentsPage = pageClient.getIssueCommentsPage;
     const timelinePage = pageClient.getIssueTimelinePage;
     const [comments, timeline] = await Promise.all([
-      fetchNewestActivityPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false, newest: true }; }),
-      fetchNewestActivityPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number), item => String(item.id)).catch(e => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false, newest: true }; })
+      fetchNewestActivityPage(commentsPage ? page => commentsPage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueComments(owner, repo, number), item => String(item.id)).catch((e: unknown) => { logDebug('Could not fetch comments:', e); return { items: [], truncated: false, newest: true }; }),
+      fetchNewestActivityPage(timelinePage ? page => timelinePage.call(client, owner, repo, number, { page, limit: 50 }) : undefined, () => client.getIssueTimeline(owner, repo, number), item => String(item.id)).catch((e: unknown) => { logDebug('Could not fetch timeline:', e); return { items: [], truncated: false, newest: true }; })
     ]);
       activities.push(...(comments.items as IssueActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
       activities.push(...(timeline.items as IssueTimelineApiActivity[]).flatMap((t): IssueActivity[] => {
