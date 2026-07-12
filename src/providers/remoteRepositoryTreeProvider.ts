@@ -8,6 +8,7 @@ const REMOTE_DIRECTORY_PAGE_SIZE = 100;
 const LOAD_MORE_BRANCHES_LABEL = 'Load more branches...';
 const NEXT_BRANCH_PAGE_LABEL = 'Next branch page';
 const PREVIOUS_BRANCH_PAGE_LABEL = 'Previous branch page';
+const LOAD_MORE_ENTRIES_LABEL = 'Load more entries';
 
 interface BranchPage {
   items: RepositoryBranch[];
@@ -20,6 +21,16 @@ interface BranchQuickPickItem extends vscode.QuickPickItem {
   loadMore?: true;
   nextPage?: true;
   previousPage?: true;
+}
+
+interface DirectoryPageCache {
+  entries: RepositoryContentEntry[];
+  seenPaths: Set<string>;
+  nextPage: number;
+  hasMore: boolean;
+  notADirectory: boolean;
+  loaded: boolean;
+  inFlightPagePromise?: Promise<DirectoryPageCache>;
 }
 
 function treeIdPart(value: string | number | undefined): string {
@@ -185,20 +196,48 @@ export class RemoteRepositoryMessageItem extends vscode.TreeItem {
   }
 }
 
+export class RemoteRepositoryLoadMoreItem extends vscode.TreeItem {
+  constructor(
+    public readonly selection: RemoteRepositorySelection,
+    public readonly path: string,
+    public readonly parent: RemoteRepositoryItem | RemoteRepositoryDirectoryItem
+  ) {
+    super(LOAD_MORE_ENTRIES_LABEL, vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('more');
+    this.contextValue = 'forgejoRemoteDirectoryLoadMore';
+    this.id = [
+      'remote-directory-load-more',
+      selection.instanceUrl,
+      selection.owner,
+      selection.repo,
+      selection.branch,
+      path
+    ].map(treeIdPart).join('/');
+    this.command = {
+      command: 'forgejo.loadMoreRemoteDirectoryEntries',
+      title: 'Load More Entries',
+      arguments: [this]
+    };
+  }
+}
+
 export type RemoteRepositoryTreeElement =
   | RemoteRepositoryInstanceItem
   | RemoteRepositoryBrowseItem
   | RemoteRepositoryItem
   | RemoteRepositoryDirectoryItem
   | RemoteRepositoryFileItem
-  | RemoteRepositoryMessageItem;
+  | RemoteRepositoryMessageItem
+  | RemoteRepositoryLoadMoreItem;
 
 export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<RemoteRepositoryTreeElement> {
   private _onDidChangeTreeData = new vscode.EventEmitter<RemoteRepositoryTreeElement | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   private selectionsByInstance = new Map<string, RemoteRepositorySelection[]>();
+  private directoryPages = new Map<string, DirectoryPageCache>();
 
   refresh(): void {
+    this.directoryPages.clear();
     this._onDidChangeTreeData.fire();
   }
 
@@ -224,14 +263,25 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
     }
 
     if (element instanceof RemoteRepositoryItem) {
-      return this.getDirectoryChildren(element.selection, '');
+      return this.getDirectoryChildren(element.selection, '', element);
     }
 
     if (element instanceof RemoteRepositoryDirectoryItem) {
-      return this.getDirectoryChildren(element.selection, element.path);
+      return this.getDirectoryChildren(element.selection, element.path, element);
     }
 
     return [];
+  }
+
+  async loadMoreDirectoryEntries(item: RemoteRepositoryLoadMoreItem): Promise<void> {
+    try {
+      const client = new ForgejoClient(item.selection.instanceUrl, item.selection.token ?? '');
+      await this.fetchNextDirectoryPage(client, item.selection, item.path);
+      this._onDidChangeTreeData.fire(item.parent);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load more remote repository entries';
+      void vscode.window.showErrorMessage(message);
+    }
   }
 
   async browseRepository(instanceItem?: RemoteRepositoryInstanceItem | RemoteRepositoryBrowseItem): Promise<RemoteRepositorySelection | undefined> {
@@ -459,7 +509,11 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
     this.selectionsByInstance.set(selection.instanceId, selections);
   }
 
-  private async getDirectoryChildren(selection: RemoteRepositorySelection, path: string): Promise<RemoteRepositoryTreeElement[]> {
+  private async getDirectoryChildren(
+    selection: RemoteRepositorySelection,
+    path: string,
+    parent: RemoteRepositoryItem | RemoteRepositoryDirectoryItem
+  ): Promise<RemoteRepositoryTreeElement[]> {
     try {
       const currentInstance = await this.instanceForSelection(selection);
       if (!currentInstance) {
@@ -471,23 +525,12 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
         token: currentInstance.token
       };
       const client = this.createClient(currentInstance);
-      const contents = await client.getRepositoryContents(
-        currentSelection.owner,
-        currentSelection.repo,
-        path,
-        {
-          ref: currentSelection.branch,
-          page: 1,
-          limit: REMOTE_DIRECTORY_PAGE_SIZE
-        }
-      );
-      if (!Array.isArray(contents)) {
+      const cache = await this.ensureDirectoryPage(client, currentSelection, path);
+      if (cache.notADirectory) {
         return [new RemoteRepositoryMessageItem('Remote path is not a directory.', true, path)];
       }
 
-      const hasMore = contents.length >= REMOTE_DIRECTORY_PAGE_SIZE
-        && await this.hasMoreDirectoryEntries(client, currentSelection, path);
-      const entries = sortEntries(contents).slice(0, REMOTE_DIRECTORY_PAGE_SIZE);
+      const entries = sortEntries(cache.entries);
       if (entries.length === 0) {
         return [new RemoteRepositoryMessageItem('No files found', false, path)];
       }
@@ -499,8 +542,8 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
         return new RemoteRepositoryFileItem(currentSelection, entry);
       });
 
-      if (hasMore) {
-        children.push(new RemoteRepositoryMessageItem(`Showing first ${REMOTE_DIRECTORY_PAGE_SIZE} entries`, false, path));
+      if (cache.hasMore) {
+        children.push(new RemoteRepositoryLoadMoreItem(currentSelection, path, parent));
       }
 
       return children;
@@ -510,18 +553,81 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
     }
   }
 
-  private async hasMoreDirectoryEntries(client: ForgejoClient, selection: RemoteRepositorySelection, path: string): Promise<boolean> {
-    const nextPage = await client.getRepositoryContents(
+  private directoryCacheKey(selection: RemoteRepositorySelection, path: string): string {
+    return `${repositoryKey(selection.instanceUrl, selection.owner, selection.repo)}/${selection.branch}/${path}`;
+  }
+
+  private getDirectoryCache(selection: RemoteRepositorySelection, path: string): DirectoryPageCache {
+    const key = this.directoryCacheKey(selection, path);
+    const cached = this.directoryPages.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    const created: DirectoryPageCache = {
+      entries: [],
+      seenPaths: new Set<string>(),
+      nextPage: 1,
+      hasMore: true,
+      notADirectory: false,
+      loaded: false
+    };
+    this.directoryPages.set(key, created);
+    return created;
+  }
+
+  private async ensureDirectoryPage(client: ForgejoClient, selection: RemoteRepositorySelection, path: string): Promise<DirectoryPageCache> {
+    const cache = this.getDirectoryCache(selection, path);
+    if (cache.loaded) {
+      return cache;
+    }
+    return this.fetchNextDirectoryPage(client, selection, path);
+  }
+
+  private async fetchNextDirectoryPage(client: ForgejoClient, selection: RemoteRepositorySelection, path: string): Promise<DirectoryPageCache> {
+    const cache = this.getDirectoryCache(selection, path);
+    if (!cache.hasMore) {
+      return cache;
+    }
+    if (cache.inFlightPagePromise) {
+      return cache.inFlightPagePromise;
+    }
+
+    const promise = client.getRepositoryContents(
       selection.owner,
       selection.repo,
       path,
       {
         ref: selection.branch,
-        page: 2,
-        limit: 1
+        page: cache.nextPage,
+        limit: REMOTE_DIRECTORY_PAGE_SIZE
       }
-    );
-    return Array.isArray(nextPage) && nextPage.length > 0;
+    ).then(contents => {
+      if (!Array.isArray(contents)) {
+        cache.notADirectory = true;
+        cache.hasMore = false;
+        cache.loaded = true;
+        return cache;
+      }
+
+      for (const entry of contents) {
+        if (!cache.seenPaths.has(entry.path)) {
+          cache.seenPaths.add(entry.path);
+          cache.entries.push(entry);
+        }
+      }
+      cache.hasMore = contents.length >= REMOTE_DIRECTORY_PAGE_SIZE;
+      cache.nextPage += 1;
+      cache.loaded = true;
+      return cache;
+    });
+
+    cache.inFlightPagePromise = promise;
+    try {
+      return await promise;
+    } finally {
+      cache.inFlightPagePromise = undefined;
+    }
   }
 }
 
