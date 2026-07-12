@@ -130,6 +130,8 @@ export interface ForgejoItemQueryOptions {
   assignedBy?: string;
   mentionedBy?: string;
   reviewRequestedBy?: string;
+  /** Sort order accepted by the Forgejo API (e.g. 'recentupdate'). Omit to preserve default ordering. */
+  sort?: string;
 }
 
 export type { RepositoryBranch, RepositoryContentEntry };
@@ -169,7 +171,8 @@ function normalizeQueryOptions(queryOrOptions?: string | ForgejoItemQueryOptions
     createdBy: trimmedValue(queryOrOptions?.createdBy),
     assignedBy: trimmedValue(queryOrOptions?.assignedBy),
     mentionedBy: trimmedValue(queryOrOptions?.mentionedBy),
-    reviewRequestedBy: trimmedValue(queryOrOptions?.reviewRequestedBy)
+    reviewRequestedBy: trimmedValue(queryOrOptions?.reviewRequestedBy),
+    sort: trimmedValue(queryOrOptions?.sort)
   };
 }
 
@@ -273,9 +276,10 @@ export class ForgejoClient extends BaseClient {
         state,
         page,
         limit,
-        query: options.query
+        query: options.query,
+        sort: options.sort
       })
-      : await this.listPullRequestsPage(owner, repo, { state, page, limit });
+      : await this.listPullRequestsPage(owner, repo, { state, page, limit, sort: options.sort });
     return {
       items: result.items,
       page: result.page,
@@ -322,7 +326,8 @@ export class ForgejoClient extends BaseClient {
       ...(options.query ? { query: options.query } : {}),
       ...(options.createdBy ? { createdBy: options.createdBy } : {}),
       ...(options.assignedBy ? { assignedBy: options.assignedBy } : {}),
-      ...(options.mentionedBy ? { mentionedBy: options.mentionedBy } : {})
+      ...(options.mentionedBy ? { mentionedBy: options.mentionedBy } : {}),
+      ...(options.sort ? { sort: options.sort } : {})
     });
     return {
       items: result.items.filter(item => !item.pull_request),
@@ -523,6 +528,7 @@ export class ForgejoClient extends BaseClient {
     appendQueryParam(params, 'created_by', options.createdBy);
     appendQueryParam(params, 'assigned_by', options.assignedBy);
     appendQueryParam(params, 'mentioned_by', options.mentionedBy);
+    appendQueryParam(params, 'sort', options.sort);
     params.set('page', String(page));
     params.set('limit', String(limit));
 
@@ -557,6 +563,7 @@ export class ForgejoClient extends BaseClient {
       type: 'pulls'
     });
     appendQueryParam(params, 'q', options.query);
+    appendQueryParam(params, 'sort', options.sort);
     params.set('review_requested', 'true');
     params.set('owner', owner);
     params.set('page', String(page));

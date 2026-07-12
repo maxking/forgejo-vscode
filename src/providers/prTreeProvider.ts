@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { ForgejoClient, ForgejoItemQueryOptions, PullRequestPage } from '../api/forgejoClient';
-import { getPullRequestMergeability, PullRequestFile, PullRequestListItemWithMergeability } from '../models/pullRequest';
+import { PullRequestFile, PullRequestListItemWithMergeability } from '../models/pullRequest';
 import { ForgejoConfig, ForgejoRepositoryConfig, getForgejoConfig, getForgejoConfigFor, getForgejoRepositoryConfigs } from '../utils/config';
+import { getPullRequestPresentation } from './pullRequestPresentation';
 
 /**
  * The Forgejo pull request API response includes `merge_base` (the frozen
@@ -127,28 +128,12 @@ export class PRTreeItem extends vscode.TreeItem {
   ) {
     super(`#${pr.number}: ${pr.title}`, vscode.TreeItemCollapsibleState.Collapsed);
 
-    const mergeability = getPullRequestMergeability(pr);
-    const mergeabilitySuffix = mergeability.state === 'notApplicable' ? '' : `\nMergeability: ${mergeability.label}`;
-
-    this.tooltip = `${pr.title}\nby ${pr.user.login}\nState: ${pr.state}${pr.merged ? ' (merged)' : ''}${pr.draft ? ' (draft)' : ''}${mergeabilitySuffix}`;
-    this.description = mergeability.state === 'notApplicable'
-      ? `by ${pr.user.login}`
-      : `by ${pr.user.login} - ${mergeability.label}`;
+    const presentation = getPullRequestPresentation(pr);
+    this.tooltip = presentation.tooltip;
+    this.description = presentation.description;
+    this.iconPath = presentation.iconPath;
     this.contextValue = 'pullRequest';
     this.id = itemIdParts('pr', config?.instanceUrl, owner, repo, pr.number, treeContext).map(treeIdPart).join('/');
-
-    // Set icon based on state
-    if (mergeability.state === 'conflicting') {
-      this.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('problemsWarningIcon.foreground'));
-    } else if (pr.merged) {
-      this.iconPath = new vscode.ThemeIcon('git-merge', new vscode.ThemeColor('gitDecoration.addedResourceForeground'));
-    } else if (pr.draft) {
-      this.iconPath = new vscode.ThemeIcon('git-pull-request-draft');
-    } else if (pr.state === 'closed') {
-      this.iconPath = new vscode.ThemeIcon('git-pull-request-closed', new vscode.ThemeColor('gitDecoration.deletedResourceForeground'));
-    } else {
-      this.iconPath = new vscode.ThemeIcon('git-pull-request', new vscode.ThemeColor('gitDecoration.modifiedResourceForeground'));
-    }
 
     // Remove command - expand/collapse instead of opening browser
     // Users can right-click to open in browser via context menu

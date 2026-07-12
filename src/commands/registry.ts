@@ -23,6 +23,7 @@ import type { RemoteRepositoryBrowseItem, RemoteRepositoryFileItem, RemoteReposi
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs, ActionLoadMoreItem } from '../providers/actionsTreeProvider';
 import type { TodoIssueDraft } from '../providers/referenceLanguageProvider';
 import type { ReleaseGroupItem, ReleaseRepositoryItem, ReleaseLoadMoreItem } from '../providers/releaseTreeProvider';
+import type { SavedQueryGroupItem, SavedQueryLoadMoreItem } from '../providers/savedQueryTreeProvider';
 
 // ---------------------------------------------------------------------------
 // Command argument map
@@ -57,6 +58,9 @@ export interface CommandMap {
   'forgejo.refreshReleases': [];
   'forgejo.loadMoreReleases': [item: ReleaseLoadMoreItem];
   'forgejo.refreshRemoteRepositories': [];
+  'forgejo.refreshSavedQueries': [];
+  'forgejo.loadMoreSavedQuery': [item: SavedQueryLoadMoreItem];
+  'forgejo.addSavedQuery': [];
   'forgejo.configureInstanceUrl': [];
   'forgejo.setAuthToken': [];
   'forgejo.selectRemote': [];
@@ -178,6 +182,12 @@ export interface CommandMap {
     instanceUrl?: string,
   ];
   'forgejo.openWorkflowFile': [item: WorkflowRunTreeItem | JobTreeItem];
+
+  // view/item/context: viewItem == savedQueryCustomGroup
+  'forgejo.editSavedQuery': [item?: SavedQueryGroupItem];
+  'forgejo.removeSavedQuery': [item?: SavedQueryGroupItem];
+  'forgejo.moveSavedQueryUp': [item?: SavedQueryGroupItem];
+  'forgejo.moveSavedQueryDown': [item?: SavedQueryGroupItem];
 }
 
 // ---------------------------------------------------------------------------
