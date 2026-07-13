@@ -509,8 +509,10 @@ describe('ActionsTreeProvider', () => {
 
       expect(mockClient.getWorkflowRunsPage).toHaveBeenCalledTimes(1);
       expect(mockClient.getWorkflowRunsPage).toHaveBeenCalledWith('test-owner', 'test-repo', 1, 50);
-      expect(children).toHaveLength(51);
-      expect(children[50]).toBeInstanceOf(ActionLoadMoreItem);
+      // The run at the page boundary is held back until its jobs finish loading,
+      // so 49 runs render plus the Load More item.
+      expect(children).toHaveLength(50);
+      expect(children[49]).toBeInstanceOf(ActionLoadMoreItem);
     });
 
     test('should load the next workflow run page through the load more item', async () => {
@@ -548,6 +550,40 @@ describe('ActionsTreeProvider', () => {
       const runItem = loadedChildren[0] as WorkflowRunTreeItem;
       expect(runItem.jobs).toHaveLength(2);
       expect(runItem.jobs.map(job => job.id)).toEqual([123, 127]);
+    });
+
+    test('holds back a run whose jobs straddle a page boundary until fully loaded', async () => {
+      // Page 1 ends mid-run: run 199 has a second (failing) job on page 2.
+      // Rendering run 199 now would show a partial job list and a misleading
+      // all-success icon, so it must be held back until the next page arrives.
+      const page1Run200 = { ...mockWorkflowRunSuccess, id: 1, run_number: 200, status: 'success' as const };
+      const page1Run199JobA = { ...mockWorkflowRunSuccess, id: 2, run_number: 199, name: 'build', status: 'success' as const };
+      const page2Run199JobB = { ...mockWorkflowRunFailed, id: 3, run_number: 199, name: 'deploy', status: 'failure' as const };
+      const page2Run198 = { ...mockWorkflowRunSuccess, id: 4, run_number: 198, status: 'success' as const };
+
+      mockClient.getWorkflowRunsPage
+        .mockResolvedValueOnce({ items: [page1Run200, page1Run199JobA], page: 1, limit: 50, hasMore: true })
+        .mockResolvedValueOnce({ items: [page2Run199JobB, page2Run198], page: 2, limit: 50, hasMore: false });
+
+      const initialChildren = await provider.getChildren();
+
+      // Only the complete run 200 renders; the boundary run 199 is held back.
+      const initialRuns = initialChildren.filter(child => child instanceof WorkflowRunTreeItem) as WorkflowRunTreeItem[];
+      expect(initialRuns.map(run => run.runNumber)).toEqual([200]);
+      expect(initialChildren.some(child => child instanceof ActionLoadMoreItem)).toBe(true);
+
+      const loadMoreItem = initialChildren.find(child => child instanceof ActionLoadMoreItem) as ActionLoadMoreItem;
+      await provider.loadMoreActions(loadMoreItem);
+      const loadedChildren = await provider.getChildren();
+
+      const loadedRuns = loadedChildren.filter(child => child instanceof WorkflowRunTreeItem) as WorkflowRunTreeItem[];
+      expect(loadedRuns.map(run => run.runNumber)).toEqual([200, 199, 198]);
+
+      // Run 199 now carries both jobs and reflects the real failing status.
+      const run199 = loadedRuns.find(run => run.runNumber === 199) as WorkflowRunTreeItem;
+      expect(run199.jobs).toHaveLength(2);
+      expect(run199.jobs.map(job => job.id)).toEqual([2, 3]);
+      expect((run199.iconPath as vscode.ThemeIcon).id).toBe('error');
     });
 
     test('should group multiple jobs with same run_number into one run', async () => {

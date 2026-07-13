@@ -37,6 +37,31 @@ describe('fetchNewestActivityPage', () => {
     expect(paged).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps only the first page for newest-first (descending) streams', async () => {
+    // A newest-first endpoint (e.g. /pulls/{index}/commits) returns the newest
+    // commits on page 1; page 2 holds older commits that should be dropped.
+    const paged = jest.fn((page: number) => Promise.resolve(page === 1
+      ? { items: rows(51, 100), hasMore: true, totalCount: 100 }
+      : { items: rows(1, 50), hasMore: true, totalCount: 100 }));
+
+    const result = await fetchNewestActivityPage(paged, async () => [], item => String(item.id), { descending: true });
+
+    expect(result.items.map(item => item.id)).toEqual(rows(51, 100).map(item => item.id));
+    expect(paged).toHaveBeenCalledTimes(1);
+    expect(paged).toHaveBeenCalledWith(1);
+    expect(result).toMatchObject({ truncated: true, newest: true });
+  });
+
+  it('returns the whole first page for a single-page descending stream', async () => {
+    const paged = jest.fn(() => Promise.resolve({ items: rows(1, 10), hasMore: false, totalCount: 10 }));
+
+    const result = await fetchNewestActivityPage(paged, async () => [], item => String(item.id), { descending: true });
+
+    expect(result.items.map(item => item.id)).toEqual(rows(1, 10).map(item => item.id));
+    expect(paged).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ truncated: false, newest: true });
+  });
+
   it('finds an unknown final page with exponential probing and binary search', async () => {
     const paged = jest.fn((page: number) => {
       if (page === 1) return Promise.resolve({ items: rows(1, 50), hasMore: true, totalCount: null });

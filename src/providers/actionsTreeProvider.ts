@@ -404,6 +404,16 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
         runsByNumber.set(job.run_number, existing);
       }
 
+      // Jobs are paginated at the job level but grouped into runs here, so the
+      // run at the tail of the loaded data may have more jobs on the next page.
+      // Rendering it now would show a partial job list and a potentially wrong
+      // aggregate status icon, so hold it back (behind the Load More affordance)
+      // until its remaining jobs arrive and merge in.
+      if (cache.hasMore) {
+        const boundaryRunNumber = cache.workflowRuns[cache.workflowRuns.length - 1].run_number;
+        runsByNumber.delete(boundaryRunNumber);
+      }
+
       const sortedRuns = Array.from(runsByNumber.entries()).sort((a, b) => b[0] - a[0]);
       const children: ActionTreeElement[] = sortedRuns.map(([runNumber, jobs]) =>
         new WorkflowRunTreeItem(runNumber, jobs, config.owner, config.repo, config.instanceUrl)

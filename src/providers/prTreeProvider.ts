@@ -50,7 +50,6 @@ async function getPRDiffRefs(
 
 const PULL_REQUEST_PAGE_SIZE = 50;
 const PULL_REQUEST_MERGEABILITY_BATCH_SIZE = 5;
-const MAX_MERGEABILITY_HYDRATIONS_PER_RENDER = 5;
 const PULL_REQUEST_FILE_PAGE_SIZE = 50;
 
 type PRQueryKind = 'assigned' | 'review' | 'created' | 'mentioned';
@@ -353,12 +352,22 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   private currentUserLogins = new Map<string, Promise<string | null>>();
   private error: string | null = null;
   private searchQuery: string | null = null;
+  // Tracks PRs whose mergeability is currently being fetched so re-entrant
+  // renders (triggered by our own background refresh) do not start overlapping
+  // hydration passes for the same PRs.
+  private mergeabilityHydrationInFlight = new Set<PullRequestListItemWithMergeability>();
+  // Bumped on every refresh so background hydration passes started before a
+  // refresh stop mutating stale, discarded PR objects.
+  private hydrationGeneration = 0;
+  private disposed = false;
 
   constructor() {
     this.refresh();
   }
 
   refresh(): void {
+    this.hydrationGeneration++;
+    this.mergeabilityHydrationInFlight.clear();
     this.pullRequestPages.clear();
     this.hasClosedPullRequests.clear();
     this.currentUserLogins.clear();
@@ -366,6 +375,8 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   }
 
   refreshRepository(repositoryItem: PRRepositoryItem): void {
+    this.hydrationGeneration++;
+    this.mergeabilityHydrationInFlight.clear();
     const keyPrefix = this.configKeyPrefix(repositoryItem.config);
     for (const key of this.pullRequestPages.keys()) {
       if (key.startsWith(keyPrefix)) {
@@ -378,6 +389,12 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       }
     }
     this._onDidChangeTreeData.fire(repositoryItem);
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.mergeabilityHydrationInFlight.clear();
+    this._onDidChangeTreeData.dispose();
   }
 
   getSearchQuery(): string | null {
@@ -743,28 +760,73 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     config: ForgejoConfig,
     pullRequests: PullRequestListItemWithMergeability[]
   ): Promise<PullRequestListItemWithMergeability[]> {
-    const needsHydration = pullRequests
-      .filter(pr => pr.state === 'open' && !pr.draft && pr.mergeable === undefined)
-      .slice(0, MAX_MERGEABILITY_HYDRATIONS_PER_RENDER);
+    const needsHydration = pullRequests.filter(
+      pr => pr.state === 'open'
+        && !pr.draft
+        && pr.mergeable === undefined
+        && !this.mergeabilityHydrationInFlight.has(pr)
+    );
     if (needsHydration.length === 0) {
       return pullRequests;
     }
 
+    for (const pr of needsHydration) {
+      this.mergeabilityHydrationInFlight.add(pr);
+    }
+
     const client = new ForgejoClient(config.instanceUrl, config.token);
-    for (let index = 0; index < needsHydration.length; index += PULL_REQUEST_MERGEABILITY_BATCH_SIZE) {
-      const batch = needsHydration.slice(index, index + PULL_REQUEST_MERGEABILITY_BATCH_SIZE);
-      await Promise.all(batch.map(async pr => {
-        try {
-          const details = await client.getPullRequestDetails(config.owner, config.repo, pr.number);
-          pr.mergeable = details.mergeable;
-        } catch (error) {
-          console.warn(`[Forgejo] Could not fetch mergeability for PR #${pr.number}:`, error);
-          pr.mergeable = null;
-        }
-      }));
+    // Hydrate the first batch synchronously so the initial render already shows
+    // conflict indicators for the top PRs.
+    await this.hydrateMergeabilityBatch(client, config, needsHydration.slice(0, PULL_REQUEST_MERGEABILITY_BATCH_SIZE));
+
+    const remaining = needsHydration.slice(PULL_REQUEST_MERGEABILITY_BATCH_SIZE);
+    if (remaining.length > 0) {
+      // Hydrate the rest in the background so every listed PR eventually gets a
+      // mergeability indicator without blocking this render.
+      void this.hydrateRemainingMergeabilityInBackground(client, config, remaining, this.hydrationGeneration);
     }
 
     return pullRequests;
+  }
+
+  private async hydrateMergeabilityBatch(
+    client: ForgejoClient,
+    config: ForgejoConfig,
+    batch: PullRequestListItemWithMergeability[]
+  ): Promise<void> {
+    await Promise.all(batch.map(async pr => {
+      try {
+        const details = await client.getPullRequestDetails(config.owner, config.repo, pr.number);
+        pr.mergeable = details.mergeable;
+      } catch (error) {
+        console.warn(`[Forgejo] Could not fetch mergeability for PR #${pr.number}:`, error);
+        pr.mergeable = null;
+      } finally {
+        this.mergeabilityHydrationInFlight.delete(pr);
+      }
+    }));
+  }
+
+  private async hydrateRemainingMergeabilityInBackground(
+    client: ForgejoClient,
+    config: ForgejoConfig,
+    pullRequests: PullRequestListItemWithMergeability[],
+    generation: number
+  ): Promise<void> {
+    for (let index = 0; index < pullRequests.length; index += PULL_REQUEST_MERGEABILITY_BATCH_SIZE) {
+      if (this.disposed || generation !== this.hydrationGeneration) {
+        for (const pr of pullRequests.slice(index)) {
+          this.mergeabilityHydrationInFlight.delete(pr);
+        }
+        return;
+      }
+      await this.hydrateMergeabilityBatch(client, config, pullRequests.slice(index, index + PULL_REQUEST_MERGEABILITY_BATCH_SIZE));
+      if (this.disposed || generation !== this.hydrationGeneration) {
+        return;
+      }
+      // Fire a refresh so the freshly hydrated batch renders its conflict state.
+      this._onDidChangeTreeData.fire();
+    }
   }
 
   private async fetchPullRequestsPageUncached(config: ForgejoConfig, groupKind: PRGroupKind, page: number): Promise<PullRequestPage> {

@@ -42,6 +42,18 @@ describe('PRTreeProvider', () => {
     hasMore
   });
 
+  // Repeatedly yields to the event loop until the background hydration passes
+  // satisfy `done` (or a safety bound is hit).
+  const flushBackgroundHydration = async (done: () => boolean, maxTicks = 50): Promise<void> => {
+    for (let tick = 0; tick < maxTicks && !done(); tick++) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    // Let any dispatched-but-unresolved requests settle their mutations.
+    for (let tick = 0; tick < 5; tick++) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  };
+
   beforeEach(() => {
     // Create mock client
     mockClient = {
@@ -483,14 +495,54 @@ describe('PRTreeProvider', () => {
       expect(prItem.description).toBe('by testuser - Merge conflicts');
     });
 
-    test('bounds mergeability hydration to five PR details per render', async () => {
+    test('does not block the render on hydrating every PR', async () => {
       const openPRs = Array.from({ length: 12 }, (_, index) => ({ ...mockPR, number: index + 1 }));
       mockClient.getPullRequestsPage.mockResolvedValue(prPage(openPRs));
 
       const groups = await provider.getChildren();
       await provider.getChildren(groups.find(child => (child as any).label === 'Open'));
 
-      expect(mockClient.getPullRequestDetails).toHaveBeenCalledTimes(5);
+      // The render resolves before every PR has been hydrated; the tail is left
+      // to the background pass so a large list never stalls the tree.
+      expect(mockClient.getPullRequestDetails.mock.calls.length).toBeLessThan(12);
+    });
+
+    test('eventually hydrates mergeability for PRs beyond the first batch', async () => {
+      const openPRs = Array.from({ length: 12 }, (_, index) => ({ ...mockPR, number: index + 1 }));
+      mockClient.getPullRequestsPage.mockResolvedValue(prPage(openPRs));
+      mockClient.getPullRequestDetails.mockImplementation(async (_owner, _repo, number) =>
+        ({ ...mockPR, number, mergeable: false } as any));
+
+      const groups = await provider.getChildren();
+      const openGroup = groups.find(child => (child as any).label === 'Open');
+      await provider.getChildren(openGroup);
+
+      // Wait for the background hydration passes to drain.
+      await flushBackgroundHydration(() => mockClient.getPullRequestDetails.mock.calls.length >= 12);
+
+      expect(mockClient.getPullRequestDetails).toHaveBeenCalledTimes(12);
+      const hydratedNumbers = mockClient.getPullRequestDetails.mock.calls.map(call => call[2]).sort((a, b) => a - b);
+      expect(hydratedNumbers).toEqual(Array.from({ length: 12 }, (_, index) => index + 1));
+
+      // Re-rendering the group now surfaces conflict indicators for the tail PRs.
+      const openItems = await provider.getChildren(openGroup);
+      const lastPr = (openItems[openItems.length - 1] as PRTreeItem);
+      expect(lastPr.pr.mergeable).toBe(false);
+    });
+
+    test('fires a tree refresh as background mergeability batches complete', async () => {
+      const openPRs = Array.from({ length: 12 }, (_, index) => ({ ...mockPR, number: index + 1 }));
+      mockClient.getPullRequestsPage.mockResolvedValue(prPage(openPRs));
+
+      const groups = await provider.getChildren();
+      const changes: Array<unknown> = [];
+      provider.onDidChangeTreeData(item => changes.push(item));
+
+      await provider.getChildren(groups.find(child => (child as any).label === 'Open'));
+      await flushBackgroundHydration(() => mockClient.getPullRequestDetails.mock.calls.length >= 12);
+
+      // Two background batches (PRs 6-10 and 11-12) each fire one refresh.
+      expect(changes.length).toBeGreaterThanOrEqual(1);
     });
 
     test('should not fire tree refresh while resolving group children', async () => {

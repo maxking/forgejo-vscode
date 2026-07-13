@@ -341,8 +341,8 @@ describe('ForgejoCommentController', () => {
 		MockForgejoClient.mockImplementationOnce(() => ({
 			getPullRequestReviews: jest.fn().mockResolvedValue([{ id: 1, comments_count: 2 }]),
 			getReviewComments: jest.fn().mockResolvedValue([
-				{ path: 'src/file.ts', line: 3, old_position: 3, body: 'base only', user: { login: 'a' } },
-				{ path: 'src/file.ts', line: 8, new_position: 8, body: 'head only', user: { login: 'b' } }
+				{ path: 'src/file.ts', line: 3, original_position: 3, body: 'base only', user: { login: 'a' } },
+				{ path: 'src/file.ts', line: 8, position: 8, body: 'head only', user: { login: 'b' } }
 			]),
 			createReviewWithComments: jest.fn()
 		} as any));
@@ -353,6 +353,29 @@ describe('ForgejoCommentController', () => {
 		expect(commentController.createCommentThread).toHaveBeenCalledTimes(1);
 		expect(commentController.createCommentThread.mock.calls[0][1].start.line).toBe(7);
 		expect(commentController.createCommentThread.mock.calls[0][2][0].body.value).toBe('head only');
+	});
+
+	it('renders base-side comments using original_position', async () => {
+		const baseUri = vscode.Uri.parse('forgejo-pr:/owner/repo/bWFpbg/src/file.ts');
+		controller.registerPRContext(baseUri, ctx);
+		mockGetForgejoConfigFor.mockResolvedValueOnce({
+			instanceUrl: 'https://git.example.com', owner: 'owner', repo: 'repo', token: 'token'
+		} as any);
+		MockForgejoClient.mockImplementationOnce(() => ({
+			getPullRequestReviews: jest.fn().mockResolvedValue([{ id: 1, comments_count: 2 }]),
+			getReviewComments: jest.fn().mockResolvedValue([
+				{ path: 'src/file.ts', line: 3, original_position: 3, body: 'base only', user: { login: 'a' } },
+				{ path: 'src/file.ts', line: 8, position: 8, body: 'head only', user: { login: 'b' } }
+			]),
+			createReviewWithComments: jest.fn()
+		} as any));
+
+		await controller.loadCommentsForDocument({ uri: baseUri } as vscode.TextDocument);
+
+		const commentController = (vscode.comments.createCommentController as jest.Mock).mock.results[0].value;
+		expect(commentController.createCommentThread).toHaveBeenCalledTimes(1);
+		expect(commentController.createCommentThread.mock.calls[0][1].start.line).toBe(2);
+		expect(commentController.createCommentThread.mock.calls[0][2][0].body.value).toBe('base only');
 	});
 
 	it('keeps review API calls on the base PR repository for a fork head URI', async () => {

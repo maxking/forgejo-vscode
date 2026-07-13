@@ -158,8 +158,11 @@ export class ForgejoCommentController implements vscode.Disposable {
       // generic `line` value is not sufficient for modified-file split diffs.
       const commentsByLine = new Map<number, ReviewComment[]>();
       for (const comment of fileComments) {
-		const positioned = comment as ReviewComment & { old_position?: number; new_position?: number };
-		const line = headSide ? positioned.new_position : positioned.old_position;
+		// Forgejo's PullReviewComment wire format exposes the diff position as
+		// `position` (head/new side) and `original_position` (base/old side).
+		// (Note the create payload uses the different `new_position`/`old_position` keys.)
+		const positioned = comment as ReviewComment & { position?: number; original_position?: number };
+		const line = headSide ? positioned.position : positioned.original_position;
 		if (typeof line !== 'number') {
 			continue;
 		}

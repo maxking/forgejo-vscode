@@ -51,6 +51,14 @@ export class BranchStatusBarController implements vscode.Disposable {
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly cache = new Map<string, CacheEntry>();
 
+  /**
+   * Monotonically increasing token identifying the latest refresh. Each
+   * `refresh()` claims the next value up-front; any result that resolves after
+   * a newer refresh has started finds its token stale and bails out instead of
+   * overwriting the status bar with data for a branch/repo the user has left.
+   */
+  private refreshSequence = 0;
+
   private currentState: BranchStatusViewState = { kind: 'no-repo' };
   private currentConfig: ForgejoConfig | undefined;
 
@@ -151,6 +159,8 @@ export class BranchStatusBarController implements vscode.Disposable {
    * Exposed (not just private) so tests and the debounce timer share one path.
    */
   async refresh(): Promise<void> {
+    const seq = ++this.refreshSequence;
+
     if (!this.isEnabled()) {
       this.setState({ kind: 'disabled' });
       return;
@@ -171,6 +181,9 @@ export class BranchStatusBarController implements vscode.Disposable {
     }
 
     const config = await getForgejoConfig(repository.rootUri);
+    if (seq !== this.refreshSequence) {
+      return;
+    }
     if (!config) {
       this.setState({ kind: 'no-config' });
       return;
@@ -188,7 +201,11 @@ export class BranchStatusBarController implements vscode.Disposable {
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       const prPage = await client.getPullRequestsPage(config.owner, config.repo, 'open', 1, PR_PAGE_LIMIT);
-      const pr = findPullRequestForBranch(prPage.items as PullRequestListItemWithHead[], branchName);
+      const pr = findPullRequestForBranch(
+        prPage.items as PullRequestListItemWithHead[],
+        branchName,
+        `${config.owner}/${config.repo}`
+      );
 
       let ciStatuses: CommitStatus[] = [];
       if (pr) {
@@ -201,9 +218,15 @@ export class BranchStatusBarController implements vscode.Disposable {
 
       const entry: CacheEntry = { timestamp: Date.now(), pr, ciStatuses };
       this.cache.set(cacheKey, entry);
+      if (seq !== this.refreshSequence) {
+        return;
+      }
       this.applyResolvedData(branchName, entry, config);
     } catch (error) {
       console.error('[Forgejo] Status bar: failed to refresh branch status:', error);
+      if (seq !== this.refreshSequence) {
+        return;
+      }
       this.setState(
         {
           kind: 'error',

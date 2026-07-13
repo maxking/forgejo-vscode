@@ -187,6 +187,36 @@ describe('migration', () => {
 			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Global);
 		});
 
+		it('migrates a legacy token to the default instance when no instanceUrl is configured', async () => {
+			const { update } = mockConfig({
+				instances: [
+					{ id: '1', name: 'One', instanceUrl: 'https://one.example' },
+					{ id: '2', name: 'Two', instanceUrl: 'https://two.example', isDefault: true }
+				],
+				instanceUrl: undefined,
+				token: 'orphan-token'
+			});
+
+			await migrateTokensToSecretStorage();
+
+			expect(mockSetToken).toHaveBeenCalledWith('2', 'orphan-token');
+			expect(mockSetToken).not.toHaveBeenCalledWith('1', 'orphan-token');
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Global);
+		});
+
+		it('falls back to the first instance for a legacy token when none is marked default and no instanceUrl is set', async () => {
+			const { update } = mockConfig({
+				instances: [{ id: 'first', name: 'First', instanceUrl: 'https://first.example' }],
+				instanceUrl: undefined,
+				token: 'orphan-token'
+			});
+
+			await migrateTokensToSecretStorage();
+
+			expect(mockSetToken).toHaveBeenCalledWith('first', 'orphan-token');
+			expect(update).toHaveBeenCalledWith('token', undefined, vscode.ConfigurationTarget.Global);
+		});
+
 		it('cleans tokens through resource-scoped configuration for every workspace folder', async () => {
 			const folderOne = { uri: vscode.Uri.parse('file:///one'), name: 'one', index: 0 };
 			const folderTwo = { uri: vscode.Uri.parse('file:///two'), name: 'two', index: 1 };

@@ -80,6 +80,13 @@ export async function migrateTokensToSecretStorage(): Promise<void> {
 
 		const urlInspection = config.inspect<string>('instanceUrl');
 		const tokenInspection = config.inspect<string>('token');
+		// Without a legacy instanceUrl there is no host to match against, so fall back to
+		// the default instance (or the first one) as the pre-URL-matching behavior did.
+		// This ensures the plaintext token is migrated and cleared instead of lingering
+		// in settings.json forever. When a URL *is* configured but matches nothing we keep
+		// the token in place, to avoid handing it to an instance on a different host.
+		const defaultInstance = candidateInstances.find(instance => instance.isDefault && instance.id)
+			?? candidateInstances.find(instance => instance.id);
 		for (const scope of scopes) {
 			const legacyToken = tokenInspection?.[scope.value]?.trim();
 			if (!legacyToken) continue;
@@ -87,9 +94,11 @@ export async function migrateTokensToSecretStorage(): Promise<void> {
 			const normalizedLegacyUrl = legacyInstanceUrl ? normalizeUrl(legacyInstanceUrl) : undefined;
 			const matchingInstance = normalizedLegacyUrl
 				? candidateInstances.find(instance => normalizeUrl(instance.instanceUrl) === normalizedLegacyUrl)
-				: undefined;
+				: defaultInstance;
 			if (!matchingInstance) {
-				logWarn('Legacy forgejo.token could not be migrated because no instance matches forgejo.instanceUrl');
+				logWarn(normalizedLegacyUrl
+					? 'Legacy forgejo.token could not be migrated because no instance matches forgejo.instanceUrl'
+					: 'Legacy forgejo.token could not be migrated because no instance exists');
 				continue;
 			}
 			await setToken(matchingInstance.id, legacyToken);

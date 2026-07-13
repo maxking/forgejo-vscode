@@ -4,7 +4,15 @@ import { ForgejoInstance } from '../models/instance';
 import { getAllInstances, normalizeUrl } from '../utils/instanceHelpers';
 import { createRemoteFileUri } from './remoteFileContentProvider';
 
-const REMOTE_DIRECTORY_PAGE_SIZE = 100;
+const REMOTE_BRANCH_PAGE_SIZE = 100;
+// Forgejo caps every list response at MAX_RESPONSE_ITEMS (default 50), so a
+// directory page never exceeds that no matter how large a limit we request.
+// The contents endpoint returns a bare array with no pagination metadata, so we
+// infer "more remain" from a full page. That only works when the requested
+// limit does not exceed the server cap — otherwise a full page (the cap) is
+// smaller than the requested limit and pagination stalls after page 1. Request
+// exactly the default cap so a full page equals the requested size.
+const REMOTE_DIRECTORY_PAGE_SIZE = 50;
 const LOAD_MORE_BRANCHES_LABEL = 'Load more branches...';
 const NEXT_BRANCH_PAGE_LABEL = 'Next branch page';
 const PREVIOUS_BRANCH_PAGE_LABEL = 'Previous branch page';
@@ -393,7 +401,7 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
   }
 
   private async fetchBranchesPage(client: ForgejoClient, owner: string, repo: string, page = 1): Promise<BranchPage> {
-    const branchPage = await client.listBranchesPage(owner, repo, { page, limit: REMOTE_DIRECTORY_PAGE_SIZE });
+    const branchPage = await client.listBranchesPage(owner, repo, { page, limit: REMOTE_BRANCH_PAGE_SIZE });
     return {
       items: branchPage.items,
       page: branchPage.page,
@@ -616,6 +624,9 @@ export class RemoteRepositoryTreeProvider implements vscode.TreeDataProvider<Rem
           cache.entries.push(entry);
         }
       }
+      // A page filled to the server cap may have more entries behind it; a
+      // short page is the last one. Requesting exactly the cap keeps this
+      // comparison meaningful (see REMOTE_DIRECTORY_PAGE_SIZE).
       cache.hasMore = contents.length >= REMOTE_DIRECTORY_PAGE_SIZE;
       cache.nextPage += 1;
       cache.loaded = true;

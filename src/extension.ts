@@ -62,6 +62,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create tree data providers
   const prTreeProvider = new PRTreeProvider();
+  context.subscriptions.push(prTreeProvider);
   const issueTreeProvider = new IssueTreeProvider();
   const actionsTreeProvider = new ActionsTreeProvider();
   const releaseTreeProvider = new ReleaseTreeProvider();

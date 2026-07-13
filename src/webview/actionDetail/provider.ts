@@ -128,8 +128,9 @@ export class ActionDetailWebviewProvider {
       // Task-list rows use an instance-wide task id, while repository Actions
       // endpoints use the repository-local run number.
       let fullRun: WorkflowRun;
-      const locatedRun = await client.getWorkflowRunByNumber(owner, repo, run.run_number);
+      let locatedRun: WorkflowRun | null = null;
       try {
+        locatedRun = await client.getWorkflowRunByNumber(owner, repo, run.run_number);
         if (!locatedRun) throw new Error('Run id lookup returned no match');
         fullRun = await client.getWorkflowRunDetails(owner, repo, locatedRun.id);
       } catch (runError) {

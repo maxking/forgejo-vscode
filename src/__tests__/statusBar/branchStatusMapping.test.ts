@@ -16,35 +16,47 @@ function makePr(overrides: Partial<PullRequestListItemWithHead> = {}): PullReque
     merged: false,
     draft: false,
     comments: 0,
-    head: { ref: 'feature-branch', sha: 'abc123' },
+    head: { ref: 'feature-branch', sha: 'abc123', repo: { full_name: 'o/r' } },
     base: { ref: 'master' },
     ...overrides
   };
 }
 
 describe('findPullRequestForBranch', () => {
-  it('returns the PR whose head ref matches the branch name', () => {
-    const target = makePr({ number: 5, head: { ref: 'my-branch', sha: 'sha5' } });
-    const prs = [makePr({ number: 1, head: { ref: 'other-branch', sha: 'sha1' } }), target];
+  it('returns the PR whose head ref matches the branch name in the tracked repo', () => {
+    const target = makePr({ number: 5, head: { ref: 'my-branch', sha: 'sha5', repo: { full_name: 'o/r' } } });
+    const prs = [makePr({ number: 1, head: { ref: 'other-branch', sha: 'sha1', repo: { full_name: 'o/r' } } }), target];
 
-    expect(findPullRequestForBranch(prs, 'my-branch')).toBe(target);
+    expect(findPullRequestForBranch(prs, 'my-branch', 'o/r')).toBe(target);
   });
 
   it('returns undefined when no PR matches the branch name', () => {
-    const prs = [makePr({ head: { ref: 'other-branch', sha: 'sha1' } })];
+    const prs = [makePr({ head: { ref: 'other-branch', sha: 'sha1', repo: { full_name: 'o/r' } } })];
 
-    expect(findPullRequestForBranch(prs, 'my-branch')).toBeUndefined();
+    expect(findPullRequestForBranch(prs, 'my-branch', 'o/r')).toBeUndefined();
+  });
+
+  it('does not match a fork PR that shares the local branch name but lives in a different head repo', () => {
+    const forkPr = makePr({ number: 8, head: { ref: 'my-branch', sha: 'shaFork', repo: { full_name: 'forker/r' } } });
+
+    expect(findPullRequestForBranch([forkPr], 'my-branch', 'o/r')).toBeUndefined();
+  });
+
+  it('does not match a PR whose head repo is missing (e.g. deleted fork)', () => {
+    const orphanPr = makePr({ number: 9, head: { ref: 'my-branch', sha: 'shaOrphan', repo: null } });
+
+    expect(findPullRequestForBranch([orphanPr], 'my-branch', 'o/r')).toBeUndefined();
   });
 
   it('returns undefined for an empty PR list', () => {
-    expect(findPullRequestForBranch([], 'my-branch')).toBeUndefined();
+    expect(findPullRequestForBranch([], 'my-branch', 'o/r')).toBeUndefined();
   });
 
   it('picks the first match when multiple PRs share a head ref (should not normally happen)', () => {
-    const first = makePr({ number: 1, head: { ref: 'dup', sha: 'sha1' } });
-    const second = makePr({ number: 2, head: { ref: 'dup', sha: 'sha2' } });
+    const first = makePr({ number: 1, head: { ref: 'dup', sha: 'sha1', repo: { full_name: 'o/r' } } });
+    const second = makePr({ number: 2, head: { ref: 'dup', sha: 'sha2', repo: { full_name: 'o/r' } } });
 
-    expect(findPullRequestForBranch([first, second], 'dup')).toBe(first);
+    expect(findPullRequestForBranch([first, second], 'dup', 'o/r')).toBe(first);
   });
 });
 

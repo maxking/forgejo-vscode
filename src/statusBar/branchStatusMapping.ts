@@ -8,20 +8,32 @@ import type { AggregateCIStatus } from '../utils/commitStatus';
  * `prTreeProvider.ts` reading `pr.head.ref`/`pr.base.ref` the same way).
  */
 export interface PullRequestListItemWithHead extends PullRequestListItem {
-  head: { ref: string; sha: string };
+  head: { ref: string; sha: string; repo?: { full_name: string } | null };
   base: { ref: string };
 }
 
 /**
- * Find the open pull request whose head branch matches the given branch name.
+ * Find the open pull request whose head branch matches the given branch name
+ * *and* whose head repository is the tracked repository itself (identified by
+ * its `owner/repo` full name). The head-repo check is what keeps a fork PR
+ * that happens to share the local branch name from being misattributed to the
+ * current branch; a PR whose `head.repo` is missing (e.g. the fork was deleted)
+ * can never be the tracked repo, so it is treated as a non-match.
+ *
  * `prs` is expected to be a single bounded page of open pull requests (see
  * `branchStatusBarController.ts`); this performs no I/O and does not paginate.
  */
 export function findPullRequestForBranch(
   prs: PullRequestListItemWithHead[],
-  branchName: string
+  branchName: string,
+  headRepoFullName: string
 ): PullRequestListItemWithHead | undefined {
-  return prs.find(pr => pr.head.ref === branchName);
+  // Owner/repo names are case-insensitive in Forgejo, and the configured
+  // owner/repo may not match the API's canonical casing.
+  const wanted = headRepoFullName.toLowerCase();
+  return prs.find(
+    pr => pr.head.ref === branchName && pr.head.repo?.full_name?.toLowerCase() === wanted
+  );
 }
 
 export type BranchStatusViewState =

@@ -23,14 +23,20 @@ const ACTIVITY_PAGE_SIZE = 50;
 const MAX_ACTIVITY_PAGE_PROBES = 20;
 
 /**
- * Finds the tail of an ascending paginated activity stream without walking all
- * intervening pages. Forgejo reports `hasMore` for a full page even when it is
- * the final page, so unknown totals require probing for the first non-full page.
+ * Finds the tail of a paginated activity stream without walking all intervening
+ * pages. Forgejo reports `hasMore` for a full page even when it is the final
+ * page, so unknown totals require probing for the first non-full page.
+ *
+ * Most Forgejo activity streams are ascending (oldest first), so the newest
+ * items live on the last page. Set `options.descending` for endpoints that
+ * return newest first (e.g. `/pulls/{index}/commits`, which mirrors `git log`),
+ * where the newest items are on page 1.
  */
 export async function fetchNewestActivityPage<T>(
   paged: ((page: number) => Promise<ActivityPage<T>>) | undefined,
   legacy: () => Promise<T[]>,
-  keyOf: (item: T) => string
+  keyOf: (item: T) => string,
+  options: { descending?: boolean } = {}
 ): Promise<NewestActivityPage<T>> {
   if (!paged) return { items: await legacy(), truncated: false, newest: true };
 
@@ -44,6 +50,9 @@ export async function fetchNewestActivityPage<T>(
   };
   const first = await fetchPage(1);
   if (!first.hasMore) return { items: first.items, truncated: false, newest: true };
+  // Newest-first streams already have the newest items on page 1; older pages
+  // are dropped, so flag the result as truncated.
+  if (options.descending) return { items: first.items, truncated: true, newest: true };
 
   let boundaryPage: number;
   if (typeof first.totalCount === 'number') {

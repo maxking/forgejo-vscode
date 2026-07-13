@@ -74,7 +74,9 @@ test.describe('Remote repository directory lazy loading', () => {
           const page = parsed.searchParams.get('page') ?? '1';
 
           if (page === '1') {
-            const entries = Array.from({ length: 100 }, (_value, index) => ({
+            // Forgejo caps list responses at MAX_RESPONSE_ITEMS (default 50),
+            // so a full first page returns 50 entries, not the requested limit.
+            const entries = Array.from({ length: 50 }, (_value, index) => ({
               type: 'file',
               name: `file-${String(index).padStart(3, '0')}.txt`,
               path: `file-${String(index).padStart(3, '0')}.txt`,
@@ -135,8 +137,8 @@ test.describe('Remote repository directory lazy loading', () => {
 
     await expect(workbox.locator('.monaco-list-row', { hasText: 'file-000.txt' }).first()).toBeVisible({ timeout: 30_000 });
 
-    // The 100-entry page overflows the virtualized tree view, so the
-    // "Load more entries" row (item 101) isn't attached to the DOM until
+    // The 50-entry page overflows the virtualized tree view, so the
+    // "Load more entries" row (item 51) isn't attached to the DOM until
     // the list actually scrolls there. Jump to the end of the focused list.
     await workbox.keyboard.press('End');
     const loadMore = workbox.locator('.monaco-list-row', { hasText: 'Load more entries' }).first();
@@ -151,6 +153,6 @@ test.describe('Remote repository directory lazy loading', () => {
       const globals = globalThis as typeof globalThis & { __forgejoFetchCalls?: string[] };
       return globals.__forgejoFetchCalls ?? [];
     });
-    expect(calls.some(url => url.includes('/contents') && url.includes('page=2') && url.includes('limit=100'))).toBe(true);
+    expect(calls.some(url => url.includes('/contents') && url.includes('page=2') && url.includes('limit=50'))).toBe(true);
   });
 });

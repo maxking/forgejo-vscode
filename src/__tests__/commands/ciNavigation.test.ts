@@ -191,6 +191,52 @@ describe('ciNavigation', () => {
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith('No local workflow file matched "Test".');
   });
 
+  test('falls back to a workspace-wide search when the git extension is unavailable', async () => {
+    mockActivateGitExtension.mockResolvedValue(undefined as any);
+    const workflow = vscode.Uri.file('/workspace/.forgejo/workflows/test.yml');
+    (vscode.workspace.findFiles as jest.Mock).mockResolvedValue([workflow]);
+    (vscode.workspace.openTextDocument as jest.Mock).mockImplementation(async (input) => ({
+      uri: input,
+      getText: () => 'name: Test\non: push\njobs:\n  test:\n    runs-on: docker\n    steps:\n      - run: npm test\n'
+    }));
+
+    await openWorkflowFileForCIStatus({
+      status,
+      owner: 'owner',
+      repo: 'repo-b',
+      instanceUrl: 'https://git.example.com'
+    });
+
+    expect(vscode.workspace.findFiles).toHaveBeenCalledWith('**/.forgejo/workflows/*.{yml,yaml}', '**/node_modules/**', 100);
+    expect(vscode.window.showTextDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: workflow }),
+      { preview: true }
+    );
+  });
+
+  test('falls back to a workspace-wide search when no git repositories are open', async () => {
+    mockGitApi([]);
+    const workflow = vscode.Uri.file('/workspace/.forgejo/workflows/ci.yml');
+    (vscode.workspace.findFiles as jest.Mock).mockResolvedValue([workflow]);
+    (vscode.workspace.openTextDocument as jest.Mock).mockImplementation(async (input) => ({
+      uri: input,
+      getText: () => 'name: CI\non: push\njobs:\n  test:\n    runs-on: docker\n    steps:\n      - run: npm test\n'
+    }));
+
+    await openWorkflowFileForRepository({
+      workflowName: 'ci.yml',
+      owner: 'owner',
+      repo: 'nested',
+      instanceUrl: 'https://git.example.com'
+    });
+
+    expect(vscode.workspace.findFiles).toHaveBeenCalledWith('**/.github/workflows/*.{yml,yaml}', '**/node_modules/**', 100);
+    expect(vscode.window.showTextDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: workflow }),
+      { preview: true }
+    );
+  });
+
   test('opens an Actions tree workflow file only from the selected repository root', async () => {
     const parentRepo = createRepository('/workspace', 'git@git.example.com:owner/parent.git');
     const nestedRepo = createRepository('/workspace/nested', 'git@git.example.com:owner/nested.git');
