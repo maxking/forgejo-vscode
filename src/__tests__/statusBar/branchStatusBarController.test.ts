@@ -34,7 +34,7 @@ function makeRepository(branchName: string, rootPath = '/workspace/repo') {
   } as any;
 }
 
-function makePr(number: number, headRef: string) {
+function makePr(number: number, headRef: string, headRepoFullName = 'maxking/forgejo-vscode') {
   return {
     number,
     title: `PR ${number}`,
@@ -45,9 +45,18 @@ function makePr(number: number, headRef: string) {
     merged: false,
     draft: false,
     comments: 0,
-    head: { ref: headRef, sha: `sha-${headRef}` },
+    head: { ref: headRef, sha: `sha-${headRef}`, repo: { full_name: headRepoFullName } },
     base: { ref: 'master' }
   };
+}
+
+/** A deferred promise so a test can control exactly when a fetch resolves. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(res => {
+    resolve = res;
+  });
+  return { promise, resolve };
 }
 
 function makeStatus(overrides: Partial<CommitStatus> = {}): CommitStatus {
@@ -223,6 +232,61 @@ describe('BranchStatusBarController', () => {
       await controller.refresh();
 
       expect(statusBarItem.text).toContain('#99');
+    });
+
+    it('does not attribute a fork PR that shares the local branch name to the current branch', async () => {
+      mockGetActiveGitRepository.mockReturnValue(makeRepository('feature-branch'));
+      mockGetForgejoConfig.mockResolvedValue(config);
+      // Same head ref as the local branch, but the PR originates from a fork
+      // (different head repo), so it must not be treated as this branch's PR.
+      getPullRequestsPage.mockResolvedValue({
+        items: [makePr(77, 'feature-branch', 'someforker/forgejo-vscode')],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
+
+      const controller = new BranchStatusBarController();
+      await controller.refresh();
+
+      // Falls back to the "no open PR" presentation, and never fetches CI for it.
+      expect(statusBarItem.text).toContain('git-pull-request-create');
+      expect(statusBarItem.text).not.toContain('#77');
+      expect(getCommitStatusesPage).not.toHaveBeenCalled();
+    });
+
+    it('discards a stale in-flight refresh result instead of overwriting newer state', async () => {
+      mockGetForgejoConfig.mockResolvedValue(config);
+
+      // First refresh is for branch-a and its PR fetch is left pending.
+      const slow = deferred<any>();
+      mockGetActiveGitRepository.mockReturnValue(makeRepository('branch-a'));
+      getPullRequestsPage.mockReturnValueOnce(slow.promise);
+
+      const controller = new BranchStatusBarController();
+      const stalePromise = controller.refresh();
+
+      // Let refresh #1 advance past config resolution and suspend on its
+      // (still pending) PR fetch before a newer refresh starts.
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      // A newer refresh for branch-b resolves fully first.
+      mockGetActiveGitRepository.mockReturnValue(makeRepository('branch-b'));
+      getPullRequestsPage.mockResolvedValueOnce({
+        items: [makePr(200, 'branch-b')],
+        page: 1,
+        limit: 50,
+        hasMore: false
+      });
+      await controller.refresh();
+      expect(statusBarItem.text).toContain('#200');
+
+      // Now the older branch-a fetch resolves late; its result must be dropped.
+      slow.resolve({ items: [makePr(100, 'branch-a')], page: 1, limit: 50, hasMore: false });
+      await stalePromise;
+
+      expect(statusBarItem.text).toContain('#200');
+      expect(statusBarItem.text).not.toContain('#100');
     });
   });
 

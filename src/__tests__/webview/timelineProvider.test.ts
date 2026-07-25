@@ -243,6 +243,9 @@ describe('detail webview timeline activity normalization', () => {
     expect(result.items.filter((item: any) => item.type === 'comment')).toHaveLength(50);
     expect(result.items.filter((item: any) => item.type === 'review')).toHaveLength(50);
     expect(result.items.filter((item: any) => item.type === 'commit')).toHaveLength(50);
-    expect(client.getPullRequestCommitsPage).toHaveBeenLastCalledWith('owner', 'repo', 42, { page: 2, limit: 50 });
+    // Commits are returned newest-first, so the newest page is page 1 and no
+    // later pages should be walked.
+    expect(client.getPullRequestCommitsPage).toHaveBeenCalledTimes(1);
+    expect(client.getPullRequestCommitsPage).toHaveBeenCalledWith('owner', 'repo', 42, { page: 1, limit: 50 });
   });
 });

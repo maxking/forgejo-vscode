@@ -109,10 +109,14 @@ async function getGitApi(): Promise<API | undefined> {
   return gitExtension.getAPI(1);
 }
 
-async function resolveWorkflowSearchRoots(args: Pick<CIStatusArgs, 'owner' | 'repo' | 'instanceUrl'>): Promise<vscode.Uri[]> {
+// Returns the repository roots to scope the workflow search to, or `undefined` when there is
+// no local git context to disambiguate against (git extension disabled or no repositories open).
+// A non-empty array scopes the search; an empty array means repositories exist but none match
+// the requested identity, so the caller must not fall back to a workspace-wide search.
+async function resolveWorkflowSearchRoots(args: Pick<CIStatusArgs, 'owner' | 'repo' | 'instanceUrl'>): Promise<vscode.Uri[] | undefined> {
   const git = await getGitApi();
-  if (!git) {
-    return [];
+  if (!git || git.repositories.length === 0) {
+    return undefined;
   }
 
   const seen = new Set<string>();
@@ -126,6 +130,13 @@ async function resolveWorkflowSearchRoots(args: Pick<CIStatusArgs, 'owner' | 're
       seen.add(uri.fsPath);
       return true;
     });
+}
+
+// Bail only when local repositories exist but none match the requested identity, to avoid
+// opening an unrelated repository's workflow. With no repository context, fall back to a
+// workspace-wide search (see resolveWorkflowSearchRoots).
+function shouldSkipWorkflowSearch(searchRoots: vscode.Uri[] | undefined): boolean {
+  return searchRoots?.length === 0;
 }
 
 async function findWorkflowFiles(searchRoots?: readonly vscode.Uri[]): Promise<vscode.Uri[]> {
@@ -244,9 +255,9 @@ export async function viewCIStatusLogs(args: CIStatusArgs): Promise<void> {
 
 export async function openWorkflowFileForCIStatus(args: CIStatusArgs): Promise<void> {
   const searchRoots = await resolveWorkflowSearchRoots(args);
-  const uri = searchRoots.length > 0
-    ? await findWorkflowFileForStatus(args.status, searchRoots)
-    : null;
+  const uri = shouldSkipWorkflowSearch(searchRoots)
+    ? null
+    : await findWorkflowFileForStatus(args.status, searchRoots);
   if (!uri) {
     void vscode.window.showInformationMessage(`No local workflow file matched "${inferWorkflowNameFromStatusContext(args.status.context)}".`);
     return;
@@ -269,9 +280,9 @@ export async function openWorkflowFileByName(workflowName: string): Promise<void
 
 export async function openWorkflowFileForRepository(args: WorkflowFileArgs): Promise<void> {
   const searchRoots = await resolveWorkflowSearchRoots(args);
-  const uri = searchRoots.length > 0
-    ? await findWorkflowFileByName(args.workflowName, searchRoots)
-    : null;
+  const uri = shouldSkipWorkflowSearch(searchRoots)
+    ? null
+    : await findWorkflowFileByName(args.workflowName, searchRoots);
   if (!uri) {
     void vscode.window.showInformationMessage(`No local workflow file matched "${args.workflowName}".`);
     return;
