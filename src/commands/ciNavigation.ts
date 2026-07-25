@@ -136,7 +136,7 @@ async function resolveWorkflowSearchRoots(args: Pick<CIStatusArgs, 'owner' | 're
 // opening an unrelated repository's workflow. With no repository context, fall back to a
 // workspace-wide search (see resolveWorkflowSearchRoots).
 function shouldSkipWorkflowSearch(searchRoots: vscode.Uri[] | undefined): boolean {
-  return searchRoots !== undefined && searchRoots.length === 0;
+  return searchRoots?.length === 0;
 }
 
 async function findWorkflowFiles(searchRoots?: readonly vscode.Uri[]): Promise<vscode.Uri[]> {

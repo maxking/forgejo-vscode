@@ -807,6 +807,13 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     }));
   }
 
+  // Read through a method so each call is re-evaluated: testing `this.disposed` inline
+  // lets control-flow analysis carry the first check's narrowing across the await, which
+  // makes the post-await re-check look dead even though disposal can happen mid-batch.
+  private isHydrationStale(generation: number): boolean {
+    return this.disposed || generation !== this.hydrationGeneration;
+  }
+
   private async hydrateRemainingMergeabilityInBackground(
     client: ForgejoClient,
     config: ForgejoConfig,
@@ -814,14 +821,14 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
     generation: number
   ): Promise<void> {
     for (let index = 0; index < pullRequests.length; index += PULL_REQUEST_MERGEABILITY_BATCH_SIZE) {
-      if (this.disposed || generation !== this.hydrationGeneration) {
+      if (this.isHydrationStale(generation)) {
         for (const pr of pullRequests.slice(index)) {
           this.mergeabilityHydrationInFlight.delete(pr);
         }
         return;
       }
       await this.hydrateMergeabilityBatch(client, config, pullRequests.slice(index, index + PULL_REQUEST_MERGEABILITY_BATCH_SIZE));
-      if (this.disposed || generation !== this.hydrationGeneration) {
+      if (this.isHydrationStale(generation)) {
         return;
       }
       // Fire a refresh so the freshly hydrated batch renders its conflict state.

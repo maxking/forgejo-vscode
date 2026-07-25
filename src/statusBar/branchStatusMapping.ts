@@ -32,7 +32,7 @@ export function findPullRequestForBranch(
   // owner/repo may not match the API's canonical casing.
   const wanted = headRepoFullName.toLowerCase();
   return prs.find(
-    pr => pr.head.ref === branchName && pr.head.repo?.full_name?.toLowerCase() === wanted
+    pr => pr.head.ref === branchName && pr.head.repo?.full_name.toLowerCase() === wanted
   );
 }
 
