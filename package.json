@@ -846,7 +846,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@mshanemc/vscode-test-playwright": "^0.0.1-beta14",
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "~1.52.0",
     "@types/glob": "^8.1.0",
     "@types/jest": "^30.0.0",
     "@types/mocha": "^10.0.6",
