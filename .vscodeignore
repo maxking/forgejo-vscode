@@ -18,7 +18,7 @@ src/test/**
 .gitignore
 .gitattributes
 .editorconfig
-.eslintrc.json
+eslint.config.mjs
 tsconfig.json
 jest.config.js
 .prettierrc
@@ -56,13 +56,18 @@ node_modules/.cache/**
 .DS_Store
 
 # AI/Agent files
+.antigravitycli/**
 .beads/**
 .claude/**
+.codex-discovery/**
+.forgejo-claude.yml
+.polly/**
 .worktree/**
 .worktrees/**
 research/**
 __mocks__/**
 AGENTS.md
+**/AGENTS.md
 BUGS.md
 
 # Config files

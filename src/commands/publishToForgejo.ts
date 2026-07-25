@@ -168,9 +168,7 @@ export async function publishRepositoryFromWorkspace(git: GitAPI, workspaceUri: 
 
 	// Only init git after the user has confirmed what they want to create
 	let repository = git.getRepository(workspaceUri);
-	if (!repository) {
-		repository = await git.init(workspaceUri);
-	}
+	repository ??= await git.init(workspaceUri);
 	if (!repository) {
 		void vscode.window.showErrorMessage('Could not initialize Git repository.');
 		return;

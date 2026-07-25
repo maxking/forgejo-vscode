@@ -1,5 +1,4 @@
 module.exports = {
-  preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.ts'],
@@ -7,12 +6,12 @@ module.exports = {
   moduleNameMapper: {
     '^vscode$': '<rootDir>/__mocks__/vscode.js'
   },
-  globals: {
-    'ts-jest': {
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', {
       tsconfig: {
         types: ['jest', 'node']
       }
-    }
+    }]
   },
   collectCoverageFrom: [
     'src/**/*.ts',

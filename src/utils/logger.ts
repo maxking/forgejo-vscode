@@ -19,18 +19,16 @@ class Logger {
 			}
 
 			// Fallback if output channel creation failed (e.g. in tests)
-			if (!this.outputChannel) {
-				this.outputChannel = {
-					append: () => { /* noop fallback */ },
-					appendLine: () => { /* noop fallback */ },
-					replace: () => { /* noop fallback */ },
-					clear: () => { /* noop fallback */ },
-					show: () => { /* noop fallback */ },
-					hide: () => { /* noop fallback */ },
-					dispose: () => { /* noop fallback */ },
-					name: 'Forgejo'
-				} as vscode.OutputChannel;
-			}
+			this.outputChannel ??= {
+				append: () => { /* noop fallback */ },
+				appendLine: () => { /* noop fallback */ },
+				replace: () => { /* noop fallback */ },
+				clear: () => { /* noop fallback */ },
+				show: () => { /* noop fallback */ },
+				hide: () => { /* noop fallback */ },
+				dispose: () => { /* noop fallback */ },
+				name: 'Forgejo'
+			};
 
 			// Check if debug mode is enabled
 			try {
@@ -101,11 +99,23 @@ class Logger {
 	 */
 	private format(level: string, message: string, args: unknown[]): string {
 		const timestamp = new Date().toISOString();
-		const argsStr = args.length > 0 ? ' ' + args.map(arg =>
-			typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-		).join(' ') : '';
+		const argsStr = args.length > 0 ? ' ' + args.map(arg => Logger.formatArg(arg)).join(' ') : '';
 
 		return `[${timestamp}] [${level}] ${message}${argsStr}`;
+	}
+
+	private static formatArg(arg: unknown): string {
+		// Positive typeof checks: TypeScript cannot narrow `unknown` in the
+		// negative branch of a typeof guard, which no-base-to-string requires.
+		if (typeof arg === 'string') {
+			return arg;
+		}
+		if (typeof arg === 'number' || typeof arg === 'boolean' ||
+			typeof arg === 'bigint' || typeof arg === 'undefined' ||
+			typeof arg === 'symbol' || typeof arg === 'function') {
+			return String(arg);
+		}
+		return JSON.stringify(arg, null, 2);
 	}
 
 	/**

@@ -39,9 +39,6 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Lint
-      run: npm run lint
-
     - name: Run unit tests
       run: npm run test:unit:coverage
 
@@ -49,6 +46,46 @@ jobs:
       run: |
         npm run compile
         xvfb-run -a npm run test:integration
+
+  # ESLint 10 requires Node >= 20.19, so linting runs outside the node 18/20
+  # test matrix (node 18 is kept there to cover the VS Code 1.85 runtime).
+  lint:
+    runs-on: docker
+    container: node:20
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Cache npm download cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Lint
+      run: npm run lint
+
+  audit:
+    runs-on: docker
+    container: node:20
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # npm audit only needs the lockfile, not an installed node_modules tree.
+    # Production deps ship inside the VSIX, so any vulnerability there blocks.
+    - name: Audit production dependencies (blocking)
+      run: npm audit --omit=dev --audit-level=low
+
+    # Dev-tooling vulnerabilities never reach users; surface them in the log
+    # without failing the build.
+    - name: Audit all dependencies (informational)
+      run: npm audit || true
 
   build-live-test-image:
     runs-on: docker

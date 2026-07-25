@@ -416,7 +416,7 @@ export class SavedQueryTreeProvider implements vscode.TreeDataProvider<SavedQuer
     if (isBuiltinSavedQuery(group)) {
       if (group.filterField) {
         const login = await this.getCurrentUserLogin(config);
-        return login ? { [group.filterField]: login } as ForgejoItemQueryOptions : {};
+        return login ? { [group.filterField]: login } : {};
       }
       return group.sort ? { sort: group.sort } : {};
     }

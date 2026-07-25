@@ -109,7 +109,7 @@ async function resolveWorkspaceRoot(
 	// when it is unambiguous (exactly one folder open), so we never silently read
 	// branch state from an unrelated checkout in a multi-root workspace.
 	const workspaceFolders = vscode.workspace.workspaceFolders;
-	if (workspaceFolders && workspaceFolders.length === 1) {
+	if (workspaceFolders?.length === 1) {
 		return workspaceFolders[0].uri.fsPath;
 	}
 

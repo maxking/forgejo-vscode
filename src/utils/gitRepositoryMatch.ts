@@ -49,7 +49,7 @@ export function repositoryMatchesConfig(
 	return repository.state.remotes.some(remote => {
 		const url = remoteUrl(remote);
 		const parsed = url ? parseRemoteUrl(url) : null;
-		if (!parsed || parsed.owner !== owner || parsed.repo !== repo) {
+		if (parsed?.owner !== owner || parsed.repo !== repo) {
 			return false;
 		}
 
@@ -70,12 +70,11 @@ export function matchingRemote(
 	return repository.state.remotes.find(remote => {
 		const url = remoteUrl(remote);
 		const parsed = url ? parseRemoteUrl(url) : null;
-		return Boolean(parsed
-			&& parsed.owner === owner
+		return parsed?.owner === owner
 			&& parsed.repo === repo
 			&& (!expectedHost
 				|| parsed.instanceUrl === instanceUrl
 				|| parsed.remoteHost === expectedHost.host
-				|| parsed.remoteHost === expectedHost.hostname));
+				|| parsed.remoteHost === expectedHost.hostname);
 	});
 }

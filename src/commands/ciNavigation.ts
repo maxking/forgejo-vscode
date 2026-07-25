@@ -49,7 +49,7 @@ export function resolveStatusTargetUrl(targetUrl: string | undefined, instanceUr
 }
 
 export function parseActionJobTarget(url: string): ActionJobTarget | null {
-  const match = url.match(/\/actions\/runs\/(\d+)\/jobs\/(\d+)(?:[/?#]|$)/);
+  const match = /\/actions\/runs\/(\d+)\/jobs\/(\d+)(?:[/?#]|$)/.exec(url);
   if (!match) {
     return null;
   }
@@ -82,7 +82,7 @@ function stripYamlScalar(value: string): string {
 
 function getWorkflowName(text: string): string | null {
   for (const line of text.split(/\r?\n/)) {
-    const match = line.match(/^name\s*:\s*(.+)$/);
+    const match = /^name\s*:\s*(.+)$/.exec(line);
     if (match) {
       return stripYamlScalar(match[1]);
     }
@@ -196,7 +196,7 @@ export async function findWorkflowFileByName(workflowName: string, searchRoots?:
     target_url: '',
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
-  } as CommitStatus, searchRoots);
+  }, searchRoots);
 }
 
 export async function viewCIStatusLogs(args: CIStatusArgs): Promise<void> {
