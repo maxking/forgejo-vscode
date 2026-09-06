@@ -81,19 +81,18 @@ View the HTML coverage report at `coverage/lcov-report/index.html`
 ## CI/CD Pipeline
 
 The GitHub Actions workflow (`.github/workflows/test.yml`) runs on:
-- Every push to `main` or `develop` branches
-- Every pull request to `main` or `develop` branches
+- Every push to `master` or `dev` branches
+- Every pull request to `master` or `dev` branches
+- Release tags through the reusable publish-workflow gate
 
 It tests across:
-- **3 Operating Systems**: Ubuntu, Windows, macOS
-- **2 Node.js Versions**: 18.x, 20.x
+- **2 Node.js Versions**: 18.x and 20.x on Ubuntu
+- **3 Forgejo Versions**: 11, 12, and 13 via service containers
 
-**Total: 6 test matrix jobs**
-
-Each job runs:
-1. Linting (`npm run lint`)
-2. Unit tests with coverage (`npm run test:unit:coverage`)
-3. Integration tests (`npm run test:integration`)
+The workflow runs linting, dependency audits, unit tests with coverage,
+Extension Host integration tests, live Forgejo API/UI tests, and a packaged
+VSIX contents smoke test. Extension Host and Playwright tests share the pinned
+VS Code version declared through `VSCODE_TEST_VERSION`.
 
 ## Test Quality Metrics
 

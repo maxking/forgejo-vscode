@@ -45,7 +45,8 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - When auto-detecting from a Git remote, never fall back to a configured default instance if the detected remote host does not match; use an HTTP(S) remote host unauthenticated or return no config for unmatched SSH remotes.
 - When adding fields to `ForgejoInstance` or `forgejo.instances`, update the package schema, onboarding/manage-instance UX, README configuration docs, and focused tests together.
 - Every change should add a README News entry under the current version and link to the public Codeberg issue or PR when one exists; user-facing releases should also bump `package.json`/`package-lock.json` together.
-- Keep pull request live-test coverage in the main `.forgejo/workflows/test.yml` workflow so merge gates include the Forgejo live matrix; do not move PR live tests into a separate workflow just to speed up merges.
+- Keep pull request live-test coverage in the main `.github/workflows/test.yml` workflow so merge gates include the Forgejo live matrix; do not move PR live tests into a separate workflow just to speed up merges.
+- Keep Extension Host and Playwright CI tests on the same explicit `VSCODE_TEST_VERSION`; do not follow the moving `stable` build in CI, and verify both test tracks before advancing the pin.
 - Avoid unbounded pull request, issue, and workflow-run fetches in tree providers; page Open/Draft/Merged/Closed PR groups, issue groups, and Actions history behind initial render, expansion, or explicit load-more actions.
 - Deduplicate paged tree-provider API results before rendering stable `TreeItem.id` values; overlapping pages from large repositories must not register duplicate visible items.
 - Remote repository branch pickers must not assume the first branch API page is complete; expose later pages through bounded load-more or server-backed search and deduplicate overlapping branch names before rendering picker items.
@@ -144,7 +145,7 @@ The project uses a multi-track testing strategy. Pick the right track for the ch
 Pre-commit gate: `npm run lint && npm run test:unit && npm run compile`.
 Pre-push gate: `npm run test:ci` (lint + unit coverage + integration).
 
-CI runs on the Forgejo workflows at `.forgejo/workflows/test.yml` against Node 18 and Node 20.
+CI runs on GitHub Actions from `.github/workflows/test.yml` against Node 18 and Node 20. GitHub-hosted jobs must access Forgejo service containers through published `localhost` ports; do not rely on Docker images persisting across jobs.
 
 ## Landing the Plane (Session Completion)
 
