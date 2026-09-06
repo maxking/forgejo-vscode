@@ -233,10 +233,10 @@ jobs:
       run: |
         if [ "${{ steps.get_version.outputs.is_prerelease }}" = "true" ]; then
           echo "Publishing as pre-release..."
-          vsce publish --pre-release -p $VSCE_PAT --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master
+          vsce publish --pre-release -p $VSCE_PAT --baseContentUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master --baseImagesUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master
         else
           echo "Publishing as stable release..."
-          vsce publish -p $VSCE_PAT --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master
+          vsce publish -p $VSCE_PAT --baseContentUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master --baseImagesUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master
         fi
 
     - name: Publish to Open VSX Registry
@@ -244,7 +244,7 @@ jobs:
         OVSX_PAT: ${{ secrets.OPEN_VSX_PAT }}
       run: |
         # Open VSX uses publisher 'abhilashraj' - repackage with correct publisher
-        vsce package --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master
+        vsce package --baseContentUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master --baseImagesUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master
         OVSX_VSIX=$(ls -t *.vsix | head -1)
         if [ "${{ steps.get_version.outputs.is_prerelease }}" = "true" ]; then
           echo "Publishing to Open VSX as pre-release..."
