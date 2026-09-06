@@ -135,7 +135,7 @@ npx vsce publish -p YOUR_VSCE_PAT
 # For pre-release:
 npx vsce publish --pre-release -p YOUR_VSCE_PAT
 
-# 5. Create Forgejo release manually via web UI
+# 5. Create a GitHub release manually via web UI
 # Upload the generated .vsix file as an attachment
 ```
 
@@ -144,18 +144,18 @@ npx vsce publish --pre-release -p YOUR_VSCE_PAT
 ### View Workflow Runs
 
 ```bash
-# Via Forgejo web UI:
-# https://codeberg.org/maxking/forgejo-vscode/actions
+# Via GitHub web UI:
+# https://github.com/maxking/forgejo-vscode/actions
 
 # Or via API:
-curl -H "Authorization: token YOUR_TOKEN" \
-  "https://codeberg.org/api/v1/repos/maxking/forgejo-vscode/actions/runs?limit=5"
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "https://api.github.com/repos/maxking/forgejo-vscode/actions/runs?per_page=5"
 ```
 
 ### View Published Versions
 
 - **VS Code Marketplace**: https://marketplace.visualstudio.com/items?itemName=maxking.forgejo-vscode
-- **Forgejo Releases**: https://codeberg.org/maxking/forgejo-vscode/releases
+- **GitHub Releases**: https://github.com/maxking/forgejo-vscode/releases
 
 ### Check if Pre-release is Available
 
@@ -169,7 +169,7 @@ Users can opt-in to pre-release versions in VS Code:
 
 ```bash
 # 1. Check the workflow logs
-# Visit: https://codeberg.org/maxking/forgejo-vscode/actions
+# Visit: https://github.com/maxking/forgejo-vscode/actions
 
 # 2. Common failures:
 
@@ -214,8 +214,8 @@ npx vsce unpublish maxking.forgejo-vscode@0.3.0
 git tag -d v0.3.0
 git push --delete origin v0.3.0
 
-# 3. Delete the Forgejo release via web UI
-# https://codeberg.org/maxking/forgejo-vscode/releases
+# 3. Delete the GitHub release via web UI
+# https://github.com/maxking/forgejo-vscode/releases
 
 # 4. Fix the issue and publish a new version
 ```
@@ -324,6 +324,6 @@ to add this entry automatically. The patch file is at `patches/@mshanemc+vscode-
 ## Support
 
 For questions or issues with the release process:
-- Create an issue: https://codeberg.org/maxking/forgejo-vscode/issues
-- Check workflow logs: https://codeberg.org/maxking/forgejo-vscode/actions
+- Create an issue: https://github.com/maxking/forgejo-vscode/issues
+- Check workflow logs: https://github.com/maxking/forgejo-vscode/actions
 - Review this guide: `MAINTAINERS.md`

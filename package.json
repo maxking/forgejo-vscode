@@ -11,8 +11,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://codeberg.org/maxking/forgejo-vscode.git"
+    "url": "https://github.com/maxking/forgejo-vscode.git"
   },
+  "bugs": {
+    "url": "https://github.com/maxking/forgejo-vscode/issues"
+  },
+  "homepage": "https://github.com/maxking/forgejo-vscode#readme",
   "keywords": [
     "forgejo",
     "codeberg",
@@ -822,8 +826,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/issueCreate && cp src/webview/issueCreate/index.js src/webview/issueCreate/styles.css out/webview/issueCreate/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master",
-    "publish-vscode": "vsce publish --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master",
+    "package": "vsce package --baseContentUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master --baseImagesUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master",
+    "publish-vscode": "vsce publish --baseContentUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master --baseImagesUrl https://raw.githubusercontent.com/maxking/forgejo-vscode/master",
     "lint": "eslint src",
     "test:unit": "jest",
     "test:unit:watch": "jest --watch",

@@ -6,18 +6,18 @@ ALWAYS edit `AGENTS.md` in the same change/PR when a code review, bug, or patter
 
 ## Remote Repository Workflow
 
-Use the `fj` CLI for interacting with Forgejo remotes instead of GitHub-style tooling. This project has two Forgejo repositories:
+This project has a public GitHub repository and a self-hosted Forgejo repository:
 
-- Public/open-source repository: Codeberg (`codeberg.org`)
+- Public/open-source repository: GitHub (`github.com`)
 - Self-hosted repository: `git.araj.me`
 
-Before running repo, issue, or pull request commands, identify the target remote/host from the current branch and task context. Prefer `fj` commands with an explicit remote or host so actions land on the intended repository:
+Before running repo, issue, or pull request commands, identify the target remote/host from the current branch and task context. Use `fj` with an explicit remote or host for the self-hosted Forgejo repository, and GitHub tooling for the public GitHub repository, so actions land on the intended repository:
 
 - Inspect repository metadata with `fj repo view -R <remote>` or `fj -H <host> repo view <owner/repo>`.
 - Search, view, and browse issues with `fj issue search -R <remote>`, `fj issue view -R <remote> <number>`, and `fj issue browse -R <remote> <number>`.
 - Create and inspect pull requests with `fj pr create`, `fj pr view`, `fj pr status`, and `fj pr browse`; pass `-R <remote>` when operating from a local checkout and `--repo <owner/repo>` when creating a PR for a specific repository.
-- Use `git.araj.me` for pull request creation, inspection, and follow-up by default. Do not open pull requests on Codeberg unless the user explicitly asks for a public Codeberg PR.
-- Use Codeberg only for public repository or issue references when a task explicitly mentions the open-source/public project.
+- Use `git.araj.me` for pull request creation, inspection, and follow-up by default. Do not open pull requests on GitHub unless the user explicitly asks for a public GitHub PR.
+- Use GitHub only for public repository or issue references when a task explicitly mentions the open-source/public project.
 
 Always open regular pull requests by default. Do not create draft PRs unless the user explicitly asks for a draft; with `fj pr create`, avoid a `WIP: ` title prefix unless a draft PR is requested.
 
@@ -44,7 +44,7 @@ Always open regular pull requests by default. Do not create draft PRs unless the
 - Skip VS Code Git extension repository discovery when there are no workspace folders so no-config command/provider paths do not wait on repository discovery timeouts.
 - When auto-detecting from a Git remote, never fall back to a configured default instance if the detected remote host does not match; use an HTTP(S) remote host unauthenticated or return no config for unmatched SSH remotes.
 - When adding fields to `ForgejoInstance` or `forgejo.instances`, update the package schema, onboarding/manage-instance UX, README configuration docs, and focused tests together.
-- Every change should add a README News entry under the current version and link to the public Codeberg issue or PR when one exists; user-facing releases should also bump `package.json`/`package-lock.json` together.
+- Every change should add a README News entry under the current version and link to the public GitHub issue or PR when one exists; user-facing releases should also bump `package.json`/`package-lock.json` together.
 - Keep pull request live-test coverage in the main `.forgejo/workflows/test.yml` workflow so merge gates include the Forgejo live matrix; do not move PR live tests into a separate workflow just to speed up merges.
 - Avoid unbounded pull request, issue, and workflow-run fetches in tree providers; page Open/Draft/Merged/Closed PR groups, issue groups, and Actions history behind initial render, expansion, or explicit load-more actions.
 - Deduplicate paged tree-provider API results before rendering stable `TreeItem.id` values; overlapping pages from large repositories must not register duplicate visible items.
