@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { execSync, spawnSync } from 'child_process';
 import type { GitExtension, Repository, Remote } from '../types/git';
+import { activateGitExtension } from './gitExtension';
 
 export interface GitRemoteInfo {
   owner: string;
@@ -53,9 +54,23 @@ function getGitExtension(): VSCodeExtension<GitExtension> | undefined {
 
 function getGitExtensionApi(): ReturnType<GitExtension['getAPI']> | null {
   const extension = getGitExtension();
-  const gitExtension = extension?.exports;
+  // VS Code's `Extension.exports` getter throws (it does not return
+  // undefined) while the extension has not finished activating, so it must
+  // only be read after the `isActive` check. Reading it early aborts the
+  // whole extension activation when a restored Forgejo view activates this
+  // extension before `vscode.git` (Codeberg issue #33).
+  if (!extension?.isActive) {
+    return null;
+  }
 
-  if (!extension?.isActive || !gitExtension?.enabled) {
+  let gitExtension: GitExtension | undefined;
+  try {
+    gitExtension = extension.exports;
+  } catch {
+    return null;
+  }
+
+  if (!gitExtension?.enabled) {
     return null;
   }
 
@@ -124,6 +139,21 @@ export function getGitApi(): ReturnType<GitExtension['getAPI']> | null {
   return getGitExtensionApi();
 }
 
+/**
+ * Access the raw VS Code Git extension API (repositories, open/close events),
+ * activating the Git extension first when it has not activated yet (for
+ * example when a restored Forgejo view activates this extension before
+ * `vscode.git`). Returns `null` when the Git extension is not installed,
+ * disabled, or fails to activate.
+ */
+export async function getGitApiAsync(): Promise<ReturnType<GitExtension['getAPI']> | null> {
+  const gitExtension = await activateGitExtension();
+  if (!gitExtension?.enabled) {
+    return null;
+  }
+  return gitExtension.getAPI(1);
+}
+
 function parseGitRepositories(git: ReturnType<GitExtension['getAPI']>, remoteName?: string): GitRepositoryRemoteInfo[] {
   return git.repositories
     .map(repository => parseRepositoryRemote(repository, remoteName))
@@ -182,29 +212,13 @@ export async function detectGitRepositoriesAsync(remoteName?: string): Promise<G
     return [];
   }
 
-  const activeGit = getGitExtensionApi();
-  if (activeGit) {
-    await waitForGitRepositoryDiscovery(activeGit);
-    return parseGitRepositories(activeGit, remoteName);
-  }
-
-  const extension = getGitExtension();
-  if (!extension) {
+  const git = await getGitApiAsync();
+  if (!git) {
     return [];
   }
 
-  try {
-    const gitExtension = extension.isActive ? extension.exports : await extension.activate();
-    if (!gitExtension?.enabled) {
-      return [];
-    }
-    const git = gitExtension.getAPI(1);
-    await waitForGitRepositoryDiscovery(git);
-    return parseGitRepositories(git, remoteName);
-  } catch (error) {
-    console.log('[Forgejo] Git extension activation failed:', error instanceof Error ? error.message : error);
-    return [];
-  }
+  await waitForGitRepositoryDiscovery(git);
+  return parseGitRepositories(git, remoteName);
 }
 
 /**

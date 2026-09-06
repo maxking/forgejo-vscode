@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { BranchStatusBarController } from '../../statusBar/branchStatusBarController';
-import { getActiveGitRepository, getGitApi } from '../../utils/gitUtils';
+import { getActiveGitRepository, getGitApiAsync } from '../../utils/gitUtils';
 import { getForgejoConfig } from '../../utils/config';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { CommitStatus } from '../../models/pullRequest';
@@ -10,7 +10,7 @@ jest.mock('../../utils/config');
 jest.mock('../../api/forgejoClient');
 
 const mockGetActiveGitRepository = getActiveGitRepository as jest.MockedFunction<typeof getActiveGitRepository>;
-const mockGetGitApi = getGitApi as jest.MockedFunction<typeof getGitApi>;
+const mockGetGitApiAsync = getGitApiAsync as jest.MockedFunction<typeof getGitApiAsync>;
 const mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
 const MockForgejoClient = ForgejoClient as jest.MockedClass<typeof ForgejoClient>;
 
@@ -96,7 +96,7 @@ describe('BranchStatusBarController', () => {
     (vscode.commands.executeCommand as jest.Mock).mockReset();
     (vscode.window.showQuickPick as jest.Mock).mockReset();
 
-    mockGetGitApi.mockReturnValue(null);
+    mockGetGitApiAsync.mockResolvedValue(null);
 
     getPullRequestsPage = jest.fn().mockResolvedValue({ items: [], page: 1, limit: 50, hasMore: false });
     getCommitStatusesPage = jest.fn().mockResolvedValue({ items: [], page: 1, limit: 30, hasMore: false, totalCount: 0 });
@@ -467,6 +467,98 @@ describe('BranchStatusBarController', () => {
       await controller.handleClick();
 
       expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('git listener attachment (vscode.git activation race, issue #33)', () => {
+    it('activate() does not throw when the Git API is unavailable, and attaches listeners once it resolves', async () => {
+      jest.useFakeTimers();
+      const onDidOpenRepository = jest.fn(() => ({ dispose: jest.fn() }));
+      const onDidCloseRepository = jest.fn(() => ({ dispose: jest.fn() }));
+      mockGetGitApiAsync.mockResolvedValue({ onDidOpenRepository, onDidCloseRepository } as any);
+      mockGetActiveGitRepository.mockReturnValue(null);
+
+      const controller = new BranchStatusBarController();
+      const refreshSpy = jest.spyOn(controller, 'refresh');
+      const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+
+      // Regression test for Codeberg issue #33: a restored Forgejo view can
+      // activate the extension before vscode.git, so activate() must never
+      // throw from the Git API path and must keep registering commands.
+      expect(() => controller.activate(context)).not.toThrow();
+
+      await jest.advanceTimersByTimeAsync(0);
+      expect(onDidOpenRepository).toHaveBeenCalledTimes(1);
+      expect(onDidCloseRepository).toHaveBeenCalledTimes(1);
+
+      // One debounced refresh for activate() and one for the listeners
+      // becoming available collapse into a single gated refresh.
+      jest.advanceTimersByTime(400);
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+
+      jest.useRealTimers();
+    });
+
+    it('fires a refresh when a Git repository opens after the listeners attached', async () => {
+      jest.useFakeTimers();
+      let openHandler: (() => void) | undefined;
+      const onDidOpenRepository = jest.fn((handler: () => void) => {
+        openHandler = handler;
+        return { dispose: jest.fn() };
+      });
+      mockGetGitApiAsync.mockResolvedValue({ onDidOpenRepository, onDidCloseRepository: jest.fn(() => ({ dispose: jest.fn() })) } as any);
+      mockGetActiveGitRepository.mockReturnValue(null);
+
+      const controller = new BranchStatusBarController();
+      const refreshSpy = jest.spyOn(controller, 'refresh');
+      const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+      controller.activate(context);
+      await jest.advanceTimersByTimeAsync(0);
+
+      refreshSpy.mockClear();
+      openHandler?.();
+      jest.advanceTimersByTime(400);
+
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+      jest.useRealTimers();
+    });
+
+    it('does not attach or leak Git listeners when disposed before the Git API resolves', async () => {
+      const deferredGit = deferred<unknown>();
+      mockGetGitApiAsync.mockImplementation(() => deferredGit.promise as any);
+      const onDidOpenRepository = jest.fn(() => ({ dispose: jest.fn() }));
+      const onDidCloseRepository = jest.fn(() => ({ dispose: jest.fn() }));
+
+      const controller = new BranchStatusBarController();
+      const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+      controller.activate(context);
+      controller.dispose();
+
+      deferredGit.resolve({ onDidOpenRepository, onDidCloseRepository });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(onDidOpenRepository).not.toHaveBeenCalled();
+      expect(onDidCloseRepository).not.toHaveBeenCalled();
+    });
+
+    it('dispose() disposes the attached Git listeners', async () => {
+      const openDispose = jest.fn();
+      const closeDispose = jest.fn();
+      const onDidOpenRepository = jest.fn(() => ({ dispose: openDispose }));
+      const onDidCloseRepository = jest.fn(() => ({ dispose: closeDispose }));
+      mockGetGitApiAsync.mockResolvedValue({ onDidOpenRepository, onDidCloseRepository } as any);
+
+      const controller = new BranchStatusBarController();
+      const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+      controller.activate(context);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      controller.dispose();
+
+      expect(openDispose).toHaveBeenCalledTimes(1);
+      expect(closeDispose).toHaveBeenCalledTimes(1);
     });
   });
 });

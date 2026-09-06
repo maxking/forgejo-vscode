@@ -932,7 +932,16 @@ export async function activate(context: vscode.ExtensionContext) {
   // item populates without waiting for a user action; every later refresh
   // goes through that same bounded path (see BranchStatusBarController).
   const branchStatusBarController = new BranchStatusBarController();
-  branchStatusBarController.activate(context);
+  // The status bar item is optional UX: if its setup ever throws, activation
+  // must still register every command below (Codeberg issue #33 -- a throw
+  // here previously left `forgejo.showIssueDetails` and later commands
+  // unregistered for the lifetime of the extension host).
+  try {
+    branchStatusBarController.activate(context);
+  } catch (error) {
+    console.error('[Forgejo] Branch status bar activation failed; continuing without it:', error);
+    branchStatusBarController.dispose();
+  }
   context.subscriptions.push(
     registerCommand('forgejo.statusBar.action', () => branchStatusBarController.handleClick())
   );

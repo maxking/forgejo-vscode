@@ -3,7 +3,7 @@ import type { Repository } from '../types/git';
 import type { CommitStatus, PullRequestListItem } from '../models/pullRequest';
 import { ForgejoClient } from '../api/forgejoClient';
 import { ForgejoConfig, getForgejoConfig } from '../utils/config';
-import { getActiveGitRepository, getGitApi } from '../utils/gitUtils';
+import { getActiveGitRepository, getGitApiAsync } from '../utils/gitUtils';
 import { deduplicateCommitStatuses, aggregateCIStatus, selectRepresentativeCommitStatus } from '../utils/commitStatus';
 import {
   BranchStatusViewState,
@@ -46,6 +46,8 @@ interface CacheEntry {
 export class BranchStatusBarController implements vscode.Disposable {
   private readonly statusBarItem: vscode.StatusBarItem;
   private readonly disposables: vscode.Disposable[] = [];
+  private gitListenerDisposables: vscode.Disposable[] = [];
+  private disposed = false;
   private repositorySubscription: vscode.Disposable | undefined;
   private activeRepository: Repository | undefined;
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -75,6 +77,13 @@ export class BranchStatusBarController implements vscode.Disposable {
    * no-config all bail out before any network call), and TTL cache as every
    * other trigger, so activation never causes an unbounded or unconditional
    * network request -- just this one bounded, cached refresh.
+   *
+   * Git repository open/close listeners are attached asynchronously: a
+   * restored Forgejo view can activate this extension before `vscode.git`
+   * has activated (Codeberg issue #33), and a failure while resolving the
+   * Git API must never propagate out of `activate()` -- that would abort
+   * extension activation and unregister every command registered after
+   * this controller.
    */
   activate(context: vscode.ExtensionContext): void {
     this.disposables.push(
@@ -87,25 +96,47 @@ export class BranchStatusBarController implements vscode.Disposable {
       })
     );
 
-    const git = getGitApi();
-    if (git) {
-      this.disposables.push(
-        git.onDidOpenRepository(() => this.scheduleRefresh()),
-        git.onDidCloseRepository(() => this.scheduleRefresh())
-      );
-    }
+    void this.attachGitListeners();
 
     context.subscriptions.push(this);
     this.scheduleRefresh();
   }
 
+  /**
+   * Resolve the Git extension API (activating `vscode.git` if needed) and
+   * subscribe to repository open/close events. Runs after `activate()`
+   * returns, and no-ops when the controller was disposed before the Git
+   * API resolved so late-attaching listeners cannot leak.
+   */
+  private async attachGitListeners(): Promise<void> {
+    const git = await getGitApiAsync();
+    if (this.disposed || !git) {
+      return;
+    }
+
+    this.gitListenerDisposables = [
+      git.onDidOpenRepository(() => this.scheduleRefresh()),
+      git.onDidCloseRepository(() => this.scheduleRefresh())
+    ];
+
+    // The Git extension may have opened repositories while our listeners
+    // were not yet attached, so trigger one debounced refresh now that the
+    // API is available.
+    this.scheduleRefresh();
+  }
+
   dispose(): void {
+    this.disposed = true;
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = undefined;
     }
     this.repositorySubscription?.dispose();
     this.repositorySubscription = undefined;
+    for (const disposable of this.gitListenerDisposables) {
+      disposable.dispose();
+    }
+    this.gitListenerDisposables = [];
     for (const disposable of this.disposables) {
       disposable.dispose();
     }
