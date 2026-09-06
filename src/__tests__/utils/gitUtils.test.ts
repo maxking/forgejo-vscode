@@ -4,6 +4,8 @@ import {
   detectGitRemote,
   hasGitRepository,
   getActiveGitRepository,
+  getGitApi,
+  getGitApiAsync,
   waitForGitRepositoryDiscovery,
   resetGitRepositoryReadinessForTesting
 } from '../../utils/gitUtils';
@@ -385,6 +387,80 @@ describe('gitUtils', () => {
       (vscode.window as any).activeTextEditor = { document: { uri: { fsPath: '/workspace/repo-two/file.ts' } } };
 
       expect(getActiveGitRepository({ fsPath: '/workspace/repo-one/file.ts' } as any)).toBe(repoOne);
+    });
+  });
+
+  describe('getGitApi / getGitApiAsync (vscode.git activation race, issue #33)', () => {
+    /**
+     * Mirrors real VS Code: `Extension.exports` throws while the extension
+     * has not finished activating instead of returning undefined.
+     */
+    function inactiveGitExtension() {
+      return {
+        isActive: false,
+        get exports(): never {
+          throw new Error("Extension 'vscode.git' is not known or not activated");
+        },
+        activate: jest.fn()
+      };
+    }
+
+    function activeGitExtension(gitApi: object) {
+      return {
+        isActive: true,
+        exports: { enabled: true, getAPI: () => gitApi }
+      };
+    }
+
+    const gitApi = { repositories: [], onDidOpenRepository: jest.fn(), onDidCloseRepository: jest.fn() };
+
+    afterEach(() => {
+      (vscode.extensions.getExtension as jest.Mock).mockReset();
+    });
+
+    it('getGitApi returns null when the Git extension is not installed', () => {
+      (vscode.extensions.getExtension as jest.Mock).mockReturnValue(undefined);
+      expect(getGitApi()).toBeNull();
+    });
+
+    it('getGitApi returns null instead of throwing when vscode.git is not yet activated', () => {
+      // Regression test for Codeberg issue #33: reading `exports` on a
+      // not-yet-activated extension used to throw and abort activate().
+      (vscode.extensions.getExtension as jest.Mock).mockReturnValue(inactiveGitExtension());
+
+      expect(() => getGitApi()).not.toThrow();
+      expect(getGitApi()).toBeNull();
+    });
+
+    it('getGitApi returns the API when vscode.git is already active', () => {
+      (vscode.extensions.getExtension as jest.Mock).mockReturnValue(activeGitExtension(gitApi));
+      expect(getGitApi()).toBe(gitApi);
+    });
+
+    it('getGitApiAsync activates vscode.git when it has not activated yet', async () => {
+      const gitExports = { enabled: true, getAPI: () => gitApi };
+      const extension = inactiveGitExtension();
+      extension.activate.mockResolvedValue(gitExports);
+      (vscode.extensions.getExtension as jest.Mock).mockReturnValue(extension);
+
+      await expect(getGitApiAsync()).resolves.toBe(gitApi);
+      expect(extension.activate).toHaveBeenCalledTimes(1);
+    });
+
+    it('getGitApiAsync returns null when vscode.git activation fails', async () => {
+      const extension = inactiveGitExtension();
+      extension.activate.mockRejectedValue(new Error('activation failed'));
+      (vscode.extensions.getExtension as jest.Mock).mockReturnValue(extension);
+
+      await expect(getGitApiAsync()).resolves.toBeNull();
+    });
+
+    it('getGitApiAsync returns null when vscode.git is disabled', async () => {
+      const extension = inactiveGitExtension();
+      extension.activate.mockResolvedValue({ enabled: false });
+      (vscode.extensions.getExtension as jest.Mock).mockReturnValue(extension);
+
+      await expect(getGitApiAsync()).resolves.toBeNull();
     });
   });
 });
