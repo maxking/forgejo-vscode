@@ -4,12 +4,12 @@ This document contains workflows and commands for maintainers of the Forgejo VS 
 
 ## Release Workflow
 
-The extension uses automated publishing via Forgejo Actions. When you push a version tag, the workflow automatically:
+The extension uses automated publishing via GitHub Actions. When you push a version tag to the `github` remote, the workflow automatically:
 1. Runs the full test suite (lint + unit + integration tests)
 2. Verifies the tag matches `package.json` version
 3. Packages the extension
 4. Publishes to VS Code Marketplace
-5. Creates a Forgejo release with the `.vsix` artifact
+5. Publishes to Open VSX and creates a GitHub release with the `.vsix` artifact
 
 ### Publishing a Stable Release
 
@@ -17,13 +17,14 @@ The extension uses automated publishing via Forgejo Actions. When you push a ver
 # 1. Update version in package.json (creates a commit and tag)
 npm version patch  # or minor, or major
 
-# 2. Push the commit and tag
-git push && git push --tags
+# 2. Push the commit and tag to the canonical and GitHub remotes
+git push origin master --follow-tags
+git push github master --follow-tags
 
 # The CI workflow will automatically:
 # - Run tests
 # - Publish to VS Code Marketplace as stable release
-# - Create a Forgejo release
+# - Create a GitHub release
 ```
 
 ### Publishing a Pre-release Version
@@ -41,8 +42,9 @@ git add package.json
 git commit -m "chore: Prepare alpha release 0.3.0-alpha.1"
 git tag v0.3.0-alpha.1
 
-# 3. Push
-git push origin master --tags
+# 3. Push to the canonical and GitHub remotes
+git push origin master --follow-tags
+git push github master --follow-tags
 
 # Result: Published as pre-release, users must opt-in
 ```
@@ -58,8 +60,9 @@ git add package.json
 git commit -m "chore: Prepare beta release 0.3.0-beta.1"
 git tag v0.3.0-beta.1
 
-# 3. Push
-git push origin master --tags
+# 3. Push to the canonical and GitHub remotes
+git push origin master --follow-tags
+git push github master --follow-tags
 
 # Result: Published as pre-release, users must opt-in
 ```
@@ -75,16 +78,17 @@ git add package.json
 git commit -m "chore: Prepare release candidate 0.3.0-rc.1"
 git tag v0.3.0-rc.1
 
-# 3. Push
-git push origin master --tags
+# 3. Push to the canonical and GitHub remotes
+git push origin master --follow-tags
+git push github master --follow-tags
 
 # Result: Published as pre-release, users must opt-in
 ```
 
 ### Supported Version Formats
 
-The workflow detects pre-release versions by matching `-alpha`, `-beta`, or `-rc`
-followed by a dot, dash, or end-of-string (e.g., `-alpha.1`, `-beta1`, `-rc.2`).
+The workflow treats any semantic version containing a hyphenated pre-release
+identifier as a pre-release (for example, `-alpha.1`, `-beta1`, or `-rc.2`).
 
 | Version Format | Type | Published As |
 |----------------|------|--------------|
@@ -135,7 +139,7 @@ npx vsce publish -p YOUR_VSCE_PAT
 # For pre-release:
 npx vsce publish --pre-release -p YOUR_VSCE_PAT
 
-# 5. Create Forgejo release manually via web UI
+# 5. Create a GitHub release manually via the web UI
 # Upload the generated .vsix file as an attachment
 ```
 
@@ -144,18 +148,14 @@ npx vsce publish --pre-release -p YOUR_VSCE_PAT
 ### View Workflow Runs
 
 ```bash
-# Via Forgejo web UI:
-# https://codeberg.org/maxking/forgejo-vscode/actions
-
-# Or via API:
-curl -H "Authorization: token YOUR_TOKEN" \
-  "https://codeberg.org/api/v1/repos/maxking/forgejo-vscode/actions/runs?limit=5"
+# Via GitHub web UI:
+# https://github.com/maxking/forgejo-vscode/actions
 ```
 
 ### View Published Versions
 
 - **VS Code Marketplace**: https://marketplace.visualstudio.com/items?itemName=maxking.forgejo-vscode
-- **Forgejo Releases**: https://codeberg.org/maxking/forgejo-vscode/releases
+- **GitHub Releases**: https://github.com/maxking/forgejo-vscode/releases
 
 ### Check if Pre-release is Available
 
@@ -169,7 +169,7 @@ Users can opt-in to pre-release versions in VS Code:
 
 ```bash
 # 1. Check the workflow logs
-# Visit: https://codeberg.org/maxking/forgejo-vscode/actions
+# Visit: https://github.com/maxking/forgejo-vscode/actions
 
 # 2. Common failures:
 
@@ -180,26 +180,26 @@ Users can opt-in to pre-release versions in VS Code:
 
 # Version mismatch:
 # - Ensure package.json version matches the tag
-# - Delete the tag: git tag -d v0.3.0 && git push --delete origin v0.3.0
+# - Delete the tag locally and from both remotes before recreating it
 # - Fix package.json version
 # - Recreate the tag
 
 # VSCE_PAT expired:
 # - Generate new token at: https://marketplace.visualstudio.com/manage
-# - Update secret in Forgejo: Settings → Actions → Secrets → VSCE_PAT
+# - Update the GitHub Actions secret: Settings → Secrets and variables → Actions
 ```
 
 ### VS Code Marketplace Authentication
 
-The workflow uses the `VSCE_PAT` secret configured in Forgejo Actions.
+The workflow uses the `VSCE_PAT` secret configured in GitHub Actions.
 
 **To regenerate the token:**
 
 1. Visit https://marketplace.visualstudio.com/manage/publishers/maxking
 2. Go to "Personal Access Tokens"
 3. Create a new token with "Marketplace (Manage)" scope
-4. Update in Forgejo:
-   - Go to repository Settings → Actions → Secrets
+4. Update in GitHub:
+   - Go to repository Settings → Secrets and variables → Actions
    - Update `VSCE_PAT` with the new token
 
 ### Rollback a Release
@@ -213,9 +213,10 @@ npx vsce unpublish maxking.forgejo-vscode@0.3.0
 # 2. Delete the tag
 git tag -d v0.3.0
 git push --delete origin v0.3.0
+git push --delete github v0.3.0
 
-# 3. Delete the Forgejo release via web UI
-# https://codeberg.org/maxking/forgejo-vscode/releases
+# 3. Delete the GitHub release via web UI
+# https://github.com/maxking/forgejo-vscode/releases
 
 # 4. Fix the issue and publish a new version
 ```
@@ -252,14 +253,15 @@ Follow [Semantic Versioning](https://semver.org/):
 
 ## CI/CD Configuration
 
-The publish workflow is defined in `.forgejo/workflows/publish.yml`.
+The publish workflow is defined in `.github/workflows/publish.yml` and reuses `.github/workflows/test.yml` as its release gate.
 
 ### Required Secrets
 
 | Secret | Description | Where to Get |
 |--------|-------------|--------------|
 | `VSCE_PAT` | VS Code Marketplace Personal Access Token | https://marketplace.visualstudio.com/manage |
-| `GITHUB_TOKEN` | Forgejo API token (auto-provided) | N/A (automatic) |
+| `OPEN_VSX_PAT` | Open VSX publishing token | https://open-vsx.org/user-settings/tokens |
+| `GITHUB_TOKEN` | GitHub release token (auto-provided) | N/A (automatic) |
 
 ### Workflow Triggers
 
@@ -279,7 +281,7 @@ The workflow runs on any tag matching:
 8. ✅ Verify version matches tag
 9. ✅ Publish to VS Code Marketplace
 10. ✅ Upload VSIX artifact
-11. ✅ Create Forgejo release
+11. ✅ Create GitHub release
 
 ## Maintenance Checklist
 
@@ -294,7 +296,7 @@ The workflow runs on any tag matching:
 ### After Each Release
 
 - [ ] Verify extension published to marketplace
-- [ ] Check Forgejo release created
+- [ ] Check GitHub release created
 - [ ] Test installation from marketplace
 - [ ] Monitor for user reports/issues
 
@@ -325,5 +327,5 @@ to add this entry automatically. The patch file is at `patches/@mshanemc+vscode-
 
 For questions or issues with the release process:
 - Create an issue: https://codeberg.org/maxking/forgejo-vscode/issues
-- Check workflow logs: https://codeberg.org/maxking/forgejo-vscode/actions
+- Check workflow logs: https://github.com/maxking/forgejo-vscode/actions
 - Review this guide: `MAINTAINERS.md`

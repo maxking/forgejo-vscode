@@ -20,11 +20,9 @@ export default defineConfig<VSCodeTestOptions, VSCodeWorkerOptions>({
   projects: [
     {
       name: 'stable',
-      // In CI the live-test Docker image bakes a pinned VS Code at
-      // /opt/vscode-test and exports VSCODE_TEST_VERSION; @vscode/test-electron
-      // then reuses that install and skips the 241 MB download. Locally this
-      // falls back to 'stable' (downloaded/cached under .vscode-test as usual).
-      use: { vscodeVersion: process.env.VSCODE_TEST_VERSION ?? 'stable' },
+      // CI can override the pinned version through VSCODE_TEST_VERSION. Keep
+      // local and CI runs deterministic instead of following a moving stable build.
+      use: { vscodeVersion: process.env.VSCODE_TEST_VERSION ?? '1.123.0' },
     },
   ],
 });
