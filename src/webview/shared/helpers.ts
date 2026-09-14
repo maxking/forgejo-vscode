@@ -23,6 +23,23 @@ const ACTIVITY_PAGE_SIZE = 50;
 const MAX_ACTIVITY_PAGE_PROBES = 20;
 
 /**
+ * Normalizes a page result whose `items` Forgejo reported as `null`.
+ *
+ * Forgejo returns a bare `null` body instead of `[]` for some empty activity
+ * endpoints (for example an issue timeline with no events yet), and the client
+ * library passes that through verbatim. Callers iterate `items` directly, so
+ * a null page would throw `Cannot read properties of null` far away from the
+ * fetch (GitHub issue #20 / Codeberg issue #31).
+ */
+function normalizeActivityPage<T>(page: ActivityPage<T> | null | undefined): ActivityPage<T> {
+  return {
+    items: Array.isArray(page?.items) ? page.items : [],
+    hasMore: page?.hasMore ?? false,
+    totalCount: page?.totalCount ?? null
+  };
+}
+
+/**
  * Finds the tail of a paginated activity stream without walking all intervening
  * pages. Forgejo reports `hasMore` for a full page even when it is the final
  * page, so unknown totals require probing for the first non-full page.
@@ -38,13 +55,16 @@ export async function fetchNewestActivityPage<T>(
   keyOf: (item: T) => string,
   options: { descending?: boolean } = {}
 ): Promise<NewestActivityPage<T>> {
-  if (!paged) return { items: await legacy(), truncated: false, newest: true };
+  if (!paged) {
+    const legacyItems = await legacy();
+    return { items: Array.isArray(legacyItems) ? legacyItems : [], truncated: false, newest: true };
+  }
 
   const cache = new Map<number, ActivityPage<T>>();
   const fetchPage = async (page: number): Promise<ActivityPage<T>> => {
     const cached = cache.get(page);
     if (cached) return cached;
-    const result = await paged(page);
+    const result = normalizeActivityPage(await paged(page));
     cache.set(page, result);
     return result;
   };
