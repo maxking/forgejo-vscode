@@ -130,7 +130,7 @@ describe('metadataPickers', () => {
 
       const result = await pickMilestone(client, 'owner', 'repo', undefined);
 
-      expect(client.listMilestones).toHaveBeenCalledWith('owner', 'repo', 'open');
+      expect(client.listMilestones).toHaveBeenCalledWith('owner', 'repo', { state: 'open' });
       expect(showQuickPickMock).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({ label: 'No milestone', milestoneId: 0 }),

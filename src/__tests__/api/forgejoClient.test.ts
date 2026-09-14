@@ -1962,23 +1962,22 @@ describe('ForgejoClient', () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
-    test('listMilestones should default to open state and paginate', async () => {
+    test('listMilestones should default to a single unfiltered request (Forgejo defaults state to open)', async () => {
       const milestones = [{ id: 1, title: 'v1.0', state: 'open' }];
       mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => milestones } as unknown as Response);
 
       const result = await client.listMilestones('owner', 'repo');
 
       expect(result).toEqual(milestones);
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('state=open'),
-        expect.any(Object)
-      );
+      const url = String(mockFetch.mock.calls[0][0]);
+      expect(url).toContain('/repos/owner/repo/milestones');
+      expect(url).not.toContain('state=');
     });
 
     test('listMilestones should pass through an explicit state', async () => {
       mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as unknown as Response);
 
-      await client.listMilestones('owner', 'repo', 'closed');
+      await client.listMilestones('owner', 'repo', { state: 'closed' });
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('state=closed'),
@@ -1986,17 +1985,19 @@ describe('ForgejoClient', () => {
       );
     });
 
-    test('listAssignableUsers should fetch the repo assignees endpoint', async () => {
+    test('listAssignableUsers should fetch the repo assignees endpoint in a single request', async () => {
       const users = [{ id: 1, login: 'alice' }, { id: 2, login: 'bob' }];
       mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => users } as unknown as Response);
 
       const result = await client.listAssignableUsers('owner', 'repo');
 
       expect(result).toEqual(users);
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/repos/owner/repo/assignees'),
-        expect.any(Object)
-      );
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const url = String(mockFetch.mock.calls[0][0]);
+      expect(url).toContain('/repos/owner/repo/assignees');
+      // Forgejo does not paginate this endpoint; no page/limit params are sent.
+      expect(url).not.toContain('page=');
+      expect(url).not.toContain('limit=');
     });
 
     test('setIssueLabels should PUT the full label-ID replacement set to the issue labels endpoint', async () => {

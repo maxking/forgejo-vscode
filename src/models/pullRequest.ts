@@ -1,5 +1,5 @@
 // Re-export all types from forgejo-ts for backward compatibility
-import type { PullRequestListItem as ForgejoPullRequestListItem, PullRequest as ForgejoPullRequest } from 'forgejo-ts';
+import type { PullRequestListItem as ForgejoPullRequestListItem } from 'forgejo-ts';
 
 export type {
   PullRequest,
@@ -13,17 +13,6 @@ export type {
 
 export interface PullRequestListItemWithMergeability extends ForgejoPullRequestListItem {
   mergeable?: boolean | null;
-}
-
-/**
- * `forgejo-ts`'s `PullRequest` type omits `milestone` and `assignees`,
- * even though the Forgejo API always includes both. Detail views that
- * need to read/render current metadata use this narrow local extension
- * instead of widening the vendored type.
- */
-export interface PullRequestWithMetadata extends ForgejoPullRequest {
-  milestone?: { id: number; title: string } | null;
-  assignees?: { login: string }[] | null;
 }
 
 interface MergeabilitySource {
