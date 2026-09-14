@@ -1,4 +1,4 @@
-import { fetchNewestActivityPage, getTimelineEventName } from '../../webview/shared/helpers';
+import { fetchNewestActivityPage, getTimelineEventName, type ActivityPage } from '../../webview/shared/helpers';
 
 describe('getTimelineEventName', () => {
   it('prefers a normalized event name', () => {
@@ -75,5 +75,51 @@ describe('fetchNewestActivityPage', () => {
     expect(result.items.map(item => item.id)).toEqual(rows(71, 120).map(item => item.id));
     expect(result).toMatchObject({ truncated: true, newest: true });
     expect(paged.mock.calls.map(([page]) => page)).toEqual([1, 2, 4, 3]);
+  });
+
+  it('treats a null-items single page as empty instead of throwing (GitHub #20)', async () => {
+    // Forgejo returns a bare `null` body for some empty activity endpoints
+    // (e.g. an issue timeline with no events). The client library passes the
+    // null through, and callers previously crashed on `null.flatMap`.
+    const paged = jest.fn(() => Promise.resolve({ items: null, hasMore: false, totalCount: 0 } as unknown as ActivityPage<{ id: number }>));
+
+    const result = await fetchNewestActivityPage(paged, async () => [], item => String(item.id));
+
+    expect(result).toMatchObject({ items: [], truncated: false, newest: true });
+    expect(paged).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a null-items page without total metadata as empty instead of probing', async () => {
+    // Without an x-total-count header the null page must not be fed into
+    // page-length probing either; it should resolve as a final empty page.
+    const paged = jest.fn((page: number) => Promise.resolve(
+      (page === 1
+        ? { items: null, hasMore: false, totalCount: null }
+        : { items: rows(1, 50), hasMore: true, totalCount: null }) as unknown as ActivityPage<{ id: number }>));
+
+    const result = await fetchNewestActivityPage(paged, async () => [], item => String(item.id));
+
+    expect(result).toMatchObject({ items: [], truncated: false, newest: true });
+    expect(paged).toHaveBeenCalledTimes(1);
+  });
+
+  it('terminates immediately when a malformed page reports null items with hasMore true', async () => {
+    // A malformed `hasMore: true` alongside invalid items must not send the
+    // probe loop chasing pages of null; the stream resolves as a final
+    // empty page (CodeRabbit finding on PR #26).
+    const paged = jest.fn(() => Promise.resolve({ items: null, hasMore: true, totalCount: 100 } as unknown as ActivityPage<{ id: number }>));
+
+    const result = await fetchNewestActivityPage(paged, async () => [], item => String(item.id));
+
+    expect(result).toMatchObject({ items: [], truncated: false, newest: true });
+    expect(paged).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes a null legacy (non-paged) result to an empty page', async () => {
+    const legacy = async () => null as unknown as { id: number }[];
+
+    const result = await fetchNewestActivityPage(undefined, legacy, item => String(item.id));
+
+    expect(result).toMatchObject({ items: [], truncated: false, newest: true });
   });
 });
