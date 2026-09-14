@@ -103,6 +103,18 @@ describe('fetchNewestActivityPage', () => {
     expect(paged).toHaveBeenCalledTimes(1);
   });
 
+  it('terminates immediately when a malformed page reports null items with hasMore true', async () => {
+    // A malformed `hasMore: true` alongside invalid items must not send the
+    // probe loop chasing pages of null; the stream resolves as a final
+    // empty page (CodeRabbit finding on PR #26).
+    const paged = jest.fn(() => Promise.resolve({ items: null, hasMore: true, totalCount: 100 } as unknown as ActivityPage<{ id: number }>));
+
+    const result = await fetchNewestActivityPage(paged, async () => [], item => String(item.id));
+
+    expect(result).toMatchObject({ items: [], truncated: false, newest: true });
+    expect(paged).toHaveBeenCalledTimes(1);
+  });
+
   it('normalizes a null legacy (non-paged) result to an empty page', async () => {
     const legacy = async () => null as unknown as { id: number }[];
 

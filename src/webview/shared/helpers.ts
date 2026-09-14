@@ -32,11 +32,13 @@ const MAX_ACTIVITY_PAGE_PROBES = 20;
  * fetch (GitHub issue #20 / Codeberg issue #31).
  */
 function normalizeActivityPage<T>(page: ActivityPage<T> | null | undefined): ActivityPage<T> {
-  return {
-    items: Array.isArray(page?.items) ? page.items : [],
-    hasMore: page?.hasMore ?? false,
-    totalCount: page?.totalCount ?? null
-  };
+  if (!page || !Array.isArray(page.items)) {
+    // A page with invalid items is terminal: a malformed `hasMore: true`
+    // must not send the probe loop chasing pages of null (CodeRabbit
+    // finding on PR #26), which would flag an empty stream as truncated.
+    return { items: [], hasMore: false, totalCount: page?.totalCount ?? null };
+  }
+  return { items: page.items, hasMore: page.hasMore, totalCount: page.totalCount };
 }
 
 /**
