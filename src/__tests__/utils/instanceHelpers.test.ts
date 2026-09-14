@@ -437,6 +437,37 @@ describe('instanceHelpers', () => {
 			expect(result?.confidence).toBe('exact');
 		});
 
+		it('should exactly match a subpath instance parsed from a git remote (GitHub #21)', () => {
+			// parseRemoteUrl('https://example.org/gitea/owner/repo.git') returns
+			// instanceUrl 'https://example.org/gitea', which must exact-match an
+			// instance configured with that same subpath URL.
+			const subpathInstances: ForgejoInstance[] = [
+				{
+					id: '4',
+					name: 'Subpath Gitea',
+					instanceUrl: 'https://example.org/gitea'
+				}
+			];
+			const result = findBestInstanceMatch(subpathInstances, 'https://example.org/gitea');
+			expect(result).not.toBeNull();
+			expect(result?.instance.id).toBe('4');
+			expect(result?.confidence).toBe('exact');
+		});
+
+		it('should not exact-match a subpath instance against a root-path remote', () => {
+			const subpathInstances: ForgejoInstance[] = [
+				{
+					id: '4',
+					name: 'Subpath Gitea',
+					instanceUrl: 'https://example.org/gitea'
+				}
+			];
+			// A remote without the subpath is a different site root; only a
+			// domain-level (host) match is acceptable, never an exact one.
+			const result = findBestInstanceMatch(subpathInstances, 'https://example.org');
+			expect(result?.confidence).toBe('domain');
+		});
+
 		it('should NOT match when same hostname but different port', () => {
 			// localhost:3000 is configured, but remote points to localhost:3001
 			const result = findBestInstanceMatch(instances, 'http://localhost:3001');
