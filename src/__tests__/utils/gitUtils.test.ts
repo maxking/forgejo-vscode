@@ -256,6 +256,16 @@ describe('gitUtils', () => {
       });
     });
 
+    it('should parse subpath HTTPS remotes with a trailing slash', () => {
+      const result = parseRemoteUrl('https://example.org/gitea/owner/repo.git/');
+      expect(result).toEqual({
+        remoteHost: 'example.org',
+        instanceUrl: 'https://example.org/gitea',
+        owner: 'owner',
+        repo: 'repo'
+      });
+    });
+
     it('should extract owner/repo from scp-style remotes with a subpath without inferring an instanceUrl', () => {
       const result = parseRemoteUrl('git@example.org:gitea/owner/repo.git');
       expect(result).toEqual({
