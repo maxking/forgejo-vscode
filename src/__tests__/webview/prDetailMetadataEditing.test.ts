@@ -183,7 +183,7 @@ describe('PRDetailWebviewProvider metadata editing', () => {
 
       await (provider as any)._handleMessage({ type: 'editMilestone' }, 'panel');
 
-      expect(client.listMilestones).toHaveBeenCalledWith('owner', 'repo', 'open');
+      expect(client.listMilestones).toHaveBeenCalledWith('owner', 'repo', { state: 'open' });
       expect(client.updateIssueMetadata).toHaveBeenCalledWith('owner', 'repo', 191, { milestone: 2 });
       expect(postMessage).toHaveBeenCalledWith({ type: 'actionComplete', action: 'editMilestone', success: true });
     });

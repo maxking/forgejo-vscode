@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
-import { PullRequestWithMetadata, CommitStatus } from '../../models/pullRequest';
+import type { PullRequest } from 'forgejo-ts';
+import { CommitStatus } from '../../models/pullRequest';
 import { executeCommand } from '../../commands/registry';
 import { openWorkflowFileForCIStatus, viewCIStatusLogs } from '../../commands/ciNavigation';
 import { logDebug, logInfo, logError } from '../../utils/logger';
@@ -141,7 +142,7 @@ function isValidGitBranchRef(ref: string): boolean {
 export type ActivitySortOrder = 'newest-first' | 'oldest-first';
 
 export interface PRDetailViewData {
-  pr: PullRequestWithMetadata;
+  pr: PullRequest;
   activities: PRActivity[];
   activitySortOrder: ActivitySortOrder;
   statuses: CommitStatus[];

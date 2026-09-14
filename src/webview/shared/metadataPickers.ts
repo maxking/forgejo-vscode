@@ -100,7 +100,7 @@ export async function pickMilestone(
   repo: string,
   currentMilestoneId: number | null | undefined
 ): Promise<number | undefined> {
-  const milestones = await client.listMilestones(owner, repo, 'open');
+  const milestones = await client.listMilestones(owner, repo, { state: 'open' });
   const currentId = currentMilestoneId ?? 0;
 
   const items: MilestonePickItem[] = [

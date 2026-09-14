@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient, type ForgejoStopwatch, type ForgejoTrackedTime } from '../../api/forgejoClient';
 import { getForgejoConfigFor } from '../../utils/config';
-import { IssueWithMilestone } from '../../models/issue';
+import type { Issue } from 'forgejo-ts';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 import { fetchNewestActivityPage, getTimelineEventName, type TimelineActivity } from '../shared/helpers';
 import { pickLabels, pickAssignees, pickMilestone } from '../shared/metadataPickers';
@@ -50,7 +50,7 @@ type IssueTimelineApiActivity = Omit<IssueActivity, 'type' | 'event'> & Timeline
 export type ActivitySortOrder = 'newest-first' | 'oldest-first';
 
 export interface IssueDetailViewData {
-  issue: IssueWithMilestone;
+  issue: Issue;
   activities: IssueActivity[];
   activitySortOrder: ActivitySortOrder;
   timeTracking: IssueTimeTrackingViewData;
