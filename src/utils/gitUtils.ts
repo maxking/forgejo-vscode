@@ -342,17 +342,32 @@ function decodeRemotePathSegment(segment: string): string | null {
   }
 }
 
-function parseRemotePath(pathname: string): Pick<GitRemoteInfo, 'owner' | 'repo'> | null {
+/**
+ * Parsed owner/repo from a git remote path, plus any leading path segments
+ * between the host and the repository (a Forgejo/Gitea instance served under
+ * a URL subpath, e.g. `https://example.org/gitea/owner/repo.git`).
+ */
+interface RemotePathInfo {
+  owner: string;
+  repo: string;
+  subPathSegments: string[];
+}
+
+function parseRemotePath(pathname: string): RemotePathInfo | null {
   const segments = pathname
     .split('/')
     .filter(segment => segment.length > 0);
 
-  if (segments.length !== 2) {
+  if (segments.length < 2) {
     return null;
   }
 
-  const owner = decodeRemotePathSegment(segments[0]);
-  const repoSegment = decodeRemotePathSegment(segments[1]);
+  // A git remote always points at the repository root, so the final two path
+  // segments are owner/repo; any leading segments belong to the instance's
+  // URL subpath (GitHub issue #21). Segments are kept verbatim (not decoded)
+  // so they can be reassembled into a valid instance URL below.
+  const repoSegment = decodeRemotePathSegment(segments[segments.length - 1]);
+  const owner = decodeRemotePathSegment(segments[segments.length - 2]);
 
   if (!owner || !repoSegment) {
     return null;
@@ -366,7 +381,18 @@ function parseRemotePath(pathname: string): Pick<GitRemoteInfo, 'owner' | 'repo'
     return null;
   }
 
-  return { owner, repo };
+  return {
+    owner,
+    repo,
+    subPathSegments: segments.slice(0, -2)
+  };
+}
+
+function buildInstanceUrl(parsedUrl: URL, subPathSegments: string[]): string {
+  const subPath = subPathSegments.join('/');
+  return subPath
+    ? `${parsedUrl.origin}/${subPath}`
+    : parsedUrl.origin;
 }
 
 function parseStandardRemoteUrl(parsedUrl: URL): GitRemoteInfo | null {
@@ -382,14 +408,16 @@ function parseStandardRemoteUrl(parsedUrl: URL): GitRemoteInfo | null {
   if (parsedUrl.protocol === 'ssh:') {
     return {
       remoteHost: parsedUrl.hostname,
-      ...pathInfo
+      owner: pathInfo.owner,
+      repo: pathInfo.repo
     };
   }
 
   return {
     remoteHost: parsedUrl.host,
-    instanceUrl: parsedUrl.origin,
-    ...pathInfo
+    instanceUrl: buildInstanceUrl(parsedUrl, pathInfo.subPathSegments),
+    owner: pathInfo.owner,
+    repo: pathInfo.repo
   };
 }
 
@@ -415,13 +443,15 @@ function parseScpStyleRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
 
   return {
     remoteHost: host,
-    ...pathInfo
+    owner: pathInfo.owner,
+    repo: pathInfo.repo
   };
 }
 
 /**
  * Parse git remote URL to extract owner/repo and remote host information.
- * For HTTP(S) remotes, also returns an explicit instanceUrl.
+ * For HTTP(S) remotes, also returns an explicit instanceUrl, including any
+ * URL subpath the instance is served under (e.g. `https://example.org/gitea`).
  * For SSH-based remotes, we intentionally avoid inferring the web/API URL from the git transport.
  */
 export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {

@@ -216,9 +216,78 @@ describe('gitUtils', () => {
       });
     });
 
-    it('should return null for URLs with extra path segments', () => {
-      expect(parseRemoteUrl('https://forgejo.example.com/my-org/my.project/extra')).toBeNull();
-      expect(parseRemoteUrl('git@forgejo.example.com:my-org/my.project/extra')).toBeNull();
+    it('should treat leading path segments as the instance URL subpath (GitHub #21)', () => {
+      const result = parseRemoteUrl('https://example.org/gitea/owner/repo.git');
+      expect(result).toEqual({
+        remoteHost: 'example.org',
+        instanceUrl: 'https://example.org/gitea',
+        owner: 'owner',
+        repo: 'repo'
+      });
+    });
+
+    it('should parse subpath HTTPS remotes without a .git suffix', () => {
+      const result = parseRemoteUrl('https://example.org/gitea/owner/repo');
+      expect(result).toEqual({
+        remoteHost: 'example.org',
+        instanceUrl: 'https://example.org/gitea',
+        owner: 'owner',
+        repo: 'repo'
+      });
+    });
+
+    it('should keep every leading segment of deep subpath remotes', () => {
+      const result = parseRemoteUrl('https://example.org/git/gitea/my-org/my.project.git');
+      expect(result).toEqual({
+        remoteHost: 'example.org',
+        instanceUrl: 'https://example.org/git/gitea',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should preserve the port in subpath instance URLs', () => {
+      const result = parseRemoteUrl('https://git.example.com:3000/gitea/owner/repo.git');
+      expect(result).toEqual({
+        remoteHost: 'git.example.com:3000',
+        instanceUrl: 'https://git.example.com:3000/gitea',
+        owner: 'owner',
+        repo: 'repo'
+      });
+    });
+
+    it('should parse subpath HTTPS remotes with a trailing slash', () => {
+      const result = parseRemoteUrl('https://example.org/gitea/owner/repo.git/');
+      expect(result).toEqual({
+        remoteHost: 'example.org',
+        instanceUrl: 'https://example.org/gitea',
+        owner: 'owner',
+        repo: 'repo'
+      });
+    });
+
+    it('should extract owner/repo from scp-style remotes with a subpath without inferring an instanceUrl', () => {
+      const result = parseRemoteUrl('git@example.org:gitea/owner/repo.git');
+      expect(result).toEqual({
+        remoteHost: 'example.org',
+        owner: 'owner',
+        repo: 'repo'
+      });
+    });
+
+    it('should extract owner/repo from ssh:// remotes with a subpath without inferring an instanceUrl', () => {
+      const result = parseRemoteUrl('ssh://git@example.org/gitea/owner/repo.git');
+      expect(result).toEqual({
+        remoteHost: 'example.org',
+        owner: 'owner',
+        repo: 'repo'
+      });
+    });
+
+    it('should still return null for remotes with fewer than two path segments', () => {
+      expect(parseRemoteUrl('https://forgejo.example.com/owner')).toBeNull();
+      expect(parseRemoteUrl('https://forgejo.example.com/gitea')).toBeNull();
+      expect(parseRemoteUrl('git@forgejo.example.com:owner')).toBeNull();
     });
 
     it('should handle SSH URL with custom host', () => {
